@@ -36,9 +36,8 @@ class PermissionSystem:
             logger.warning("Tool not in allowlist: %s", tool_name)
             return False
         for v in args.values():
-            if isinstance(v, str) and ("/" in v or "\\" in v):
-                if not self._check_path(v):
-                    return False
+            if not self._check_arg_value(v):
+                return False
         return True
 
     def is_path_allowed(self, path: str | Path) -> bool:
@@ -49,6 +48,17 @@ class PermissionSystem:
 
     def safe_delete(self, path: str | Path) -> bool:
         return self._check_path(str(path))
+
+    def _check_arg_value(self, value: object) -> bool:
+        """Recursively check that an argument value contains no blocked paths."""
+        if isinstance(value, str):
+            if "/" in value or "\\" in value:
+                return self._check_path(value)
+        elif isinstance(value, dict):
+            return all(self._check_arg_value(v) for v in value.values())
+        elif isinstance(value, (list, tuple)):
+            return all(self._check_arg_value(v) for v in value)
+        return True
 
     def _check_path(self, path_str: str) -> bool:
         resolved = Path(path_str).resolve()

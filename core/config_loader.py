@@ -42,9 +42,9 @@ class ConfigLoader:
         parts = key.split(".")
         val: Any = self._data
         for part in parts:
-            if not isinstance(val, dict):
+            if not isinstance(val, dict) or part not in val:
                 return default
-            val = val.get(part, default)
+            val = val[part]
         return val
 
     def set(self, key: str, value: Any) -> None:

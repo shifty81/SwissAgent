@@ -8,7 +8,8 @@ _CACHE_DIR = Path("cache")
 
 
 def _path(key: str) -> Path:
-    safe = key.replace("/", "_").replace("\\", "_")
+    import hashlib
+    safe = hashlib.sha256(key.encode()).hexdigest()
     return _CACHE_DIR / f"{safe}.json"
 
 
