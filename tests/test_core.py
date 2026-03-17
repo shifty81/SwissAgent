@@ -35,6 +35,18 @@ def test_tool_registry_register():
     reg.register({"name": "test_tool", "description": "A test tool"}, lambda: "ok")
     assert reg.get("test_tool") is not None
     assert reg.get_callable("test_tool")() == "ok"
+    # get() should embed the callable under _callable for TaskRunner
+    tool = reg.get("test_tool")
+    assert tool is not None and tool.get("_callable") is not None
+    assert tool["_callable"]() == "ok"
+
+
+def test_tool_registry_get_callable_missing():
+    from core.tool_registry import ToolRegistry
+    reg = ToolRegistry()
+    reg.register({"name": "no_func_tool"})
+    assert reg.get_callable("no_func_tool") is None
+    assert reg.get_callable("nonexistent") is None
 
 
 def test_tool_registry_list():

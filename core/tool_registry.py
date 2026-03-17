@@ -40,7 +40,12 @@ class ToolRegistry:
             self.register_from_file(tools_file)
 
     def get(self, name: str) -> dict[str, Any] | None:
-        return self._tools.get(name)
+        tool = self._tools.get(name)
+        if tool is None:
+            return None
+        # Attach the callable under the key TaskRunner expects
+        func = self._callables.get(name)
+        return {**tool, "_callable": func} if func is not None else tool
 
     def get_callable(self, name: str) -> Callable[..., Any] | None:
         return self._callables.get(name)

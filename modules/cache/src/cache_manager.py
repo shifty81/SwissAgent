@@ -40,6 +40,8 @@ def cache_delete(key: str) -> dict:
 
 
 def cache_clear() -> dict:
+    if not _CACHE_DIR.exists():
+        return {"cleared": 0}
     count = 0
     for p in _CACHE_DIR.glob("*.json"):
         p.unlink()
@@ -48,5 +50,7 @@ def cache_clear() -> dict:
 
 
 def cache_stats() -> dict:
+    if not _CACHE_DIR.exists():
+        return {"entries": 0, "total_bytes": 0}
     files = list(_CACHE_DIR.glob("*.json"))
     return {"entries": len(files), "total_bytes": sum(f.stat().st_size for f in files)}
