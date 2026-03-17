@@ -1,0 +1,9 @@
+{
+  "name": "cpp",
+  "description": "C++ project template",
+  "version": "0.1.0",
+  "files": [
+    "main.cpp",
+    "CMakeLists.txt"
+  ]
+}

@@ -1,0 +1,29 @@
+[agent]
+max_iterations = 20
+default_llm_backend = "ollama"
+
+[llm.ollama]
+base_url = "http://localhost:11434"
+model = "llama3"
+
+[llm.api]
+base_url = "https://api.openai.com"
+key = ""
+model = "gpt-4o"
+
+[llm.local]
+model_path = "models/model.gguf"
+
+[permissions]
+allowed_dirs = ["workspace", "projects", "cache", "logs"]
+blocked_dirs = ["configs", "core", "llm"]
+
+[server]
+host = "127.0.0.1"
+port = 8000
+
+[build]
+default_system = "cmake"
+
+[cache]
+max_size_mb = 512

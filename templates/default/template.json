@@ -1,0 +1,8 @@
+{
+  "name": "default",
+  "description": "Generic project template",
+  "version": "0.1.0",
+  "files": [
+    "main.py"
+  ]
+}

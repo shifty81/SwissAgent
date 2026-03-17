@@ -1,0 +1,9 @@
+{
+  "name": "python",
+  "description": "Python project template",
+  "version": "0.1.0",
+  "files": [
+    "main.py",
+    "pyproject.toml"
+  ]
+}

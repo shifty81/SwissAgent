@@ -1,0 +1,91 @@
+[
+  {
+    "name": "compile_glsl",
+    "description": "Compile a GLSL shader",
+    "module": "shader",
+    "function": "modules.shader.src.shader.compile_glsl",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "src": {
+          "type": "string"
+        },
+        "dst": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "src",
+        "dst"
+      ]
+    }
+  },
+  {
+    "name": "compile_hlsl",
+    "description": "Compile an HLSL shader",
+    "module": "shader",
+    "function": "modules.shader.src.shader.compile_hlsl",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "src": {
+          "type": "string"
+        },
+        "dst": {
+          "type": "string"
+        },
+        "entry": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "src",
+        "dst"
+      ]
+    }
+  },
+  {
+    "name": "validate_shader",
+    "description": "Validate a shader",
+    "module": "shader",
+    "function": "modules.shader.src.shader.validate_shader",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "generate_spirv",
+    "description": "Generate SPIR-V from GLSL",
+    "module": "shader",
+    "function": "modules.shader.src.shader.generate_spirv",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "src": {
+          "type": "string"
+        },
+        "dst": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "src",
+        "dst"
+      ]
+    }
+  }
+]

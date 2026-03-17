@@ -1,0 +1,19 @@
+[
+  {
+    "name": "example_hello",
+    "description": "Example tool that returns a greeting",
+    "module": "example",
+    "function": "plugins.example.scripts.main.example_hello",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  }
+]
