@@ -1,0 +1,87 @@
+[
+  {
+    "name": "anim_import",
+    "description": "Import animation data",
+    "module": "animation",
+    "function": "modules.animation.src.animation.anim_import",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "anim_export",
+    "description": "Export animation data",
+    "module": "animation",
+    "function": "modules.animation.src.animation.anim_export",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "anim_id": {
+          "type": "string"
+        },
+        "dst": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "anim_id",
+        "dst"
+      ]
+    }
+  },
+  {
+    "name": "anim_bake",
+    "description": "Bake animation curves",
+    "module": "animation",
+    "function": "modules.animation.src.animation.anim_bake",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "anim_id": {
+          "type": "string"
+        },
+        "fps": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "anim_id"
+      ]
+    }
+  },
+  {
+    "name": "anim_retarget",
+    "description": "Retarget animation to skeleton",
+    "module": "animation",
+    "function": "modules.animation.src.animation.anim_retarget",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "anim_id": {
+          "type": "string"
+        },
+        "target_skeleton": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "anim_id",
+        "target_skeleton"
+      ]
+    }
+  }
+]

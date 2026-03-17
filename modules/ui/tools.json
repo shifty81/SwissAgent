@@ -1,0 +1,63 @@
+[
+  {
+    "name": "ui_generate_component",
+    "description": "Generate a UI component",
+    "module": "ui",
+    "function": "modules.ui.src.ui.ui_generate_component",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "framework": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ]
+    }
+  },
+  {
+    "name": "ui_screenshot",
+    "description": "Screenshot a UI element",
+    "module": "ui",
+    "function": "modules.ui.src.ui.ui_screenshot",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "width": {
+          "type": "integer"
+        },
+        "height": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  {
+    "name": "ui_list_components",
+    "description": "List available UI components",
+    "module": "ui",
+    "function": "modules.ui.src.ui.ui_list_components",
+    "arguments": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  }
+]

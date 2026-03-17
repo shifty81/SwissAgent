@@ -1,0 +1,105 @@
+[
+  {
+    "name": "run_python",
+    "description": "Execute a Python script",
+    "module": "script",
+    "function": "modules.script.src.script_runner.run_python",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array"
+        },
+        "cwd": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "run_shell",
+    "description": "Execute a shell script",
+    "module": "script",
+    "function": "modules.script.src.script_runner.run_shell",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array"
+        },
+        "cwd": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "run_lua",
+    "description": "Execute a Lua script",
+    "module": "script",
+    "function": "modules.script.src.script_runner.run_lua",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "run_node",
+    "description": "Execute a Node.js script",
+    "module": "script",
+    "function": "modules.script.src.script_runner.run_node",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "eval_python",
+    "description": "Evaluate Python code string",
+    "module": "script",
+    "function": "modules.script.src.script_runner.eval_python",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code"
+      ]
+    }
+  }
+]
