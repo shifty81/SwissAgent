@@ -238,7 +238,71 @@ class TemplateSaveRequest(BaseModel):
     description: str = ""
 
 
-# ── Phase 14: Code quality request models ─────────────────────────────────────
+# ── Phase 16: Utility module request models ───────────────────────────────────
+
+class ArchivePackRequest(BaseModel):
+    src: str
+    dst: str
+    format: str = "zip"          # "zip" | "tar" | "7z"
+
+class ArchiveExtractRequest(BaseModel):
+    src: str
+    dst: str
+
+class ArchiveAddFileRequest(BaseModel):
+    archive: str
+    file: str
+
+class DocGenerateRequest(BaseModel):
+    src: str
+    output: str
+    format: str = "markdown"     # "markdown" | "json" | "html"
+    title: str = ""
+
+class NetworkDownloadRequest(BaseModel):
+    url: str
+    dst: str
+
+class NetworkHttpRequest(BaseModel):
+    url: str
+    method: str = "GET"
+    body: dict = {}
+    headers: dict = {}
+
+class PackageInstallRequest(BaseModel):
+    name: str
+    version: str = ""
+    manager: str = ""            # "pip" | "npm" | "gem" | "cargo" | "go"
+    cwd: str = ""
+
+class PackageUninstallRequest(BaseModel):
+    name: str
+    manager: str = ""
+    cwd: str = ""
+
+class ImageResizeRequest(BaseModel):
+    path: str
+    width: int
+    height: int
+    dst: str = ""
+
+class ImageConvertRequest(BaseModel):
+    path: str
+    format: str
+    dst: str = ""
+
+class AudioConvertRequest(BaseModel):
+    src: str
+    dst: str
+    codec: str = ""
+
+class AudioTrimRequest(BaseModel):
+    src: str
+    dst: str
+    start_ms: int = 0
+    end_ms: int = -1             # -1 = end of file
+
+
 
 class FormatRequest(BaseModel):
     content: str
@@ -2481,6 +2545,277 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         meta = {"name": req.name, "description": req.description, "version": "0.1.0", "files": files}
         (tmpl_dest / "template.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
         return {"saved": True, "name": req.name, "files": files}
+
+    # ── Phase 16: Archive (ZIP / TAR / 7z) ───────────────────────────────────
+
+    @app.post("/archive/pack")
+    async def archive_pack(req: ArchivePackRequest) -> dict[str, Any]:
+        """Pack a directory or file into a ZIP, TAR, or 7z archive."""
+        if not req.src or not req.dst:
+            raise HTTPException(status_code=400, detail="src and dst are required")
+        from modules.zip.src.zip_tools import zip_pack, tar_pack, sevenz_pack
+        fmt = req.format.lower()
+        loop = asyncio.get_event_loop()
+        try:
+            if fmt == "tar":
+                result = await loop.run_in_executor(None, lambda: tar_pack(req.src, req.dst))
+            elif fmt == "7z":
+                result = await loop.run_in_executor(None, lambda: sevenz_pack(req.src, req.dst))
+            else:
+                result = await loop.run_in_executor(None, lambda: zip_pack(req.src, req.dst))
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    @app.post("/archive/extract")
+    async def archive_extract(req: ArchiveExtractRequest) -> dict[str, Any]:
+        """Extract an archive to the given destination directory."""
+        if not req.src or not req.dst:
+            raise HTTPException(status_code=400, detail="src and dst are required")
+        from modules.zip.src.zip_tools import zip_extract, tar_extract, sevenz_extract
+        src_lower = req.src.lower()
+        loop = asyncio.get_event_loop()
+        try:
+            if src_lower.endswith((".tar", ".tar.gz", ".tgz", ".tar.bz2")):
+                result = await loop.run_in_executor(None, lambda: tar_extract(req.src, req.dst))
+            elif src_lower.endswith(".7z"):
+                result = await loop.run_in_executor(None, lambda: sevenz_extract(req.src, req.dst))
+            else:
+                result = await loop.run_in_executor(None, lambda: zip_extract(req.src, req.dst))
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    @app.post("/archive/add")
+    async def archive_add_file(req: ArchiveAddFileRequest) -> dict[str, Any]:
+        """Add a single file to an existing ZIP archive."""
+        from modules.zip.src.zip_tools import zip_add_file
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: zip_add_file(req.archive, req.file)
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    # ── Phase 16: Documentation generator ────────────────────────────────────
+
+    @app.post("/doc/generate")
+    async def doc_generate(req: DocGenerateRequest) -> dict[str, Any]:
+        """Generate documentation for Python source files and write to output."""
+        from modules.doc.src.doc import doc_generate as _gen
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: _gen(req.src, req.output, format=req.format, title=req.title or None),
+        )
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("error", "doc_generate failed"))
+        return result
+
+    @app.post("/doc/lint")
+    @app.get("/doc/lint")
+    async def doc_lint_endpoint(docs_dir: str = Query(..., description="Path to docs directory")) -> dict[str, Any]:
+        """Lint Markdown documentation files for broken links and empty headings."""
+        from modules.doc.src.doc import doc_lint
+        result = await asyncio.get_event_loop().run_in_executor(None, lambda: doc_lint(docs_dir))
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("error", "doc_lint failed"))
+        return result
+
+    # ── Phase 16: Network / HTTP ──────────────────────────────────────────────
+
+    @app.post("/network/download")
+    async def network_download(req: NetworkDownloadRequest) -> dict[str, Any]:
+        """Download a file from a URL to the local filesystem."""
+        if not req.url or not req.dst:
+            raise HTTPException(status_code=400, detail="url and dst are required")
+        from modules.network.src.network import download_file
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: download_file(req.url, req.dst)
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    @app.post("/network/request")
+    async def network_http_request(req: NetworkHttpRequest) -> dict[str, Any]:
+        """Make an HTTP request and return the response."""
+        if not req.url:
+            raise HTTPException(status_code=400, detail="url is required")
+        from modules.network.src.network import http_get, http_post
+        loop = asyncio.get_event_loop()
+        method = req.method.upper()
+        if method == "GET":
+            result = await loop.run_in_executor(
+                None, lambda: http_get(req.url, headers=req.headers or None)
+            )
+        elif method == "POST":
+            result = await loop.run_in_executor(
+                None, lambda: http_post(req.url, body=req.body, headers=req.headers or None)
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported method: {req.method}")
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    # ── Phase 16: Package manager ─────────────────────────────────────────────
+
+    @app.post("/packages/install")
+    async def packages_install(req: PackageInstallRequest) -> dict[str, Any]:
+        """Install a package using pip, npm, gem, cargo, or go."""
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        from modules.package.src.package import pkg_install
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: pkg_install(
+                req.name,
+                version=req.version or None,
+                manager=req.manager or None,
+                cwd=req.cwd or None,
+            ),
+        )
+        if result.get("returncode", 0) != 0:
+            raise HTTPException(status_code=400, detail=result.get("stderr", "install failed"))
+        return result
+
+    @app.post("/packages/uninstall")
+    async def packages_uninstall(req: PackageUninstallRequest) -> dict[str, Any]:
+        """Uninstall a package."""
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        from modules.package.src.package import pkg_uninstall
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: pkg_uninstall(req.name, manager=req.manager or None, cwd=req.cwd or None),
+        )
+        if result.get("returncode", 0) != 0:
+            raise HTTPException(status_code=400, detail=result.get("stderr", "uninstall failed"))
+        return result
+
+    @app.get("/packages/list")
+    async def packages_list(
+        manager: str = Query(default="pip"),
+        cwd: str = Query(default=""),
+    ) -> dict[str, Any]:
+        """List installed packages."""
+        from modules.package.src.package import pkg_list
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: pkg_list(manager=manager, cwd=cwd or None)
+        )
+        return result
+
+    # ── Phase 16: Image processing ────────────────────────────────────────────
+
+    @app.post("/image/resize")
+    async def image_resize_endpoint(req: ImageResizeRequest) -> dict[str, Any]:
+        """Resize an image to the given dimensions."""
+        if not req.path:
+            raise HTTPException(status_code=400, detail="path is required")
+        from modules.image.src.image_tools import image_resize
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: image_resize(req.path, req.width, req.height, dst=req.dst or None),
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    @app.post("/image/convert")
+    async def image_convert_endpoint(req: ImageConvertRequest) -> dict[str, Any]:
+        """Convert an image to a different format."""
+        if not req.path or not req.format:
+            raise HTTPException(status_code=400, detail="path and format are required")
+        from modules.image.src.image_tools import image_convert
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: image_convert(req.path, req.format, dst=req.dst or None),
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    @app.get("/image/info")
+    async def image_info_endpoint(path: str = Query(..., description="Path to image file")) -> dict[str, Any]:
+        """Return metadata about an image file."""
+        from modules.image.src.image_tools import image_info
+        result = await asyncio.get_event_loop().run_in_executor(None, lambda: image_info(path))
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    # ── Phase 16: Audio processing ────────────────────────────────────────────
+
+    @app.post("/audio/convert")
+    async def audio_convert_endpoint(req: AudioConvertRequest) -> dict[str, Any]:
+        """Convert an audio file to a different format or codec."""
+        if not req.src or not req.dst:
+            raise HTTPException(status_code=400, detail="src and dst are required")
+        from modules.audio.src.audio import audio_convert
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: audio_convert(req.src, req.dst, codec=req.codec)
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    @app.post("/audio/trim")
+    async def audio_trim_endpoint(req: AudioTrimRequest) -> dict[str, Any]:
+        """Trim an audio file to the given time range (milliseconds)."""
+        if not req.src or not req.dst:
+            raise HTTPException(status_code=400, detail="src and dst are required")
+        from modules.audio.src.audio import audio_trim
+        end = req.end_ms if req.end_ms >= 0 else None
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: audio_trim(req.src, req.dst, start_ms=req.start_ms, end_ms=end)
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    @app.get("/audio/info")
+    async def audio_info_endpoint(path: str = Query(..., description="Path to audio file")) -> dict[str, Any]:
+        """Return metadata about an audio file."""
+        from modules.audio.src.audio import audio_info
+        result = await asyncio.get_event_loop().run_in_executor(None, lambda: audio_info(path))
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    # ── Phase 16: Debug / process tools ──────────────────────────────────────
+
+    @app.get("/debug/process")
+    async def debug_process(pid: int = Query(..., description="Process ID to inspect")) -> dict[str, Any]:
+        """Return OS-level information about a running process."""
+        if pid <= 0:
+            raise HTTPException(status_code=404, detail=f"Invalid process ID: {pid}")
+        from modules.debug.src.debug import debug_attach
+        result = await asyncio.get_event_loop().run_in_executor(None, lambda: debug_attach(pid))
+        if result.get("status") == "error":
+            raise HTTPException(status_code=404, detail=result.get("error", "Process not found"))
+        return result
+
+    @app.get("/debug/memory")
+    async def debug_memory_endpoint(pid: int = Query(..., description="Process ID")) -> dict[str, Any]:
+        """Return memory usage information for a process."""
+        from modules.debug.src.debug import debug_memory
+        result = await asyncio.get_event_loop().run_in_executor(None, lambda: debug_memory(pid))
+        if result.get("status") == "error":
+            raise HTTPException(status_code=404, detail=result.get("error", "Process not found"))
+        return result
+
+    @app.get("/debug/trace")
+    async def debug_trace_endpoint(pid: int = Query(..., description="Process ID (use current PID for self-trace)")) -> dict[str, Any]:
+        """Capture a stack trace snapshot of a process."""
+        from modules.debug.src.debug import debug_trace
+        result = await asyncio.get_event_loop().run_in_executor(None, lambda: debug_trace(pid))
+        if result.get("status") == "error":
+            raise HTTPException(status_code=404, detail=result.get("error", "Trace failed"))
+        return result
 
     return app
 

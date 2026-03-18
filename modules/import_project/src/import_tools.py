@@ -46,7 +46,6 @@ def import_project(
         return {"error": "Could not determine a destination name. Please provide one."}
 
     workspace = _workspace_root()
-    workspace.mkdir(parents=True, exist_ok=True)
     dst = workspace / name
 
     if dst.exists():
@@ -59,32 +58,34 @@ def import_project(
             }
         shutil.rmtree(dst)
 
-    # Guard against copying a directory into itself (e.g. importing the
-    # SwissAgent project while running from its own root).  When dst lives
-    # inside src we pass an ignore function that skips the top-level
-    # sub-directory of src that leads to dst, preventing infinite recursion.
+    # Guard against copying a directory into itself.  Use os.path.samefile()
+    # for robust cross-platform comparison (handles Windows case-insensitivity).
     ignore_fn = None
     try:
         dst_rel = dst.relative_to(src)
         skip_name = dst_rel.parts[0]
 
         def ignore_fn(directory: str, contents: list) -> set:  # type: ignore[misc]
-            if Path(directory).resolve() == src.resolve():
-                return {skip_name}
+            try:
+                if os.path.samefile(directory, str(src)):
+                    return {skip_name}
+            except OSError:
+                pass
             return set()
     except ValueError:
         pass  # dst is not inside src — normal case, no ignore needed
 
+    # Only create workspace/ now (after guard setup) to minimise the window
+    # where an in-progress copy sees the newly created directory.
+    workspace.mkdir(parents=True, exist_ok=True)
+
     try:
         shutil.copytree(src, dst, ignore=ignore_fn)
     except Exception as exc:
-        # Clean up any partially-created destination so retries don't hit
-        # "already exists" errors.
         if dst.exists():
             shutil.rmtree(dst, ignore_errors=True)
         return {"error": f"Copy failed: {exc}"}
 
-    # Count copied items for the summary
     file_count = sum(1 for _ in dst.rglob("*") if _.is_file())
 
     return {

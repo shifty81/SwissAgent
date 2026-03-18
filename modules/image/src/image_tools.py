@@ -66,9 +66,21 @@ def image_rotate(path: str, degrees: float, dst: str | None = None) -> dict:
 
 
 def image_info(path: str) -> dict:
+    """Return metadata about an image file."""
     _check()
-    img = Image.open(path)
-    return {"path": path, "format": img.format, "mode": img.mode, "size": list(img.size)}
+    try:
+        img = Image.open(path)
+        return {
+            "path": path,
+            "format": img.format,
+            "mode": img.mode,
+            "width": img.width,
+            "height": img.height,
+            "size": [img.width, img.height],
+            "size_bytes": Path(path).stat().st_size,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 def batch_convert(src_dir: str, format: str, dst_dir: str) -> dict:
