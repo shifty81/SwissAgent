@@ -9,6 +9,8 @@ build/
 .DS_Store
 *.log
 logs/*.log
+logs/dev_mode_backups/
+logs/dev_mode_staging/
 cache/*
 !cache/.gitkeep
 models/*.bin
@@ -21,3 +23,14 @@ models/*.gguf
 .mypy_cache/
 htmlcov/
 .coverage
+# Generated workspace assets (placeholders kept, large binaries ignored)
+workspace/sample_project/assets/2D/*.png
+workspace/sample_project/assets/3D/*.fbx
+workspace/sample_project/assets/3D/*.glb
+workspace/sample_project/assets/3D/*.obj
+workspace/sample_project/assets/audio/*.wav
+workspace/sample_project/assets/audio/*.mp3
+workspace/sample_project/assets/audio/*.ogg
+workspace/sample_project/assets/video/*.mp4
+workspace/sample_project/assets/video/*.avi
+workspace/sample_project/build/

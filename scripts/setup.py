@@ -10,8 +10,23 @@ def main():
     root = Path(__file__).resolve().parent.parent
     print("Installing SwissAgent dependencies...")
     subprocess.run([sys.executable, "-m", "pip", "install", "-e", str(root)], check=True)
-    for d in ("logs", "cache", "models", "workspace", "projects"):
-        (root / d).mkdir(exist_ok=True)
+    dirs = [
+        "logs",
+        "cache",
+        "models",
+        "workspace",
+        "projects",
+        "plugins",
+        "logs/dev_mode_backups",
+        "logs/dev_mode_staging",
+        "workspace/sample_project/assets/2D",
+        "workspace/sample_project/assets/3D",
+        "workspace/sample_project/assets/audio",
+        "workspace/sample_project/assets/video",
+        "workspace/sample_project/build",
+    ]
+    for d in dirs:
+        (root / d).mkdir(parents=True, exist_ok=True)
     gitkeep = root / "cache" / ".gitkeep"
     if not gitkeep.exists():
         gitkeep.touch()
@@ -20,3 +35,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
