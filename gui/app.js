@@ -12,6 +12,9 @@
     editor: null,         // Monaco editor instance
     ws: null,             // active WebSocket for /ws/run
     currentWsAbort: null, // AbortController for fetch-based fallback
+    buildErrors: [],      // parsed error objects from last build
+    lastBuildOutput: "",  // raw build output for "Fix with AI"
+    contextTarget: null,  // path of the right-clicked tree item
   };
 
   // ── DOM refs ───────────────────────────────────────────────────────────────
@@ -19,12 +22,21 @@
   const fileTree       = $("file-tree");
   const tabsList       = $("tabs-list");
   const outputContent  = $("output-content");
+  const buildContent   = $("build-content");
+  const problemsContent = $("problems-content");
   const chatMessages   = $("chat-messages");
   const chatInput      = $("chat-input");
   const statusEl       = $("status-indicator");
   const newFileDialog  = $("new-file-dialog");
   const newFilePath    = $("new-file-path");
   const llmSelect      = $("llm-backend-select");
+  const contextMenu    = $("context-menu");
+
+  // Status bar refs
+  const sbFile     = $("sb-file");
+  const sbCursor   = $("sb-cursor");
+  const sbLanguage = $("sb-language");
+  const sbAiStatus = $("sb-ai-status");
 
   // ── Utilities ──────────────────────────────────────────────────────────────
   function appendOutput(text) {
@@ -40,6 +52,9 @@
     statusEl.className = `status-${mode}`;
     const labels = { idle: "● Idle", running: "⟳ Running…", error: "✕ Error" };
     statusEl.textContent = labels[mode] || "● Idle";
+    // Also update status bar
+    sbAiStatus.className = mode === "running" ? "sb-running" : mode === "error" ? "sb-error" : "sb-idle";
+    sbAiStatus.textContent = mode === "running" ? "⟳ AI Running…" : mode === "error" ? "✕ AI Error" : "● AI Idle";
   }
 
   function appendChat(text, role) {
@@ -63,6 +78,38 @@
       txt: "plaintext",
     };
     return map[ext] || "plaintext";
+  }
+
+  function langDisplayName(lang) {
+    const names = {
+      python: "Python", javascript: "JavaScript", typescript: "TypeScript",
+      html: "HTML", css: "CSS", json: "JSON", markdown: "Markdown",
+      shell: "Shell", cpp: "C++", c: "C", csharp: "C#", java: "Java",
+      rust: "Rust", go: "Go", lua: "Lua", ruby: "Ruby",
+      ini: "TOML", yaml: "YAML", plaintext: "Plain Text",
+    };
+    return names[lang] || lang;
+  }
+
+  // ── Status bar updates ────────────────────────────────────────────────────
+  function updateStatusBar() {
+    if (state.activeFile) {
+      sbFile.textContent = state.activeFile;
+      const lang = state.openFiles[state.activeFile]?.language || "plaintext";
+      sbLanguage.textContent = langDisplayName(lang);
+    } else {
+      sbFile.textContent = "No file open";
+      sbLanguage.textContent = "Plain Text";
+    }
+  }
+
+  function updateCursorPosition() {
+    if (state.editor) {
+      const pos = state.editor.getPosition();
+      if (pos) {
+        sbCursor.textContent = `Ln ${pos.lineNumber}, Col ${pos.column}`;
+      }
+    }
   }
 
   // ── File tree ──────────────────────────────────────────────────────────────
@@ -102,6 +149,12 @@
       item.appendChild(label);
       container.appendChild(item);
 
+      // Right-click context menu
+      item.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        showContextMenu(e.pageX, e.pageY, fullPath, entry.type);
+      });
+
       if (entry.type === "dir") {
         const children = document.createElement("div");
         children.className = "tree-children";
@@ -132,6 +185,101 @@
     };
     return m[ext] || "📄";
   }
+
+  // ── Context menu ──────────────────────────────────────────────────────────
+  function showContextMenu(x, y, path, type) {
+    state.contextTarget = path;
+    contextMenu.style.left = x + "px";
+    contextMenu.style.top = y + "px";
+    contextMenu.classList.remove("hidden");
+  }
+
+  function hideContextMenu() {
+    contextMenu.classList.add("hidden");
+    state.contextTarget = null;
+  }
+
+  document.addEventListener("click", hideContextMenu);
+  document.addEventListener("contextmenu", (e) => {
+    // Only show custom menu on tree items (handled above)
+    if (!e.target.closest(".tree-item")) hideContextMenu();
+  });
+
+  contextMenu.addEventListener("click", async (e) => {
+    const action = e.target.closest(".ctx-item")?.dataset.action;
+    if (!action || !state.contextTarget) return;
+    const path = state.contextTarget;
+    hideContextMenu();
+
+    switch (action) {
+      case "new-file": {
+        const name = prompt("New file name:", "");
+        if (name) {
+          const newPath = path + "/" + name;
+          await createNewFile(newPath);
+        }
+        break;
+      }
+      case "new-folder": {
+        const name = prompt("New folder name:", "");
+        if (name) {
+          // Create a .gitkeep inside the new folder to materialize it
+          const newPath = path + "/" + name + "/.gitkeep";
+          await createNewFile(newPath);
+        }
+        break;
+      }
+      case "rename": {
+        const parts = path.split("/");
+        const oldName = parts.pop();
+        const newName = prompt("Rename to:", oldName);
+        if (newName && newName !== oldName) {
+          const newPath = parts.concat(newName).join("/");
+          try {
+            const res = await fetch("/files/rename", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ old_path: path, new_path: newPath }),
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || "Rename failed");
+            appendOutput(`✓ Renamed ${oldName} → ${newName}\n`);
+            await loadFileTree();
+          } catch (e) {
+            appendOutput(`Error renaming: ${e.message}\n`);
+          }
+        }
+        break;
+      }
+      case "copy-path": {
+        try {
+          await navigator.clipboard.writeText(path);
+          appendOutput(`✓ Copied path: ${path}\n`);
+        } catch {
+          appendOutput(`Path: ${path}\n`);
+        }
+        break;
+      }
+      case "delete": {
+        if (confirm(`Delete "${path}"? This cannot be undone.`)) {
+          try {
+            const res = await fetch("/files/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path }),
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || "Delete failed");
+            // Close tab if open
+            if (state.openFiles[path]) closeTab(path);
+            appendOutput(`✓ Deleted ${path}\n`);
+            await loadFileTree();
+          } catch (e) {
+            appendOutput(`Error deleting: ${e.message}\n`);
+          }
+        }
+        break;
+      }
+    }
+  });
 
   // ── File open / tabs ───────────────────────────────────────────────────────
   async function openFile(path) {
@@ -181,6 +329,7 @@
     if (state.editor && state.openFiles[path]) {
       state.editor.setModel(state.openFiles[path].model);
     }
+    updateStatusBar();
   }
 
   function closeTab(path) {
@@ -198,6 +347,7 @@
       else {
         state.activeFile = null;
         if (state.editor) state.editor.setModel(null);
+        updateStatusBar();
       }
     }
   }
@@ -229,9 +379,202 @@
       const tab = tabsList.querySelector(`[data-path="${path}"]`);
       if (tab) tab.classList.remove("modified");
       appendOutput(`✓ Saved ${path}\n`);
+
+      // Auto-rebuild on save
+      if ($("chk-auto-rebuild").checked) {
+        runBuildOrTest("build");
+      }
     } catch (e) {
       appendOutput(`Error saving ${path}: ${e.message}\n`);
     }
+  }
+
+  // ── Build / Test ──────────────────────────────────────────────────────────
+  async function runBuildOrTest(mode) {
+    const cwdRoot = $("build-cwd-select").value;
+    const subdir = $("build-subdir-select").value;
+    const cwd = subdir ? `${cwdRoot}/${subdir}` : cwdRoot;
+
+    // Switch to build tab
+    switchOutputTab("build");
+    buildContent.textContent = "";
+    state.buildErrors = [];
+    state.lastBuildOutput = "";
+    $("btn-fix-ai").classList.add("hidden");
+
+    // Detect build system
+    let buildInfo;
+    try {
+      const res = await fetch(`/build/detect?path=${encodeURIComponent(cwd)}`);
+      if (!res.ok) throw new Error(await res.text());
+      buildInfo = await res.json();
+    } catch (e) {
+      buildContent.textContent = `⚠ Build detect failed: ${e.message}\n`;
+      return;
+    }
+
+    const command = mode === "test" ? buildInfo.test_command : buildInfo.build_command;
+    if (!command) {
+      buildContent.textContent = `⚠ No ${mode} command detected for ${buildInfo.system || "unknown"} in ${cwd}\n`;
+      return;
+    }
+
+    buildContent.textContent = `▶ ${mode === "test" ? "Testing" : "Building"} (${buildInfo.system}) in ${cwd}…\n$ ${command}\n\n`;
+
+    // Stream via WebSocket
+    const wsProto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${wsProto}://${location.host}/ws/terminal`);
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ command, cwd }));
+    };
+
+    ws.onmessage = (ev) => {
+      try {
+        const pkt = JSON.parse(ev.data);
+        if (pkt.type === "stdout") {
+          buildContent.textContent += pkt.data;
+          state.lastBuildOutput += pkt.data;
+          buildContent.scrollTop = buildContent.scrollHeight;
+        } else if (pkt.type === "exit") {
+          const ok = pkt.code === 0;
+          buildContent.textContent += `\n${ok ? "✓" : "✕"} Process exited with code ${pkt.code}\n`;
+          if (!ok) {
+            $("btn-fix-ai").classList.remove("hidden");
+            parseBuildErrors(state.lastBuildOutput);
+          }
+          ws.close();
+        } else if (pkt.type === "error") {
+          buildContent.textContent += `\n⚠ Error: ${pkt.data}\n`;
+          ws.close();
+        }
+      } catch { /* ignore */ }
+    };
+
+    ws.onerror = () => {
+      buildContent.textContent += "\n⚠ WebSocket connection error\n";
+    };
+  }
+
+  // ── Error parsing ─────────────────────────────────────────────────────────
+  function parseBuildErrors(output) {
+    state.buildErrors = [];
+    const patterns = [
+      // Python: File "path", line N
+      /File "([^"]+)", line (\d+)(?:.*\n\s*(.*?))?/g,
+      // GCC/Clang: path:line:col: error/warning: msg
+      /^([^\s:]+):(\d+):(\d+):\s*(error|warning):\s*(.*)$/gm,
+      // TypeScript/ESLint: path(line,col): error TS...
+      /^([^\s(]+)\((\d+),(\d+)\):\s*(error|warning)\s+(.*)$/gm,
+      // Rust: error[E...]: msg\n --> path:line:col
+      /^\s*-->\s+([^\s:]+):(\d+):(\d+)/gm,
+      // Generic: ERROR: msg
+      /^(ERROR|error|Error):\s*(.*)$/gm,
+    ];
+
+    const lines = output.split("\n");
+    for (const line of lines) {
+      // Python
+      let m = line.match(/File "([^"]+)", line (\d+)/);
+      if (m) {
+        state.buildErrors.push({ file: m[1], line: parseInt(m[2]), severity: "error", message: line.trim() });
+        continue;
+      }
+      // GCC/Clang/TS
+      m = line.match(/^([^\s:]+):(\d+):(\d+):\s*(error|warning):\s*(.*)$/);
+      if (m) {
+        state.buildErrors.push({ file: m[1], line: parseInt(m[2]), col: parseInt(m[3]), severity: m[4], message: m[5] });
+        continue;
+      }
+      // TypeScript parens style
+      m = line.match(/^([^\s(]+)\((\d+),(\d+)\):\s*(error|warning)\s+(.*)$/);
+      if (m) {
+        state.buildErrors.push({ file: m[1], line: parseInt(m[2]), col: parseInt(m[3]), severity: m[4], message: m[5] });
+        continue;
+      }
+      // Rust
+      m = line.match(/^\s*-->\s+([^\s:]+):(\d+):(\d+)/);
+      if (m) {
+        state.buildErrors.push({ file: m[1], line: parseInt(m[2]), col: parseInt(m[3]), severity: "error", message: line.trim() });
+      }
+    }
+
+    renderProblems();
+  }
+
+  function renderProblems() {
+    problemsContent.innerHTML = "";
+    if (state.buildErrors.length === 0) {
+      problemsContent.innerHTML = '<div style="padding:12px;color:var(--text-dim)">No problems detected.</div>';
+      return;
+    }
+    for (const err of state.buildErrors) {
+      const row = document.createElement("div");
+      row.className = "problem-row";
+
+      const icon = document.createElement("span");
+      icon.className = `problem-icon ${err.severity || "error"}`;
+      icon.textContent = err.severity === "warning" ? "⚠" : "✕";
+
+      const file = document.createElement("span");
+      file.className = "problem-file";
+      file.textContent = err.file || "unknown";
+
+      const line = document.createElement("span");
+      line.className = "problem-line";
+      line.textContent = err.line ? `:${err.line}` : "";
+
+      const msg = document.createElement("span");
+      msg.className = "problem-msg";
+      msg.textContent = err.message || "";
+
+      row.appendChild(icon);
+      row.appendChild(file);
+      row.appendChild(line);
+      row.appendChild(msg);
+
+      // Click to jump to file+line
+      row.addEventListener("click", async () => {
+        // Try to map the file path to a workspace-relative path
+        let filePath = err.file;
+        if (filePath && !filePath.startsWith("workspace/") && !filePath.startsWith("projects/")) {
+          filePath = "workspace/" + filePath;
+        }
+        try {
+          await openFile(filePath);
+          if (state.editor && err.line) {
+            state.editor.revealLineInCenter(err.line);
+            state.editor.setPosition({ lineNumber: err.line, column: err.col || 1 });
+            state.editor.focus();
+          }
+        } catch { /* ignore */ }
+      });
+
+      problemsContent.appendChild(row);
+    }
+  }
+
+  // ── Fix with AI ───────────────────────────────────────────────────────────
+  function fixWithAI() {
+    if (!state.lastBuildOutput) return;
+    const errorSummary = state.buildErrors.map((e) =>
+      `${e.file}:${e.line}: ${e.severity}: ${e.message}`
+    ).join("\n");
+
+    const prompt = `The build failed with the following errors. Please fix them:\n\n${errorSummary}\n\nFull build output:\n${state.lastBuildOutput.slice(-2000)}`;
+    sendPrompt(prompt);
+  }
+
+  // ── Output tab switching ──────────────────────────────────────────────────
+  function switchOutputTab(tabName) {
+    document.querySelectorAll(".out-tab").forEach((t) =>
+      t.classList.toggle("active", t.dataset.tab === tabName)
+    );
+    document.querySelectorAll(".out-pane").forEach((p) => p.classList.remove("active"));
+    const target = tabName === "build" ? buildContent
+                 : tabName === "problems" ? problemsContent
+                 : outputContent;
+    target.classList.add("active");
   }
 
   // ── Agent interaction ──────────────────────────────────────────────────────
@@ -339,9 +682,66 @@
       });
       if (!res.ok) throw new Error(await res.text());
       await loadFileTree();
-      await openFile(path);
+      if (!path.endsWith("/.gitkeep")) {
+        await openFile(path);
+      }
     } catch (e) {
       appendOutput(`Error creating ${path}: ${e.message}\n`);
+    }
+  }
+
+  // ── Import project dialog ─────────────────────────────────────────────────
+  function showImportDialog() {
+    $("import-path").value = "";
+    $("import-dest").value = "";
+    $("import-preview").classList.add("hidden");
+    $("import-preview").textContent = "";
+    $("import-dialog").classList.remove("hidden");
+    $("import-path").focus();
+  }
+
+  async function scanImportFolder() {
+    const path = $("import-path").value.trim();
+    if (!path) return;
+    const preview = $("import-preview");
+    preview.textContent = "Scanning…";
+    preview.classList.remove("hidden");
+    try {
+      const res = await fetch(`/files/scan?path=${encodeURIComponent(path)}`);
+      if (!res.ok) throw new Error((await res.json()).detail || "Scan failed");
+      const data = await res.json();
+      let text = `📁 ${path}\n`;
+      text += `Type: ${(data.detected_types || []).join(", ") || "unknown"}\n`;
+      text += `Files: ${data.total_files || 0}  Dirs: ${data.total_dirs || 0}\n\n`;
+      if (data.entries) {
+        for (const e of data.entries.slice(0, 30)) {
+          text += `  ${e.type === "dir" ? "📁" : "📄"} ${e.name}\n`;
+        }
+        if (data.entries.length > 30) text += `  … and ${data.entries.length - 30} more\n`;
+      }
+      preview.textContent = text;
+    } catch (e) {
+      preview.textContent = `⚠ ${e.message}`;
+    }
+  }
+
+  async function doImport() {
+    const sourcePath = $("import-path").value.trim();
+    if (!sourcePath) return;
+    const destName = $("import-dest").value.trim();
+    try {
+      const res = await fetch("/files/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_path: sourcePath, destination_name: destName }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || "Import failed");
+      const data = await res.json();
+      $("import-dialog").classList.add("hidden");
+      appendOutput(`✓ Imported project: ${data.destination || sourcePath}\n`);
+      await loadFileTree();
+    } catch (e) {
+      appendOutput(`Error importing: ${e.message}\n`);
     }
   }
 
@@ -382,15 +782,30 @@
       // Ctrl+S to save
       state.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveActiveFile);
 
+      // Track cursor position for status bar
+      state.editor.onDidChangeCursorPosition(updateCursorPosition);
+
       // Load file tree after editor is ready
       loadFileTree();
     });
   }
 
+  // ── Output tab wiring ─────────────────────────────────────────────────────
+  document.querySelectorAll(".out-tab").forEach((btn) => {
+    btn.addEventListener("click", () => switchOutputTab(btn.dataset.tab));
+  });
+
   // ── Event wiring ───────────────────────────────────────────────────────────
   $("btn-save").addEventListener("click", saveActiveFile);
   $("btn-run-file").addEventListener("click", runAgentOnFile);
-  $("btn-clear-output").addEventListener("click", clearOutput);
+  $("btn-clear-output").addEventListener("click", () => {
+    clearOutput();
+    buildContent.textContent = "";
+    problemsContent.innerHTML = "";
+    state.buildErrors = [];
+    state.lastBuildOutput = "";
+    $("btn-fix-ai").classList.add("hidden");
+  });
   $("btn-clear-chat").addEventListener("click", () => { chatMessages.innerHTML = ""; });
   $("btn-refresh-tree").addEventListener("click", () => loadFileTree());
 
@@ -414,7 +829,25 @@
     if (e.key === "Escape") newFileDialog.classList.add("hidden");
   });
 
+  // Build & Test buttons
+  $("btn-build").addEventListener("click", () => runBuildOrTest("build"));
+  $("btn-test").addEventListener("click", () => runBuildOrTest("test"));
+
+  // Fix with AI button
+  $("btn-fix-ai").addEventListener("click", fixWithAI);
+
+  // Import project button + dialog
+  $("btn-import-project").addEventListener("click", showImportDialog);
+  $("btn-import-scan").addEventListener("click", scanImportFolder);
+  $("btn-import-ok").addEventListener("click", doImport);
+  $("btn-import-cancel").addEventListener("click", () => $("import-dialog").classList.add("hidden"));
+  $("import-path").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") scanImportFolder();
+    if (e.key === "Escape") $("import-dialog").classList.add("hidden");
+  });
+
   // ── Boot ───────────────────────────────────────────────────────────────────
   initMonaco();
   appendOutput("SwissAgent IDE ready. Open a file or type a prompt to get started.\n");
+  updateStatusBar();
 })();

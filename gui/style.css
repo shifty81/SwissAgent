@@ -16,6 +16,7 @@
   --topbar-h:   44px;
   --tabs-h:     36px;
   --output-h:   180px;
+  --statusbar-h: 24px;
   --font-mono:  "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
   --font-ui:    "Inter", system-ui, sans-serif;
 }
@@ -492,3 +493,105 @@ body {
   #agent-panel { display: none; }
   :root { --sidebar-w: 180px; }
 }
+
+/* ── Status bar ────────────────────────────────────────────────── */
+#status-bar {
+  height: var(--statusbar-h);
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 16px;
+  font-size: 11.5px;
+  flex-shrink: 0;
+  z-index: 100;
+}
+
+#status-bar span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-spacer { flex: 1; }
+
+.sb-idle    { opacity: .7; }
+.sb-running { animation: pulse 1.2s infinite; }
+.sb-error   { color: #f38ba8; }
+
+/* ── Context menu ──────────────────────────────────────────────── */
+.context-menu {
+  position: fixed;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 0;
+  min-width: 170px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  z-index: 1000;
+  font-size: 13px;
+}
+.context-menu.hidden { display: none; }
+
+.ctx-item {
+  padding: 6px 14px;
+  cursor: pointer;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ctx-item:hover { background: var(--accent); color: #fff; }
+.ctx-danger:hover { background: var(--danger); }
+.ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
+
+/* ── Import dialog ─────────────────────────────────────────────── */
+.dialog-wide { min-width: 440px; }
+.dialog-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .6px;
+}
+.import-preview {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  white-space: pre;
+}
+.import-preview.hidden { display: none; }
+#btn-import-scan { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+#btn-import-ok   { background: var(--accent); color: #fff; }
+#btn-import-cancel { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+/* ── Problems panel ────────────────────────────────────────────── */
+#problems-content {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  padding: 0;
+}
+#problems-content.active { display: block; }
+
+.problem-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.problem-row:hover { background: var(--surface2); }
+.problem-icon { font-size: 12px; flex-shrink: 0; }
+.problem-icon.error { color: var(--danger); }
+.problem-icon.warning { color: #f9e2af; }
+.problem-file { color: #89b4fa; font-size: 11px; }
+.problem-line { color: var(--text-dim); font-size: 11px; }
+.problem-msg  { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

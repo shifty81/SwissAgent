@@ -62,6 +62,20 @@ class FileImportRequest(BaseModel):
     overwrite: bool = False
 
 
+class FileRenameRequest(BaseModel):
+    old_path: str
+    new_path: str
+
+
+class FileDeleteRequest(BaseModel):
+    path: str
+
+
+class RoadmapTaskUpdate(BaseModel):
+    status: str
+    notes: str = ""
+
+
 def _safe_path(base_dir: Path, rel: str) -> Path:
     """Resolve *rel* under *base_dir* and reject path-traversal attempts."""
     resolved = (base_dir / rel).resolve()
@@ -337,5 +351,156 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         finally:
             if proc is not None and proc.returncode is None:
                 proc.terminate()
+
+    # ── Roadmap API ─────────────────────────────────────────────────────────
+    @app.get("/roadmap")
+    async def get_roadmap() -> dict[str, Any]:
+        """Return the full roadmap with milestones and tasks."""
+        roadmap_file = base_dir / "workspace" / "roadmap.json"
+        if not roadmap_file.is_file():
+            raise HTTPException(status_code=404, detail="roadmap.json not found")
+        try:
+            data = json.loads(roadmap_file.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+        return data
+
+    @app.patch("/roadmap/task/{task_id}")
+    async def update_roadmap_task(task_id: str, req: RoadmapTaskUpdate) -> dict[str, Any]:
+        """Update a task's status in the roadmap."""
+        valid_statuses = {"pending", "in_progress", "done"}
+        if req.status not in valid_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status '{req.status}'. Must be one of {sorted(valid_statuses)}",
+            )
+        roadmap_file = base_dir / "workspace" / "roadmap.json"
+        if not roadmap_file.is_file():
+            raise HTTPException(status_code=404, detail="roadmap.json not found")
+        try:
+            data = json.loads(roadmap_file.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+        # Find and update the task
+        found = False
+        for milestone in data.get("milestones", []):
+            for task in milestone.get("tasks", []):
+                if task.get("id") == task_id:
+                    task["status"] = req.status
+                    if req.notes:
+                        task["notes"] = req.notes
+                    found = True
+                    break
+            if found:
+                # Recalculate milestone status
+                tasks = milestone.get("tasks", [])
+                statuses = {t.get("status") for t in tasks}
+                if statuses == {"done"}:
+                    milestone["status"] = "done"
+                elif "in_progress" in statuses or ("done" in statuses and "pending" in statuses):
+                    milestone["status"] = "in_progress"
+                break
+
+        if not found:
+            raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
+
+        roadmap_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        return {"status": "ok", "task_id": task_id, "new_status": req.status}
+
+    # ── File rename ─────────────────────────────────────────────────────────
+    @app.post("/files/rename")
+    async def rename_file(req: FileRenameRequest) -> dict[str, str]:
+        """Rename or move a file/directory within allowed roots."""
+        for p in (req.old_path, req.new_path):
+            top = Path(p).parts[0] if Path(p).parts else ""
+            if top not in _BROWSER_ROOTS:
+                raise HTTPException(status_code=403, detail=f"Root '{top}' not writable")
+        src = _safe_path(base_dir, req.old_path)
+        dst = _safe_path(base_dir, req.new_path)
+        if not src.exists():
+            raise HTTPException(status_code=404, detail="Source path not found")
+        if dst.exists():
+            raise HTTPException(status_code=409, detail="Destination already exists")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        src.rename(dst)
+        return {"status": "ok", "old_path": req.old_path, "new_path": req.new_path}
+
+    # ── File / directory delete ─────────────────────────────────────────────
+    @app.post("/files/delete")
+    async def delete_file(req: FileDeleteRequest) -> dict[str, str]:
+        """Delete a file or empty directory within allowed roots."""
+        import shutil
+        top = Path(req.path).parts[0] if Path(req.path).parts else ""
+        if top not in _BROWSER_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not deletable")
+        target = _safe_path(base_dir, req.path)
+        if not target.exists():
+            raise HTTPException(status_code=404, detail="Path not found")
+        if target.is_dir():
+            shutil.rmtree(str(target))
+        else:
+            target.unlink()
+        return {"status": "ok", "path": req.path}
+
+    # ── Full-text search across workspace files ────────────────────────────
+    @app.get("/search")
+    async def search_files(
+        q: str = Query(..., min_length=1, description="Search query"),
+        path: str = Query(default="workspace", description="Root directory to search"),
+        max_results: int = Query(default=50, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """Search for text across all files in the given directory."""
+        import re
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BROWSER_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not searchable")
+        target = _safe_path(base_dir, path)
+        if not target.is_dir():
+            raise HTTPException(status_code=404, detail="Directory not found")
+
+        results: list[dict[str, Any]] = []
+        try:
+            pattern = re.compile(re.escape(q), re.IGNORECASE)
+        except re.error:
+            raise HTTPException(status_code=400, detail="Invalid search pattern")
+
+        _SKIP_DIRS = {".git", "__pycache__", "node_modules", ".swissagent", "build", "dist"}
+        _SKIP_EXTS = {".pyc", ".pyo", ".so", ".dll", ".exe", ".bin", ".png", ".jpg", ".gif", ".ico", ".woff", ".woff2", ".ttf"}
+
+        def _walk(d: Path, rel: str) -> None:
+            if len(results) >= max_results:
+                return
+            try:
+                entries = sorted(d.iterdir(), key=lambda e: e.name)
+            except PermissionError:
+                return
+            for item in entries:
+                if len(results) >= max_results:
+                    return
+                if item.name.startswith(".") and item.is_dir():
+                    continue
+                if item.is_dir():
+                    if item.name in _SKIP_DIRS:
+                        continue
+                    _walk(item, f"{rel}/{item.name}" if rel else item.name)
+                elif item.is_file() and item.suffix.lower() not in _SKIP_EXTS:
+                    try:
+                        text = item.read_text(encoding="utf-8", errors="ignore")
+                    except Exception:
+                        continue
+                    for line_no, line in enumerate(text.splitlines(), 1):
+                        if pattern.search(line):
+                            file_rel = f"{path}/{rel}/{item.name}" if rel else f"{path}/{item.name}"
+                            results.append({
+                                "file": file_rel,
+                                "line": line_no,
+                                "text": line.strip()[:200],
+                            })
+                            if len(results) >= max_results:
+                                return
+
+        await asyncio.get_event_loop().run_in_executor(None, lambda: _walk(target, ""))
+        return {"query": q, "count": len(results), "results": results}
 
     return app

@@ -69,6 +69,7 @@
           <div id="output-tabs">
             <button class="out-tab active" data-tab="output">Output</button>
             <button class="out-tab" data-tab="build">Build / Test</button>
+            <button class="out-tab" data-tab="problems">Problems</button>
           </div>
           <div class="output-actions">
             <button id="btn-fix-ai" class="btn-fix hidden" title="Send build errors to agent for fixing">🪄 Fix with AI</button>
@@ -79,6 +80,8 @@
         <pre id="output-content" class="out-pane active"></pre>
         <!-- Pane: build/test output -->
         <pre id="build-content" class="out-pane"></pre>
+        <!-- Pane: problems list -->
+        <div id="problems-content" class="out-pane"></div>
       </div>
     </div>
 
@@ -100,6 +103,16 @@
     </aside>
   </div>
 
+  <!-- ── Status bar ────────────────────────────────────────────── -->
+  <footer id="status-bar">
+    <span id="sb-file">No file open</span>
+    <span id="sb-cursor">Ln 1, Col 1</span>
+    <span id="sb-language">Plain Text</span>
+    <span class="sb-spacer"></span>
+    <span id="sb-ai-status" class="sb-idle">● AI Idle</span>
+    <span id="sb-version">SwissAgent v0.1.0</span>
+  </footer>
+
   <!-- ── New-file dialog ──────────────────────────────────────── -->
   <div id="new-file-dialog" class="dialog hidden">
     <div class="dialog-box">
@@ -110,6 +123,34 @@
         <button id="btn-new-file-cancel">Cancel</button>
       </div>
     </div>
+  </div>
+
+  <!-- ── Import project dialog ────────────────────────────────── -->
+  <div id="import-dialog" class="dialog hidden">
+    <div class="dialog-box dialog-wide">
+      <h3>📥 Import Project</h3>
+      <label class="dialog-label">Local folder path</label>
+      <input id="import-path" type="text" placeholder="/home/user/my-project" />
+      <label class="dialog-label">Destination name (optional)</label>
+      <input id="import-dest" type="text" placeholder="auto-detected from folder name" />
+      <div id="import-preview" class="import-preview hidden"></div>
+      <div class="dialog-buttons">
+        <button id="btn-import-scan">Scan</button>
+        <button id="btn-import-ok">Import</button>
+        <button id="btn-import-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Context menu ──────────────────────────────────────────── -->
+  <div id="context-menu" class="context-menu hidden">
+    <div class="ctx-item" data-action="new-file">📄 New File</div>
+    <div class="ctx-item" data-action="new-folder">📁 New Folder</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" data-action="rename">✏️ Rename</div>
+    <div class="ctx-item" data-action="copy-path">📋 Copy Path</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item ctx-danger" data-action="delete">🗑 Delete</div>
   </div>
 
   <!-- Monaco Editor loader -->
