@@ -148,3 +148,7 @@ def list_modules(ctx: click.Context) -> None:
         table.add_row(meta.get("name", ""), meta.get("version", ""), meta.get("description", ""))
     console.print(table)
 
+
+if __name__ == "__main__":
+    main()
+

@@ -126,6 +126,37 @@ ok "Directories ready."
 info "Checking Ollama (local LLM backend)…"
 if command -v ollama &>/dev/null; then
   ok "Ollama found at $(command -v ollama)."
+
+  # Read the configured model name from config.toml (default: llama3).
+  OLLAMA_MODEL="llama3"
+  if [[ -f "$ROOT_DIR/configs/config.toml" ]]; then
+    _parsed=$("$PYTHON_CMD" -c "
+import sys, re
+try:
+    import toml
+    data = toml.load('$ROOT_DIR/configs/config.toml')
+    print(data.get('llm', {}).get('ollama', {}).get('model', 'llama3'))
+except Exception:
+    print('llama3')
+" 2>/dev/null)
+    [[ -n "$_parsed" ]] && OLLAMA_MODEL="$_parsed"
+  fi
+
+  # Check whether the required model is already pulled.
+  info "Checking for Ollama model '$OLLAMA_MODEL'…"
+  if ollama list 2>/dev/null | grep -qi "^${OLLAMA_MODEL}[[:space:]:]"; then
+    ok "Ollama model '$OLLAMA_MODEL' is available."
+  else
+    warn "Ollama model '$OLLAMA_MODEL' was not found in 'ollama list'."
+    warn "Pulling it now (this may take several minutes on the first run)…"
+    if ollama pull "$OLLAMA_MODEL"; then
+      ok "Model '$OLLAMA_MODEL' downloaded successfully."
+    else
+      warn "Could not pull '$OLLAMA_MODEL' automatically."
+      warn "Run this manually when ready:  ollama pull $OLLAMA_MODEL"
+      warn "Alternatively, set llm_backend = \"api\" in configs/config.toml."
+    fi
+  fi
 else
   warn "Ollama not found on PATH."
   warn "Install it from https://ollama.com/download, then run:"
@@ -144,15 +175,15 @@ if [[ "$LAUNCH" -eq 1 ]]; then
   info "Starting SwissAgent IDE at http://$HOST:$PORT …"
   info "Press Ctrl+C to stop the server."
   echo ""
-  # Server logs go to both the terminal and the same install log via the tee
-  # already set up above.  The 'ui' command also writes to logs/swissagent.log.
-  exec "$PYTHON_CMD" -m core.cli ui --host "$HOST" --port "$PORT"
+  # Run the server directly (not via exec) so that any startup error is
+  # captured by the tee pipe and shown on screen before this script exits.
+  "$PYTHON_CMD" -m core.cli ui --host "$HOST" --port "$PORT"
 else
   echo "  Quick-start commands:"
-  echo "    swissagent ui                    # Open web IDE in browser"
-  echo "    swissagent serve                 # Start API server only"
-  echo "    swissagent run \"your prompt\"     # Run agent from CLI"
-  echo "    swissagent list-tools            # List all tools"
+  echo "    python -m core.cli ui            # Open web IDE in browser"
+  echo "    python -m core.cli serve         # Start API server only"
+  echo "    python -m core.cli run \"prompt\" # Run agent from CLI"
+  echo "    python -m core.cli list-tools    # List all tools"
   echo ""
   echo "  Run setup + launch together:"
   echo "    bash scripts/install.sh"
