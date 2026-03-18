@@ -620,6 +620,20 @@ body {
 .sb-running { animation: pulse 1.2s infinite; }
 .sb-error   { color: #f38ba8; }
 
+/* Editor mode badge inside the status bar version span */
+#sb-editor-mode {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+  font-weight: 600;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+}
+#sb-editor-mode.mode-monaco   { background: rgba(255,255,255,.18); }
+#sb-editor-mode.mode-fallback { background: #f9e2af33; color: #f9e2af; }
+
 /* ── Context menu ──────────────────────────────────────────────── */
 .context-menu {
   position: fixed;

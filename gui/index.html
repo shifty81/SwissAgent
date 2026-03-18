@@ -127,7 +127,7 @@
     <span id="sb-language">Plain Text</span>
     <span class="sb-spacer"></span>
     <span id="sb-ai-status" class="sb-idle">● AI Idle</span>
-    <span id="sb-version">SwissAgent v0.1.0</span>
+    <span id="sb-version">SwissAgent v0.1.0 <span id="sb-editor-mode"></span></span>
   </footer>
 
   <!-- ── New-file dialog ──────────────────────────────────────── -->
@@ -170,11 +170,12 @@
     <div class="ctx-item ctx-danger" data-action="delete">🗑 Delete</div>
   </div>
 
-  <!-- Monaco Editor loader -->
+  <!-- Monaco Editor loader (CDN — used when online; app.js handles offline fallback) -->
   <script>
     var require = { paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs" } };
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs/loader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs/loader.js"
+          onerror="window.__monacoLoaderFailed=true"></script>
   <script src="/gui/app.js"></script>
 </body>
 </html>

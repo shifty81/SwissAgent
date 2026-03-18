@@ -782,6 +782,14 @@
     $("fallback-editor").classList.add("hidden");
     $("editor-welcome").classList.remove("hidden");
 
+    // Update status-bar editor-mode badge
+    const badge = $("sb-editor-mode");
+    badge.textContent = "Fallback Editor";
+    badge.className = "mode-fallback";
+    badge.title = "Monaco CDN unavailable — using plain-text fallback. Click to reload with Monaco when online.";
+    badge.style.cursor = "pointer";
+    badge.addEventListener("click", () => location.reload());
+
     // Tab key → 4-space indent
     $("fallback-editor").addEventListener("keydown", (e) => {
       if (e.key === "Tab") {
@@ -808,11 +816,17 @@
     $("fallback-editor").addEventListener("click", updateCursorPosition);
 
     loadFileTree();
-    appendOutput("⚠ Monaco editor CDN unavailable — using fallback text editor.\n");
+    appendOutput(
+      "⚠ Monaco Editor CDN unavailable — using plain-text fallback editor.\n" +
+      "All file and agent features still work. " +
+      "Connect to the internet and reload the page to get the full Monaco IDE.\n"
+    );
   }
 
   function initMonaco() {
-    if (typeof require !== "function") {
+    // If the CDN loader script itself failed (onerror set the flag), skip straight
+    // to the fallback rather than waiting for the 8-second timeout.
+    if (typeof require !== "function" || window.__monacoLoaderFailed) {
       initFallbackEditor();
       return;
     }
@@ -861,6 +875,12 @@
       state.editorMode = "monaco";
       $("editor-loading").style.display = "none";
       $("editor-welcome").classList.remove("hidden");
+
+      // Update status-bar editor-mode badge
+      const badge = $("sb-editor-mode");
+      badge.textContent = "Monaco";
+      badge.className = "mode-monaco";
+      badge.title = "Monaco Editor (full IDE — syntax highlighting, IntelliSense, minimap)";
 
       // Ctrl+S to save
       state.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveActiveFile);
