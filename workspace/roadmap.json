@@ -464,12 +464,12 @@
       "id": "m10",
       "title": "Phase 10 \u2014 Production Hardening",
       "description": "Auth, Docker, packaging, performance, persistence",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t10-1",
           "title": "Optional HTTP basic auth for API server",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Configurable via config.toml; protects all endpoints"
         },
@@ -484,28 +484,29 @@
         {
           "id": "t10-3",
           "title": "Electron wrapper for standalone desktop app",
-          "status": "pending",
+          "status": "done",
           "priority": "low",
-          "description": "Wraps the web IDE as a native desktop app with system tray"
+          "description": "Wraps the web IDE as a native desktop app with system tray",
+          "notes": "electron/main.js + preload.js + package.json in electron/"
         },
         {
           "id": "t10-4",
           "title": "Streaming LLM responses (true token-by-token)",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Ollama supports streaming; pipe tokens directly to WebSocket"
         },
         {
           "id": "t10-5",
           "title": "Persistent chat history per project",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Store conversation history in .swissagent/chat_history.json"
         },
         {
           "id": "t10-6",
           "title": "Agent session memory across conversations",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Use memory module to persist key facts between sessions"
         }
@@ -515,7 +516,7 @@
       "id": "m11",
       "title": "Phase 11 \u2014 Open-Source AI Stack",
       "description": "LocalAI Docker runtime, Docker Compose stack, model recommendations, sandboxed code execution",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t11-1",
@@ -562,7 +563,7 @@
         {
           "id": "t11-7",
           "title": "Model download helper in IDE",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "One-click model download panel listing Codestral, DeepSeek R1, Phi-4, Qwen 2.5 Coder"
         }
@@ -615,49 +616,99 @@
       "id": "m13",
       "title": "Phase 13 \u2014 Autonomous Self-Build",
       "description": "SwissAgent reads its own roadmap, implements the next task, runs tests in Docker sandbox, commits, and advances \u2014 fully autonomously",
-      "status": "pending",
+      "status": "done",
       "tasks": [
         {
           "id": "t13-1",
           "title": "Self-build agent loop in dev_mode",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "roadmap_next \u2192 read source \u2192 LLM generates code \u2192 apply_patch \u2192 sandbox test \u2192 pass: commit+advance / fail: rollback+retry (max 3)"
         },
         {
           "id": "t13-2",
           "title": "Docker sandbox executor for test isolation",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Spin up a fresh container per task, run pytest, capture exit code + output, destroy container"
         },
         {
           "id": "t13-3",
           "title": "Autonomous Self-Build button in Roadmap panel",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Opt-in UI button that starts the self-build loop; live log stream; pause/stop controls"
         },
         {
           "id": "t13-4",
           "title": "Self-build guardrails: blocked files, max retries, human-review gate",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Prevent writes to core/permissions.py, configs/; require human approval for tasks tagged review_required"
         },
         {
           "id": "t13-5",
           "title": "Git auto-commit with conventional commit messages",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Each successful task produces: feat(module): <task title> \u2014 committed with co-author SwissAgent"
         },
         {
           "id": "t13-6",
           "title": "Self-build telemetry: success rate, avg iterations, task history",
-          "status": "pending",
+          "status": "done",
           "priority": "low",
           "description": "Store per-task outcomes in .swissagent/self_build_log.json; display in IDE"
+        }
+      ]
+    },
+    {
+      "id": "m14",
+      "title": "Phase 14 \u2014 Code Quality & Developer Experience",
+      "description": "Code formatting, linting, symbol search, workspace stats, diff apply, and code quality panel in IDE",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t14-1",
+          "title": "Code formatter endpoint (POST /format)",
+          "status": "done",
+          "priority": "high",
+          "description": "Format Python/JS/JSON code using black/ruff if available; fallback to ast syntax check"
+        },
+        {
+          "id": "t14-2",
+          "title": "Linter endpoint (POST /lint)",
+          "status": "done",
+          "priority": "high",
+          "description": "Run ruff/pylint/pyflakes on code and return structured diagnostics"
+        },
+        {
+          "id": "t14-3",
+          "title": "Workspace statistics endpoint (GET /stats)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Count files, lines, language breakdown for the workspace"
+        },
+        {
+          "id": "t14-4",
+          "title": "Symbol search endpoint (GET /search/symbol)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Regex-based search for function/class/variable definitions across the workspace"
+        },
+        {
+          "id": "t14-5",
+          "title": "Unified diff apply endpoint (POST /diff/apply)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Apply a unified diff patch to a file in the workspace"
+        },
+        {
+          "id": "t14-6",
+          "title": "Code quality panel in IDE",
+          "status": "done",
+          "priority": "medium",
+          "description": "Panel in the IDE activity bar for running format/lint on current file and viewing diagnostics"
         }
       ]
     }

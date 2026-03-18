@@ -44,3 +44,6 @@ tests/test_filesystem.py
 # Test-generated chat/memory directories
 _test_chat_*/
 _test_mem_*/
+# Electron build artifacts
+electron/node_modules/
+electron/dist/

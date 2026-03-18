@@ -1,0 +1,42 @@
+{
+  "name": "swissagent-desktop",
+  "version": "0.2.0",
+  "description": "SwissAgent — Offline AI Dev Platform (Desktop Wrapper)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "package-mac": "electron-builder --mac",
+    "package-win": "electron-builder --win",
+    "package-linux": "electron-builder --linux"
+  },
+  "keywords": ["ai", "coding-assistant", "offline", "ide"],
+  "author": "SwissAgent",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.0"
+  },
+  "build": {
+    "appId": "com.swissagent.desktop",
+    "productName": "SwissAgent",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "assets/**"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "category": "Development"
+    }
+  }
+}

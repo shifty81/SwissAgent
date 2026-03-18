@@ -43,6 +43,7 @@
       <button class="ab-btn" data-panel="plugins"  title="Plugins">🔌</button>
       <button class="ab-btn" data-panel="scaffold" title="Scaffold">⚡</button>
       <button class="ab-btn" data-panel="models"   title="Model Downloads">📥</button>
+      <button class="ab-btn" data-panel="quality"  title="Code Quality">🔬</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -260,6 +261,24 @@
         </div>
         <div class="sb-panel-body" id="models-panel-content">
           <div style="color:var(--text-dim);font-size:12px;padding:8px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Code Quality panel -->
+      <div class="sb-panel" id="panel-quality">
+        <div class="sidebar-header">
+          <span>🔬 Code Quality</span>
+        </div>
+        <div class="sb-panel-body" id="quality-panel-content">
+          <div style="padding:8px;font-size:12px;color:var(--text-muted,#888)">
+            Format and lint the current file.
+          </div>
+          <div style="padding:4px 8px;display:flex;gap:6px;flex-wrap:wrap">
+            <button id="btn-format-file" style="flex:1;min-width:80px">⚡ Format</button>
+            <button id="btn-lint-file" style="flex:1;min-width:80px">🔍 Lint</button>
+            <button id="btn-workspace-stats" style="flex:1;min-width:80px">📊 Stats</button>
+          </div>
+          <div id="quality-output" style="padding:8px;font-size:11px;font-family:monospace;white-space:pre-wrap;max-height:400px;overflow-y:auto;background:var(--bg2,#1e1e1e);border-radius:4px;margin:4px 8px;min-height:40px"></div>
         </div>
       </div>
 
