@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "swissagent"
-version = "0.1.0"
-description = "Offline AI-powered development platform"
+version = "0.2.0"
+description = "Offline AI-powered development platform with Copilot-style IDE, Ollama/Open WebUI support, and 195+ tools"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110.0",
@@ -18,6 +18,13 @@ dependencies = [
     "gitpython>=3.1.41",
     "Pillow>=10.2.0",
     "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.0",
+    "anyio>=4.0.0",
+    "httpx>=0.27.0",
 ]
 
 [project.scripts]

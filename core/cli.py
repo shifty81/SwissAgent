@@ -22,7 +22,8 @@ def main(ctx: click.Context, debug: bool, config_dir: str) -> None:
 @main.command()
 @click.argument("prompt")
 @click.option("--llm-backend", default="ollama", show_default=True,
-              type=click.Choice(["ollama", "local", "api"]), help="LLM backend to use.")
+              type=click.Choice(["ollama", "local", "api", "openwebui", "localai"]),
+              help="LLM backend to use.")
 @click.pass_context
 def run(ctx: click.Context, prompt: str, llm_backend: str) -> None:
     """Run the agent with a natural language PROMPT."""

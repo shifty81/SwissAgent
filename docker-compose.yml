@@ -1,0 +1,96 @@
+# SwissAgent — full open-source AI development stack
+#
+# Services:
+#   swissagent  — the IDE + agent backend  (http://localhost:8000)
+#   localai     — OpenAI-compatible local LLM runtime (http://localhost:8080)
+#   open-webui  — Copilot Chat-style UI on top of LocalAI (http://localhost:3000)
+#
+# Quick start:
+#   docker compose up -d
+#   open http://localhost:8000   ← SwissAgent IDE
+#   open http://localhost:3000   ← Open WebUI chat
+#
+# To use LocalAI as the LLM backend inside SwissAgent, set in configs/config.toml:
+#   default_llm_backend = "localai"
+#
+# Models are stored in ./models/ on the host so they survive container restarts.
+# Download a model before first use:
+#   docker compose exec localai curl -L -o /models/codestral.gguf \
+#     https://huggingface.co/bartowski/Codestral-22B-v0.1-GGUF/resolve/main/Codestral-22B-v0.1-Q4_K_M.gguf
+
+version: "3.9"
+
+services:
+
+  # ── SwissAgent IDE + REST API ────────────────────────────────────────────────
+  swissagent:
+    build: .
+    image: swissagent:latest
+    container_name: swissagent
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./workspace:/app/workspace
+      - ./projects:/app/projects
+      - ./logs:/app/logs
+      - ./configs:/app/configs
+      - ./plugins:/app/plugins
+    environment:
+      - SWISSAGENT_LLM_BACKEND=localai
+    depends_on:
+      - localai
+    networks:
+      - swissnet
+
+  # ── LocalAI — free, open-source, OpenAI-compatible local LLM ────────────────
+  # Supported models: Codestral, DeepSeek-R1, Phi-4, Llama-3, Mistral, etc.
+  # Model gallery: https://localai.io/models/
+  localai:
+    image: ghcr.io/mudler/localai:latest
+    container_name: localai
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/models
+    environment:
+      - THREADS=4
+      - CONTEXT_SIZE=4096
+      # Uncomment to pre-load a model at startup:
+      # - PRELOAD_MODELS=[{"url":"github:mudler/LocalAI/examples/configurations/phi-2.yaml","name":"phi-2"}]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/readyz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - swissnet
+
+  # ── Open WebUI — Copilot Chat-style brainstorming UI ────────────────────────
+  # Connects to LocalAI; generated code can be pushed into the SwissAgent IDE
+  # via the SwissAgent plugin (plugins/open_webui_tool/).
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    volumes:
+      - open-webui-data:/app/backend/data
+    environment:
+      # Point Open WebUI at LocalAI instead of Ollama
+      - OLLAMA_BASE_URL=http://localai:8080
+      - OPENAI_API_BASE_URL=http://localai:8080/v1
+      - OPENAI_API_KEY=sk-dummy
+    depends_on:
+      - localai
+    networks:
+      - swissnet
+
+volumes:
+  open-webui-data:
+
+networks:
+  swissnet:
+    driver: bridge

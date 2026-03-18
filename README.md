@@ -10,12 +10,14 @@ SwissAgent is a self-hosted, fully offline coding assistant. Give it a prompt an
 ## Features
 
 - 🤖 **Agentic AI loop** — plan → tool-call → execute → reflect, up to 20 iterations per task
-- 🔌 **35 built-in modules** — 175+ tools covering filesystem, git, build, image, audio, render, and more
+- 🔌 **35 built-in modules** — 195+ tools covering filesystem, git, build, image, audio, render, and more
 - 🧩 **Plugin system** — drop a folder into `plugins/` to add custom tools at runtime
 - 🔒 **Permission system** — fine-grained allow/block control over tools and file paths
 - 🖥️ **CLI + REST API** — `swissagent run "…"` from the terminal, or POST to `/run`
 - 📦 **Offline-first** — default backend is [Ollama](https://ollama.com); no API key required
 - 🌐 **OpenAI-compatible API backend** — connect any OpenAI-compatible endpoint (GPT-4o, Anthropic, etc.)
+- 💬 **Open WebUI integration** — optional [Open WebUI](https://github.com/open-webui/open-webui) chat that pushes code directly into the IDE
+- ✂️ **Copilot-style IDE** — code blocks with **⬆ Apply to file** + **📋 Copy** buttons; slash commands `/fix /explain /test /docs /refactor`; Monaco inline ghost-text completions
 - 🎨 **Asset pipeline** — 2D/3D/audio/video asset generation wired into the agent loop
 - 🎙️ **Audio pipeline** — offline TTS via `pyttsx3` and SFX generation via SoX
 - 🖼️ **Stable Diffusion interface** — image generation via AUTOMATIC1111 web-UI API
@@ -104,6 +106,8 @@ swissagent --debug run "build the project with cmake"
 | Backend | Flag | Description |
 |---------|------|-------------|
 | `ollama` *(default)* | `--llm-backend ollama` | Local Ollama server (`http://localhost:11434`). No API key needed. Recommended models: `llama3`, `deepseek-coder`, `codellama`, `qwen2.5-coder` |
+| `localai` | `--llm-backend localai` | [LocalAI](https://github.com/mudler/LocalAI) Docker instance (`http://localhost:8080`). OpenAI-compatible, runs GGUF/GPTQ models. Best choice for Docker Compose deployments. Recommended: `codestral`, `deepseek-r1`, `phi4`. |
+| `openwebui` | `--llm-backend openwebui` | [Open WebUI](https://github.com/open-webui/open-webui) local instance (`http://localhost:3000`). Runs on top of Ollama. Adds a full chat brainstorming UI that can push code directly into the IDE. |
 | `api` | `--llm-backend api` | Any OpenAI-compatible endpoint (OpenAI, Anthropic, Groq, etc.). Set `key` in `configs/config.toml`. |
 | `local` | `--llm-backend local` | GGUF model via `llama-cpp-python` (stub — provide `model_path` in config). |
 
@@ -171,6 +175,20 @@ default_llm_backend = "ollama"
 base_url = "http://localhost:11434"
 model = "llama3"          # any model pulled via `ollama pull <name>`
 
+[llm.openwebui]
+# URL of your running Open WebUI instance.
+# docker run -d -p 3000:8080 ghcr.io/open-webui/open-webui:main
+base_url = "http://localhost:3000"
+key = ""                  # API key from Open WebUI → Settings → Account → API Keys
+model = ""                # leave blank to auto-select the first available model
+
+[llm.localai]
+# URL of your running LocalAI instance.
+# docker run -d -p 8080:8080 -v $(pwd)/models:/models ghcr.io/mudler/localai:latest
+base_url = "http://localhost:8080"
+key = ""                  # no key needed for local use
+model = "codestral"       # any model loaded in LocalAI
+
 [llm.api]
 base_url = "https://api.openai.com"
 key = ""                  # your OpenAI / Anthropic / Groq API key
@@ -214,7 +232,111 @@ curl -X POST http://localhost:8000/run \
 curl -X POST http://localhost:8000/tools/call \
   -H "Content-Type: application/json" \
   -d '{"tool": "read_file", "arguments": {"path": "workspace/main.py"}}'
+
+# Inline code completion (Copilot-style ghost text)
+curl -X POST http://localhost:8000/api/complete \
+  -H "Content-Type: application/json" \
+  -d '{"prefix": "def hello(", "suffix": "", "language": "python"}'
+
+# Push a file into the IDE from an external tool (e.g. Open WebUI)
+curl -X POST http://localhost:8000/api/ide/push \
+  -H "Content-Type: application/json" \
+  -d '{"path": "workspace/generated.py", "content": "print(\"hello\")"}'
+
+# IDE status (used by Open WebUI plugin health-check)
+curl http://localhost:8000/api/ide/status
 ```
+
+## Open WebUI Integration (Optional)
+
+[Open WebUI](https://github.com/open-webui/open-webui) (Apache 2.0) is a self-hosted chat interface that runs on top of Ollama. When combined with SwissAgent it gives you a **GitHub Copilot Chat-style brainstorming session** that can push generated code directly into the IDE editor.
+
+### Quick setup
+
+```bash
+# 1 — Start Open WebUI
+docker run -d -p 3000:8080 \
+  --add-host=host.docker.internal:host-gateway \
+  -v open-webui:/app/backend/data \
+  ghcr.io/open-webui/open-webui:main
+
+# 2 — Set the backend in configs/config.toml
+#     llm_backend = "openwebui"  (or select in the IDE dropdown)
+
+# 3 — Install the SwissAgent tool in Open WebUI
+#     Workspace → Tools → + New Tool → paste plugins/open_webui_tool/plugin.py
+```
+
+See [`plugins/open_webui_tool/README.md`](plugins/open_webui_tool/README.md) for full instructions.
+
+### Available Open WebUI tool functions
+
+| Function | Description |
+|---|---|
+| `push_file_to_ide(path, content)` | Write/update a file; IDE opens it automatically |
+| `read_file_from_ide(path)` | Read an existing workspace file into the chat |
+| `list_workspace_files(path)` | Browse the workspace directory tree |
+| `ide_status()` | Check SwissAgent is running |
+
+## Copilot-style IDE Features
+
+The built-in AI Agent chat panel works without any external services:
+
+| Feature | How to use |
+|---|---|
+| **⬆ Apply to file** | Every code block in a chat reply has an Apply button — one click writes it to the active editor tab |
+| **📋 Copy** | Copy any code block to the clipboard |
+| **Slash commands** | `/fix` `/explain` `/test` `/docs` `/refactor` — auto-inject the currently open file as context |
+| **Inline completions** | Ghost-text suggestions appear as you type in the Monaco editor (requires internet for CDN) |
+| **File push poller** | Files written via `POST /api/ide/push` open in the editor automatically every 3 s |
+
+## Docker — One-Command Full Stack
+
+The fastest way to run the complete open-source AI stack is with Docker Compose:
+
+```bash
+# Start SwissAgent IDE + LocalAI + Open WebUI
+docker compose up -d
+
+# Open the IDE
+open http://localhost:8000
+
+# Open the chat UI (Open WebUI)
+open http://localhost:3000
+
+# Download a coding model into LocalAI (first time only)
+docker compose exec localai \
+  curl -L -o /models/codestral.gguf \
+  https://huggingface.co/bartowski/Codestral-22B-v0.1-GGUF/resolve/main/Codestral-22B-v0.1-Q4_K_M.gguf
+```
+
+Then set `default_llm_backend = "localai"` in `configs/config.toml`.
+
+See [`docs/self_iteration.md`](docs/self_iteration.md) for the full architecture guide.
+
+## Autonomous Self-Build (Roadmap Phase 13)
+
+Once the AI and editor are fully running (Phases 1–10), SwissAgent is designed to
+**build itself** — reading its own roadmap, writing the implementation, running
+tests in a Docker sandbox, and committing the result:
+
+```
+roadmap_next_task()
+  → LLM generates code (LocalAI / Ollama)
+  → dev_mode.apply_patch() writes files
+  → Docker sandbox: pytest tests/
+  → pass  → git commit + roadmap_complete_task() → next task
+  → fail  → feed errors back to LLM (max 3 retries) → rollback on final fail
+```
+
+**Key guardrails:**
+- All generated code runs in an isolated Docker container (never on the host directly)
+- Permission system blocks writes outside `workspace/` and `projects/`
+- `dev_mode.rollback_patch()` reverts any failed self-modification
+- Self-build loop is **opt-in** — triggered only via the "Autonomous Self-Build" button
+
+See [`docs/self_iteration.md`](docs/self_iteration.md) for the full loop diagram,
+model recommendations, and security details.
 
 ## Plugin System
 
@@ -251,10 +373,12 @@ pytest tests/test_modules.py -v
 ```
 SwissAgent/
 ├── core/           # Agent loop, CLI, REST API, config, permissions, tool registry
-├── llm/            # LLM backends: Ollama, OpenAI-compatible API, local GGUF stub
+├── llm/            # LLM backends: Ollama, Open WebUI, OpenAI-compatible API, local GGUF
 ├── modules/        # 35 capability modules (tools.json + src/)
 ├── plugins/        # Drop-in custom tool plugins
-├── configs/        # config.toml — all runtime settings
+│   └── open_webui_tool/  # Open WebUI → IDE push plugin
+├── configs/        # config.toml — all runtime settings (incl. [llm.openwebui])
+├── gui/            # Web IDE (Monaco editor, fallback textarea, Copilot-style chat)
 ├── workspace/      # Default project workspace
 ├── projects/       # Additional managed projects
 ├── models/         # Local GGUF model files
@@ -264,7 +388,7 @@ SwissAgent/
 ├── dev_mode/       # Agent self-upgrade and module patching
 ├── tools/          # Build runner, feedback parser, media pipeline
 ├── templates/      # Project scaffolding templates
-├── scripts/        # install.sh — one-step install + web IDE launch, run_tests.py
+├── scripts/        # install.sh, setup.py, run_tests.py
 ├── tests/          # Pytest test suite
 └── docs/           # Extended documentation
 ```

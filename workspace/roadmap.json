@@ -1,6 +1,6 @@
 {
   "project": "SwissAgent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SwissAgent self-development roadmap. The AI reads this, picks the next task, implements it, and marks it done \u2014 building itself out autonomously.",
   "milestones": [
     {
@@ -507,6 +507,156 @@
           "status": "pending",
           "priority": "high",
           "description": "Use memory module to persist key facts between sessions"
+        }
+      ]
+    },
+    {
+      "id": "m11",
+      "title": "Phase 11 \u2014 Open-Source AI Stack",
+      "description": "LocalAI Docker runtime, Docker Compose stack, model recommendations, sandboxed code execution",
+      "status": "in_progress",
+      "tasks": [
+        {
+          "id": "t11-1",
+          "title": "LocalAI LLM backend (llm/localai.py)",
+          "status": "done",
+          "priority": "high",
+          "description": "OpenAI-compatible local LLM via LocalAI at http://localhost:8080; reuses APILlm base"
+        },
+        {
+          "id": "t11-2",
+          "title": "Add localai + openwebui to CLI --llm-backend choices",
+          "status": "done",
+          "priority": "high",
+          "description": "click.Choice in core/cli.py now includes openwebui and localai"
+        },
+        {
+          "id": "t11-3",
+          "title": "[llm.localai] config section",
+          "status": "done",
+          "priority": "high",
+          "description": "configs/config.toml [llm.localai] with base_url, key, model"
+        },
+        {
+          "id": "t11-4",
+          "title": "Dockerfile for SwissAgent",
+          "status": "done",
+          "priority": "high",
+          "description": "Multi-stage Python 3.11 image; exposes port 8000; mounts workspace volume"
+        },
+        {
+          "id": "t11-5",
+          "title": "docker-compose.yml \u2014 SwissAgent + LocalAI + Open WebUI",
+          "status": "done",
+          "priority": "high",
+          "description": "One-command stack: swissagent (8000) + localai (8080) + open-webui (3000)"
+        },
+        {
+          "id": "t11-6",
+          "title": "Docker sandbox for AI-generated code execution",
+          "status": "pending",
+          "priority": "high",
+          "description": "Run pytest / build commands inside an isolated container; capture output; prevent host damage"
+        },
+        {
+          "id": "t11-7",
+          "title": "Model download helper in IDE",
+          "status": "pending",
+          "priority": "medium",
+          "description": "One-click model download panel listing Codestral, DeepSeek R1, Phi-4, Qwen 2.5 Coder"
+        }
+      ]
+    },
+    {
+      "id": "m12",
+      "title": "Phase 12 \u2014 Self-Scaffolding Engine",
+      "description": "Agent can generate new modules, plugins, tests, and roadmap tasks from a natural language description",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "t12-1",
+          "title": "scaffold_module tool: generate new module skeleton from description",
+          "status": "pending",
+          "priority": "high",
+          "description": "Agent prompts LLM to produce tools.json + src/*.py for a new module; writes to modules/"
+        },
+        {
+          "id": "t12-2",
+          "title": "scaffold_plugin tool: generate plugin from description",
+          "status": "pending",
+          "priority": "high",
+          "description": "Produces plugins/<name>/plugin.py with register() and a README"
+        },
+        {
+          "id": "t12-3",
+          "title": "scaffold_tests tool: generate pytest tests for any module",
+          "status": "pending",
+          "priority": "high",
+          "description": "LLM inspects module source and produces tests/test_<module>.py"
+        },
+        {
+          "id": "t12-4",
+          "title": "roadmap_add_task tool: agent can extend the roadmap",
+          "status": "pending",
+          "priority": "medium",
+          "description": "Append a new task (or whole milestone) to workspace/roadmap.json"
+        },
+        {
+          "id": "t12-5",
+          "title": "Scaffold panel in IDE: describe \u2192 generate \u2192 review \u2192 apply",
+          "status": "pending",
+          "priority": "medium",
+          "description": "UI form that calls scaffold_module/plugin; shows diff before writing files"
+        }
+      ]
+    },
+    {
+      "id": "m13",
+      "title": "Phase 13 \u2014 Autonomous Self-Build",
+      "description": "SwissAgent reads its own roadmap, implements the next task, runs tests in Docker sandbox, commits, and advances \u2014 fully autonomously",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "t13-1",
+          "title": "Self-build agent loop in dev_mode",
+          "status": "pending",
+          "priority": "high",
+          "description": "roadmap_next \u2192 read source \u2192 LLM generates code \u2192 apply_patch \u2192 sandbox test \u2192 pass: commit+advance / fail: rollback+retry (max 3)"
+        },
+        {
+          "id": "t13-2",
+          "title": "Docker sandbox executor for test isolation",
+          "status": "pending",
+          "priority": "high",
+          "description": "Spin up a fresh container per task, run pytest, capture exit code + output, destroy container"
+        },
+        {
+          "id": "t13-3",
+          "title": "Autonomous Self-Build button in Roadmap panel",
+          "status": "pending",
+          "priority": "high",
+          "description": "Opt-in UI button that starts the self-build loop; live log stream; pause/stop controls"
+        },
+        {
+          "id": "t13-4",
+          "title": "Self-build guardrails: blocked files, max retries, human-review gate",
+          "status": "pending",
+          "priority": "high",
+          "description": "Prevent writes to core/permissions.py, configs/; require human approval for tasks tagged review_required"
+        },
+        {
+          "id": "t13-5",
+          "title": "Git auto-commit with conventional commit messages",
+          "status": "pending",
+          "priority": "medium",
+          "description": "Each successful task produces: feat(module): <task title> \u2014 committed with co-author SwissAgent"
+        },
+        {
+          "id": "t13-6",
+          "title": "Self-build telemetry: success rate, avg iterations, task history",
+          "status": "pending",
+          "priority": "low",
+          "description": "Store per-task outcomes in .swissagent/self_build_log.json; display in IDE"
         }
       ]
     }

@@ -20,6 +20,7 @@
       </label>
       <select id="llm-backend-select" title="LLM backend">
         <option value="ollama">Ollama (local)</option>
+        <option value="openwebui">Open WebUI (local)</option>
         <option value="api">OpenAI API</option>
         <option value="local">Local GGUF</option>
       </select>
@@ -61,7 +62,24 @@
         <div id="tabs-list"></div>
       </div>
       <!-- Monaco editor -->
-      <div id="editor-container"></div>
+      <div id="editor-container">
+        <!-- Loading overlay shown while Monaco initialises -->
+        <div id="editor-loading">
+          <div class="editor-spinner"></div>
+          <span>Loading editor…</span>
+        </div>
+        <!-- Welcome screen shown when no file is open -->
+        <div id="editor-welcome" class="hidden">
+          <div class="welcome-content">
+            <div class="welcome-icon">🛠</div>
+            <h2>SwissAgent IDE</h2>
+            <p>Open a file from the sidebar, or create a new one with <kbd>+</kbd></p>
+            <p class="welcome-hint">Use the AI Agent panel on the right to generate or improve code.</p>
+          </div>
+        </div>
+        <!-- Fallback plain-text editor when Monaco CDN is unreachable -->
+        <textarea id="fallback-editor" class="hidden" spellcheck="false"></textarea>
+      </div>
       <!-- Output panel (tabbed) -->
       <div id="output-panel">
         <div id="output-header">
@@ -95,7 +113,7 @@
       <div id="chat-input-area">
         <textarea
           id="chat-input"
-          placeholder="Describe what you want to build or fix…"
+          placeholder="Ask anything… or try /fix  /explain  /test  /docs  /refactor"
           rows="3"
         ></textarea>
         <button id="btn-send-prompt">Send ↵</button>
@@ -110,7 +128,7 @@
     <span id="sb-language">Plain Text</span>
     <span class="sb-spacer"></span>
     <span id="sb-ai-status" class="sb-idle">● AI Idle</span>
-    <span id="sb-version">SwissAgent v0.1.0</span>
+    <span id="sb-version">SwissAgent v0.2.0 <span id="sb-editor-mode"></span></span>
   </footer>
 
   <!-- ── New-file dialog ──────────────────────────────────────── -->
@@ -153,11 +171,12 @@
     <div class="ctx-item ctx-danger" data-action="delete">🗑 Delete</div>
   </div>
 
-  <!-- Monaco Editor loader -->
+  <!-- Monaco Editor loader (CDN — used when online; app.js handles offline fallback) -->
   <script>
     var require = { paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs" } };
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs/loader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs/loader.js"
+          onerror="window.__monacoLoaderFailed=true"></script>
   <script src="/gui/app.js"></script>
 </body>
 </html>

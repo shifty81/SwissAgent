@@ -36,19 +36,38 @@ class OllamaLLM(BaseLLM):
             return f"[ERROR] {exc}"
 
     def tool_call(self, messages: list[dict[str, str]], tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        system_tool_prompt = (
-            "You must respond with a JSON array of tool calls. "
-            "Each item must have 'name' and 'arguments' keys. "
-            "If no tool is needed, return an empty array [].\n"
-            f"Available tools: {json.dumps([t['name'] for t in tools])}"
+        # Build a compact per-tool signature so the model knows argument names/types.
+        tool_lines = []
+        for t in tools:
+            props = t.get("arguments", {}).get("properties", {})
+            required = set(t.get("arguments", {}).get("required", []))
+            params = ", ".join(
+                f"{k}: {v.get('type', 'any')}{'*' if k in required else ''}"
+                for k, v in props.items()
+            )
+            tool_lines.append(f"- {t['name']}({params}): {t.get('description', '')}")
+        tools_text = "\n".join(tool_lines)
+
+        system_content = (
+            "You are a tool-calling assistant. "
+            "Respond ONLY with a valid JSON array of tool calls — no explanation, no markdown.\n"
+            "Format: [{\"name\": \"tool_name\", \"arguments\": {\"arg\": \"value\"}}]\n"
+            "If no tool is needed respond with exactly: []\n\n"
+            f"Available tools (* = required arg):\n{tools_text}"
         )
-        augmented = [{"role": "system", "content": system_tool_prompt}] + messages
+
+        # Drop any existing system message so we don't send two conflicting ones.
+        non_system = [m for m in messages if m.get("role") != "system"]
+        augmented = [{"role": "system", "content": system_content}] + non_system
+
         response = self.chat(augmented)
         try:
             start = response.find("[")
             end = response.rfind("]") + 1
             if start >= 0 and end > start:
-                return json.loads(response[start:end])
-        except Exception:
-            pass
+                parsed = json.loads(response[start:end])
+                if isinstance(parsed, list):
+                    return parsed
+        except Exception as exc:
+            logger.debug("Failed to parse tool-call response: %s", exc)
         return []

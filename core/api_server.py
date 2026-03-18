@@ -83,6 +83,12 @@ class RoadmapTaskUpdate(BaseModel):
     notes: str = ""
 
 
+class IdePushRequest(BaseModel):
+    path: str
+    content: str
+    open_in_editor: bool = True
+
+
 def _safe_path(base_dir: Path, rel: str) -> Path:
     """Resolve *rel* under *base_dir* and reject path-traversal attempts."""
     resolved = (base_dir / rel).resolve()
@@ -96,7 +102,7 @@ def create_app(config_dir: str = "configs") -> FastAPI:
     app = FastAPI(
         title="SwissAgent API",
         description="Offline AI-powered development platform API",
-        version="0.1.0",
+        version="0.2.0",
     )
     base_dir = Path(__file__).resolve().parent.parent
     gui_dir = base_dir / "gui"
@@ -518,4 +524,106 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         await asyncio.get_event_loop().run_in_executor(None, lambda: _walk(target, ""))
         return {"query": q, "count": len(results), "results": results}
 
+    # ── Inline code completion (Copilot-style) ────────────────────────────────
+    class CompleteRequest(BaseModel):
+        prefix: str
+        suffix: str = ""
+        language: str = ""
+        path: str = ""
+        llm_backend: str = ""
+
+    @app.post("/api/complete")
+    async def code_complete(req: CompleteRequest) -> dict[str, Any]:
+        """Return a short code completion for the given prefix/suffix.
+
+        Called by the Monaco InlineCompletionsProvider.  The LLM backend
+        defaults to whatever is configured in ``agent.default_llm_backend``.
+        """
+        from llm.factory import create_llm
+
+        backend = req.llm_backend or config.get("agent.default_llm_backend", "ollama")
+        llm = create_llm(backend, config)
+
+        lang_hint = f"Language: {req.language}\n" if req.language else ""
+        file_hint = f"File: {req.path}\n" if req.path else ""
+        system_msg = (
+            "You are a code completion assistant. "
+            "Complete the code exactly at the <CURSOR> marker. "
+            "Return ONLY the completion text — no explanation, no markdown fences, "
+            "no repetition of the prefix."
+        )
+        user_msg = (
+            f"{lang_hint}{file_hint}"
+            f"Code before cursor:\n{req.prefix[-800:]}\n"
+            f"<CURSOR>\n"
+            f"Code after cursor:\n{req.suffix[:300]}"
+        )
+
+        try:
+            raw = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: llm.chat([
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ]),
+            )
+        except Exception as exc:
+            logger.warning("Code completion error: %s", exc)
+            return {"completion": ""}
+
+        # Strip any accidental markdown fences the LLM might have included
+        completion = raw.strip()
+        if completion.startswith("```"):
+            lines = completion.splitlines()
+            inner = lines[1:-1] if lines and lines[-1].strip() == "```" else lines[1:]
+            completion = "\n".join(inner)
+
+        return {"completion": completion}
+
+    # ── IDE push endpoint (Open WebUI tool / external integrations) ────────────
+    @app.post("/api/ide/push")
+    async def ide_push(req: IdePushRequest) -> dict[str, Any]:
+        """Write a file to the workspace from an external tool (e.g. Open WebUI).
+
+        The IDE frontend polls ``GET /api/ide/pending`` to discover pushed files
+        and open them automatically in the editor.
+        """
+        top = Path(req.path).parts[0] if Path(req.path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Path must be inside {sorted(_BUILD_ROOTS)}",
+            )
+        target = _safe_path(base_dir, req.path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            target.write_text(req.content, encoding="utf-8")
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+        # Track the pushed file so the IDE can open it
+        _ide_pending_pushes.append(req.path)
+        logger.info("IDE push: wrote %s (%d bytes)", req.path, len(req.content))
+        return {"status": "ok", "path": req.path, "bytes": len(req.content)}
+
+    @app.get("/api/ide/pending")
+    async def ide_pending() -> dict[str, Any]:
+        """Return (and clear) the list of recently pushed file paths."""
+        paths = list(_ide_pending_pushes)
+        _ide_pending_pushes.clear()
+        return {"paths": paths}
+
+    @app.get("/api/ide/status")
+    async def ide_status() -> dict[str, Any]:
+        """Lightweight health-check used by Open WebUI tool and status badge."""
+        return {
+            "status": "ok",
+            "version": "0.2.0",
+            "tools": len(registry.list_tools()),
+        }
+
     return app
+
+
+# In-process store for files pushed via /api/ide/push
+_ide_pending_pushes: list[str] = []

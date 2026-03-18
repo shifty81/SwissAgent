@@ -1,10 +1,12 @@
 """API server endpoint tests."""
 from __future__ import annotations
 import json
+import tempfile
 from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from core.api_server import create_app
+import modules.import_project.src.import_tools as import_tools_mod
 
 
 @pytest.fixture(scope="module")
@@ -180,3 +182,92 @@ def test_search_files_no_results(client):
 def test_search_files_forbidden_root(client):
     res = client.get("/search?q=test&path=configs")
     assert res.status_code == 403
+
+
+def test_files_import_normal(client):
+    """Importing a plain external directory into workspace/ should succeed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "my_project"
+        src.mkdir()
+        (src / "hello.txt").write_text("hello")
+        res = client.post(
+            "/files/import",
+            json={"source_path": str(src), "destination_name": "_test_import_normal"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["success"] is True
+        assert data["files_copied"] >= 1
+        # Cleanup
+        client.post("/files/delete", json={"path": "workspace/_test_import_normal"})
+
+
+def test_files_import_self_reference(client, tmp_path):
+    """Importing a directory whose destination is inside the source must succeed
+    without infinite recursion (the 'copy-into-self' scenario that caused the
+    original 400 errors when importing the SwissAgent project itself)."""
+    # Build a mini-project whose workspace dir is a sub-directory of the source
+    src = tmp_path / "SelfProject"
+    src.mkdir()
+    (src / "pyproject.toml").write_text('[project]\nname="test"')
+    (src / "core").mkdir()
+    (src / "core" / "main.py").write_text("# main")
+    workspace_in_src = src / "workspace"
+    workspace_in_src.mkdir()
+    (workspace_in_src / "existing_project").mkdir()
+
+    import modules.import_project.src.import_tools as m
+    original_workspace_root = m._workspace_root
+    m._workspace_root = lambda: workspace_in_src
+    try:
+        res = client.post(
+            "/files/import",
+            json={"source_path": str(src), "destination_name": "SelfProject"},
+        )
+    finally:
+        m._workspace_root = original_workspace_root
+
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["success"] is True
+    # The destination must exist but must NOT contain a copy of workspace/ inside
+    # it (i.e. no infinite recursion artefact)
+    dst = workspace_in_src / "SelfProject"
+    assert dst.exists()
+    assert not (dst / "workspace").exists(), (
+        "workspace/ was copied into itself — the self-reference guard did not work"
+    )
+    assert (dst / "pyproject.toml").exists()
+    assert (dst / "core" / "main.py").exists()
+
+
+def test_files_import_already_exists_no_overwrite(client):
+    """Re-importing without overwrite=true must return 400."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "dup_project"
+        src.mkdir()
+        (src / "file.txt").write_text("data")
+        # First import
+        client.post(
+            "/files/import",
+            json={"source_path": str(src), "destination_name": "_test_import_dup"},
+        )
+        # Second import without overwrite
+        res = client.post(
+            "/files/import",
+            json={"source_path": str(src), "destination_name": "_test_import_dup"},
+        )
+        assert res.status_code == 400
+        assert "already exists" in res.json()["detail"]
+        # Cleanup
+        client.post("/files/delete", json={"path": "workspace/_test_import_dup"})
+
+
+def test_files_import_nonexistent_source(client):
+    """Importing a path that does not exist must return 400."""
+    res = client.post(
+        "/files/import",
+        json={"source_path": "/nonexistent/path/to/project"},
+    )
+    assert res.status_code == 400
+    assert "does not exist" in res.json()["detail"]

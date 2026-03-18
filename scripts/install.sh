@@ -8,7 +8,8 @@
 #   3. Installs SwissAgent and all Python dependencies (pip install -e .)
 #   4. Creates all required project directories
 #   5. Checks whether Ollama is installed (and prints install instructions if not)
-#   6. Starts the web IDE and opens it in the default browser (default behaviour)
+#   6. Optionally checks for Open WebUI (Docker-based chat UI)
+#   7. Starts the web IDE and opens it in the default browser (default behaviour)
 #
 # Examples:
 #   bash scripts/install.sh                          # install + open web IDE
@@ -161,7 +162,25 @@ else
   warn "Ollama not found on PATH."
   warn "Install it from https://ollama.com/download, then run:"
   warn "   ollama pull llama3"
-  warn "Alternatively, set llm_backend = \"api\" in configs/config.toml."
+  warn "Alternatively, set llm_backend = \"api\" or \"openwebui\" in configs/config.toml."
+fi
+
+# ── Open WebUI check (optional) ─────────────────────────────────────────────
+info "Checking Open WebUI (optional chat UI)…"
+if command -v docker &>/dev/null; then
+  if docker ps 2>/dev/null | grep -q "open-webui"; then
+    ok "Open WebUI container is already running."
+  else
+    warn "Open WebUI is not running."
+    warn "To get a GitHub Copilot Chat-style brainstorming UI, start it with:"
+    warn "   docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway \\"
+    warn "     -v open-webui:/app/backend/data ghcr.io/open-webui/open-webui:main"
+    warn "Then set llm_backend = \"openwebui\" in configs/config.toml."
+    warn "Install the SwissAgent plugin from plugins/open_webui_tool/ for IDE push support."
+  fi
+else
+  warn "Docker not found — Open WebUI requires Docker."
+  warn "See plugins/open_webui_tool/README.md for setup instructions."
 fi
 
 # ── Done ────────────────────────────────────────────────────────────────────
@@ -184,6 +203,15 @@ else
   echo "    python -m core.cli serve         # Start API server only"
   echo "    python -m core.cli run \"prompt\" # Run agent from CLI"
   echo "    python -m core.cli list-tools    # List all tools"
+  echo ""
+  echo "  IDE features:"
+  echo "    • Slash commands in chat: /fix  /explain  /test  /docs  /refactor"
+  echo "    • Code blocks have ⬆ Apply to file + 📋 Copy buttons"
+  echo "    • Inline completions (Monaco, requires internet for CDN)"
+  echo "    • Files pushed via POST /api/ide/push open automatically"
+  echo ""
+  echo "  LLM backends:  ollama (default) | api | openwebui | local"
+  echo "  See configs/config.toml to configure backends."
   echo ""
   echo "  Run setup + launch together:"
   echo "    bash scripts/install.sh"

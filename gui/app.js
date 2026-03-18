@@ -8,11 +8,16 @@
   // ── Constants ───────────────────────────────────────────────────────────────
   const MAX_BUILD_OUTPUT_FOR_AI = 2000;
 
+  // ── Code-block store — keyed by incrementing ID to avoid encoding issues ────
+  const _codeStore = new Map();
+  let   _codeStoreSeq = 0;
+
   // ── State ──────────────────────────────────────────────────────────────────
   const state = {
     openFiles: {},        // path → { content, language, modified, model }
     activeFile: null,     // currently visible path
     editor: null,         // Monaco editor instance
+    editorMode: null,     // "monaco" | "fallback" | null
     ws: null,             // active WebSocket for /ws/run
     currentWsAbort: null, // AbortController for fetch-based fallback
     buildErrors: [],      // parsed error objects from last build
@@ -69,6 +74,84 @@
     return msg;
   }
 
+  // ── Code-block rendering (Copilot-style Apply + Copy buttons) ────────────
+  /** Parse ```lang\ncode``` fences and return an HTML string with action buttons. */
+  function _renderCodeBlocks(rawText) {
+    // Safely escape text outside code fences
+    function escHtml(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    const parts = rawText.split(/(```[\w]*\n[\s\S]*?```)/g);
+    return parts.map((part) => {
+      const m = part.match(/^```([\w]*)\n([\s\S]*?)```$/);
+      if (!m) return `<span class="chat-text">${escHtml(part)}</span>`;
+      const lang = m[1] || "text";
+      const code = m[2].trimEnd();
+      const id = ++_codeStoreSeq;
+      _codeStore.set(id, code);
+      return (
+        `<div class="code-block">` +
+        `<div class="code-block-header">` +
+        `<span class="code-lang">${escHtml(lang)}</span>` +
+        `<div class="code-block-actions">` +
+        `<button class="code-copy-btn" data-cid="${id}" title="Copy to clipboard">📋 Copy</button>` +
+        `<button class="code-apply-btn" data-cid="${id}" title="Apply to active file">⬆ Apply to file</button>` +
+        `</div></div>` +
+        `<pre class="code-content"><code>${escHtml(code)}</code></pre>` +
+        `</div>`
+      );
+    }).join("");
+  }
+
+  /** Wire the Copy / Apply buttons inside a rendered chat message element. */
+  function _bindCodeButtons(msgEl) {
+    msgEl.querySelectorAll(".code-copy-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const code = _codeStore.get(Number(btn.dataset.cid));
+        if (code === undefined) return;
+        navigator.clipboard.writeText(code).catch(() => appendOutput(`Code:\n${code}\n`));
+        btn.textContent = "✓ Copied";
+        setTimeout(() => { btn.textContent = "📋 Copy"; }, 1500);
+      });
+    });
+    msgEl.querySelectorAll(".code-apply-btn").forEach((btn) => {
+      btn.addEventListener("click", () => _applyCodeToEditor(Number(btn.dataset.cid)));
+    });
+  }
+
+  /** Replace a streaming-complete agent message's textContent with rendered HTML. */
+  function _finaliseAgentMessage(msgEl) {
+    const raw = msgEl.textContent;
+    if (!raw.includes("```")) return; // nothing to render
+    msgEl.innerHTML = _renderCodeBlocks(raw);
+    _bindCodeButtons(msgEl);
+  }
+
+  /** Apply a stored code snippet to the active editor file. */
+  function _applyCodeToEditor(codeId) {
+    const code = _codeStore.get(codeId);
+    if (code === undefined) return;
+    if (!state.activeFile) {
+      // Prompt for a filename
+      const name = prompt("No file open. Enter a workspace path to create:", "workspace/snippet.txt");
+      if (!name) return;
+      createNewFile(name).then(() => {
+        setTimeout(() => _applyCodeToEditor(codeId), 400);
+      });
+      return;
+    }
+    if (state.editorMode === "monaco" && state.openFiles[state.activeFile]?.model) {
+      state.openFiles[state.activeFile].model.setValue(code);
+    } else if (state.editorMode === "fallback") {
+      $("fallback-editor").value = code;
+      if (state.openFiles[state.activeFile]) state.openFiles[state.activeFile].content = code;
+    }
+    markModified(state.activeFile);
+    appendOutput(`⬆ Applied code block to ${state.activeFile}\n`);
+    switchOutputTab("output");
+  }
+
   function extToLang(path) {
     const ext = path.split(".").pop().toLowerCase();
     const map = {
@@ -107,11 +190,18 @@
   }
 
   function updateCursorPosition() {
-    if (state.editor) {
+    if (state.editorMode === "monaco" && state.editor) {
       const pos = state.editor.getPosition();
       if (pos) {
         sbCursor.textContent = `Ln ${pos.lineNumber}, Col ${pos.column}`;
       }
+    } else if (state.editorMode === "fallback") {
+      const ta = $("fallback-editor");
+      const text = ta.value.substring(0, ta.selectionStart);
+      const lines = text.split("\n");
+      const line = lines.length;
+      const col = lines[lines.length - 1].length + 1;
+      sbCursor.textContent = `Ln ${line}, Col ${col}`;
     }
   }
 
@@ -295,9 +385,13 @@
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       const lang = extToLang(path);
-      const model = monaco.editor.createModel(data.content, lang);
-      model.onDidChangeContent(() => markModified(path));
-      state.openFiles[path] = { content: data.content, language: lang, modified: false, model };
+      if (state.editorMode === "monaco") {
+        const model = monaco.editor.createModel(data.content, lang);
+        model.onDidChangeContent(() => markModified(path));
+        state.openFiles[path] = { content: data.content, language: lang, modified: false, model };
+      } else {
+        state.openFiles[path] = { content: data.content, language: lang, modified: false, model: null };
+      }
       addTab(path);
       activateTab(path);
     } catch (e) {
@@ -329,9 +423,13 @@
     state.activeFile = path;
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.path === path));
     document.querySelectorAll(".tree-item.file").forEach((t) => t.classList.toggle("active", t.dataset.path === path));
-    if (state.editor && state.openFiles[path]) {
+    if (state.editorMode === "monaco" && state.editor && state.openFiles[path]) {
       state.editor.setModel(state.openFiles[path].model);
+    } else if (state.editorMode === "fallback" && state.openFiles[path]) {
+      $("fallback-editor").value = state.openFiles[path]?.content ?? "";
+      $("fallback-editor").classList.remove("hidden");
     }
+    $("editor-welcome").classList.add("hidden");
     updateStatusBar();
   }
 
@@ -349,7 +447,12 @@
       if (remaining.length > 0) activateTab(remaining[remaining.length - 1]);
       else {
         state.activeFile = null;
-        if (state.editor) state.editor.setModel(null);
+        if (state.editorMode === "monaco" && state.editor) state.editor.setModel(null);
+        if (state.editorMode === "fallback") {
+          $("fallback-editor").value = "";
+          $("fallback-editor").classList.add("hidden");
+          $("editor-welcome").classList.remove("hidden");
+        }
         updateStatusBar();
       }
     }
@@ -369,7 +472,10 @@
     if (!path) return;
     const file = state.openFiles[path];
     if (!file) return;
-    const content = file.model.getValue();
+    const content = state.editorMode === "monaco"
+      ? file.model.getValue()
+      : $("fallback-editor").value;
+    if (state.editorMode === "fallback") file.content = content;
     try {
       const res = await fetch("/files/write", {
         method: "POST",
@@ -580,11 +686,52 @@
     target.classList.add("active");
   }
 
+  // ── Slash commands ─────────────────────────────────────────────────────────
+  /** Expand /fix /explain /test /docs into a full context-aware prompt. */
+  function _expandSlashCommand(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith("/")) return raw;
+
+    const activeContent = (() => {
+      if (!state.activeFile) return "";
+      if (state.editorMode === "monaco" && state.openFiles[state.activeFile]?.model) {
+        return state.openFiles[state.activeFile].model.getValue();
+      }
+      if (state.editorMode === "fallback") {
+        return $("fallback-editor").value || state.openFiles[state.activeFile]?.content || "";
+      }
+      return state.openFiles[state.activeFile]?.content || "";
+    })();
+
+    const fileLine = state.activeFile ? `File: \`${state.activeFile}\`` : "";
+    const fence = (c) => (c ? `\n\`\`\`\n${c}\n\`\`\`` : "");
+
+    const [cmd, ...rest] = trimmed.split(/\s+([\s\S]*)/).filter(Boolean);
+    const extra = rest.join(" ").trim();
+
+    switch (cmd.toLowerCase()) {
+      case "/fix":
+        return `${fileLine}\nFix the bugs or issues in this code${extra ? `: ${extra}` : "."}${fence(activeContent)}`;
+      case "/explain":
+        return `${fileLine}\nExplain what this code does in clear, concise terms.${fence(activeContent)}`;
+      case "/test":
+        return `${fileLine}\nWrite unit tests for this code. Return only the test code in a code block.${fence(activeContent)}`;
+      case "/docs":
+        return `${fileLine}\nAdd docstrings/comments to every function and class in this code. Return the fully documented version.${fence(activeContent)}`;
+      case "/refactor":
+        return `${fileLine}\nRefactor this code to improve readability and maintainability${extra ? `: ${extra}` : "."}${fence(activeContent)}`;
+      default:
+        return raw;
+    }
+  }
+
   // ── Agent interaction ──────────────────────────────────────────────────────
   async function sendPrompt(promptText) {
     if (!promptText.trim()) return;
 
-    appendChat(promptText, "user");
+    const expandedPrompt = _expandSlashCommand(promptText);
+
+    appendChat(promptText, "user");   // show original text in chat
     chatInput.value = "";
     setStatus("running");
     $("btn-send-prompt").disabled = true;
@@ -600,11 +747,14 @@
     const wsUrl = `${wsProto}://${location.host}/ws/run`;
 
     try {
-      await streamViaWebSocket(wsUrl, promptText, backend, agentMsg);
+      await streamViaWebSocket(wsUrl, expandedPrompt, backend, agentMsg);
     } catch {
       // WebSocket unavailable — fallback to plain fetch
-      await runViaFetch(promptText, backend, agentMsg);
+      await runViaFetch(expandedPrompt, backend, agentMsg);
     }
+
+    // Render code blocks now that the full response is available
+    _finaliseAgentMessage(agentMsg);
 
     setStatus("idle");
     $("btn-send-prompt").disabled = false;
@@ -670,7 +820,10 @@
       appendOutput("No file open.\n");
       return;
     }
-    const content = state.openFiles[path]?.model?.getValue() || "";
+    const file = state.openFiles[path];
+    const content = state.editorMode === "monaco"
+      ? (file?.model?.getValue() ?? "")
+      : ($("fallback-editor").value || file?.content || "");
     const prompt = `Review and improve the file '${path}':\n\n${content}`;
     sendPrompt(prompt);
   }
@@ -714,8 +867,8 @@
       if (!res.ok) throw new Error((await res.json()).detail || "Scan failed");
       const data = await res.json();
       let text = `📁 ${path}\n`;
-      text += `Type: ${(data.detected_types || []).join(", ") || "unknown"}\n`;
-      text += `Files: ${data.total_files || 0}  Dirs: ${data.total_dirs || 0}\n\n`;
+      text += `Type: ${(data.summary?.detected_project_types ?? []).join(", ") || "unknown"}\n`;
+      text += `Files: ${data.summary?.total_files ?? 0}  Dirs: ${data.summary?.total_dirs ?? 0}\n\n`;
       if (data.entries) {
         for (const e of data.entries.slice(0, 30)) {
           text += `  ${e.type === "dir" ? "📁" : "📄"} ${e.name}\n`;
@@ -749,8 +902,72 @@
   }
 
   // ── Monaco init ────────────────────────────────────────────────────────────
+  function initFallbackEditor() {
+    state.editorMode = "fallback";
+    $("editor-loading").style.display = "none";
+    $("fallback-editor").classList.add("hidden");
+    $("editor-welcome").classList.remove("hidden");
+
+    // Update status-bar editor-mode badge
+    const badge = $("sb-editor-mode");
+    badge.textContent = "Fallback Editor";
+    badge.className = "mode-fallback";
+    badge.title = "Monaco CDN unavailable — using plain-text fallback. Click to reload with Monaco when online.";
+    badge.style.cursor = "pointer";
+    badge.addEventListener("click", () => location.reload());
+
+    // Tab key → 4-space indent
+    $("fallback-editor").addEventListener("keydown", (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const ta = $("fallback-editor");
+        const start = ta.selectionStart;
+        const end = ta.selectionEnd;
+        ta.value = ta.value.substring(0, start) + "    " + ta.value.substring(end);
+        ta.selectionStart = ta.selectionEnd = start + 4;
+        if (state.activeFile) markModified(state.activeFile);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        saveActiveFile();
+      }
+    });
+
+    $("fallback-editor").addEventListener("input", () => {
+      if (state.activeFile) markModified(state.activeFile);
+      updateCursorPosition();
+    });
+
+    $("fallback-editor").addEventListener("keyup", updateCursorPosition);
+    $("fallback-editor").addEventListener("click", updateCursorPosition);
+
+    loadFileTree();
+    appendOutput(
+      "⚠ Monaco Editor CDN unavailable — using plain-text fallback editor.\n" +
+      "All file and agent features (slash commands, Apply buttons) still work.\n" +
+      "Connect to the internet and reload the page to get the full Monaco IDE.\n"
+    );
+    _startPendingPushPoller();
+  }
+
   function initMonaco() {
+    // If the CDN loader script itself failed (onerror set the flag), skip straight
+    // to the fallback rather than waiting for the 8-second timeout.
+    if (typeof require !== "function" || window.__monacoLoaderFailed) {
+      initFallbackEditor();
+      return;
+    }
+
+    let monacoLoaded = false;
+    const fallbackTimer = setTimeout(() => {
+      if (!monacoLoaded) initFallbackEditor();
+    }, 8000);
+
     require(["vs/editor/editor.main"], function () {
+      if (monacoLoaded) return; // guard against double-fire
+      monacoLoaded = true;
+      clearTimeout(fallbackTimer);
+
       monaco.editor.defineTheme("swissagent-dark", {
         base: "vs-dark",
         inherit: true,
@@ -782,15 +999,84 @@
         model: null,
       });
 
+      state.editorMode = "monaco";
+      $("editor-loading").style.display = "none";
+      $("editor-welcome").classList.remove("hidden");
+
+      // Update status-bar editor-mode badge
+      const badge = $("sb-editor-mode");
+      badge.textContent = "Monaco";
+      badge.className = "mode-monaco";
+      badge.title = "Monaco Editor (full IDE — syntax highlighting, IntelliSense, minimap)";
+
       // Ctrl+S to save
       state.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveActiveFile);
 
       // Track cursor position for status bar
       state.editor.onDidChangeCursorPosition(updateCursorPosition);
 
+      // ── Copilot-style inline completions ──────────────────────────────────
+      let _completionTimer = null;
+      monaco.languages.registerInlineCompletionsProvider({ pattern: "**" }, {
+        provideInlineCompletions(model, position) {
+          return new Promise((resolve) => {
+            clearTimeout(_completionTimer);
+            _completionTimer = setTimeout(async () => {
+              try {
+                const offset   = model.getOffsetAt(position);
+                const allText  = model.getValue();
+                const prefix   = allText.slice(0, offset);
+                const suffix   = allText.slice(offset);
+                const res = await fetch("/api/complete", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    prefix,
+                    suffix,
+                    language: model.getLanguageId(),
+                    path: state.activeFile || "",
+                    llm_backend: llmSelect.value,
+                  }),
+                });
+                if (!res.ok) { resolve({ items: [] }); return; }
+                const data = await res.json();
+                if (!data.completion) { resolve({ items: [] }); return; }
+                resolve({
+                  items: [{
+                    insertText: data.completion,
+                    range: new monaco.Range(
+                      position.lineNumber, position.column,
+                      position.lineNumber, position.column,
+                    ),
+                  }],
+                });
+              } catch { resolve({ items: [] }); }
+            }, 700);
+          });
+        },
+        freeInlineCompletions() {},
+      });
+
       // Load file tree after editor is ready
       loadFileTree();
+      _startPendingPushPoller();
     });
+  }
+
+  // ── Pending-push poller (files pushed via /api/ide/push open automatically) ─
+  function _startPendingPushPoller() {
+    setInterval(async () => {
+      try {
+        const res = await fetch("/api/ide/pending");
+        if (!res.ok) return;
+        const { paths } = await res.json();
+        for (const p of paths) {
+          await openFile(p);
+          appendOutput(`📥 File pushed to IDE: ${p}\n`);
+        }
+        if (paths.length) await loadFileTree();
+      } catch { /* server may not be ready yet */ }
+    }, 3000);
   }
 
   // ── Output tab wiring ─────────────────────────────────────────────────────

@@ -69,10 +69,37 @@ def _check_ollama() -> None:
                SwissAgent uses Ollama as the default LLM backend (100% offline).
                Install it from https://ollama.com/download, then run:
                    ollama pull llama3
-               You can also use an OpenAI-compatible API by setting
-               llm_backend = "api" in configs/config.toml.
+               You can also use:
+                 • An OpenAI-compatible API:  set llm_backend = "api" in configs/config.toml
+                 • Open WebUI (chat UI):      set llm_backend = "openwebui" (see below)
             """)
         )
+
+
+def _check_open_webui() -> None:
+    print("\n[3b/4] Checking Open WebUI (optional chat UI)…")
+    if shutil.which("docker"):
+        result = subprocess.run(
+            ["docker", "ps", "--filter", "name=open-webui", "--format", "{{.Names}}"],
+            capture_output=True, text=True,
+        )
+        if result.stdout.strip():
+            print("      ✓ Open WebUI container is running.")
+        else:
+            print(
+                textwrap.dedent("""\
+                ℹ  Open WebUI is not running (optional).
+                   To get a GitHub Copilot Chat-style brainstorming UI, run:
+                       docker run -d -p 3000:8080 \\
+                         --add-host=host.docker.internal:host-gateway \\
+                         -v open-webui:/app/backend/data \\
+                         ghcr.io/open-webui/open-webui:main
+                   Then set llm_backend = "openwebui" in configs/config.toml.
+                   Install the plugin from plugins/open_webui_tool/ for IDE push support.
+                """)
+            )
+    else:
+        print("      ℹ  Docker not found — Open WebUI requires Docker (optional).")
 
 
 def _print_summary(root: Path, launch: bool) -> None:
@@ -84,7 +111,7 @@ def _print_summary(root: Path, launch: bool) -> None:
         print("      Launching SwissAgent IDE in your browser…")
     else:
         print(
-            textwrap.dedent(f"""\
+            textwrap.dedent("""\
             Quick-start commands:
               # Open the web IDE (auto-opens browser):
               swissagent ui
@@ -97,6 +124,15 @@ def _print_summary(root: Path, launch: bool) -> None:
 
               # List available tools:
               swissagent list-tools
+
+            IDE features:
+              • Slash commands in chat: /fix  /explain  /test  /docs  /refactor
+              • Code blocks have ⬆ Apply to file + 📋 Copy buttons
+              • Inline completions (Monaco editor, requires internet for CDN)
+              • Files pushed via POST /api/ide/push open automatically
+
+            LLM backends:  ollama (default) | api | openwebui | local
+            See configs/config.toml to configure.
             """)
         )
 
@@ -123,6 +159,7 @@ def main() -> None:
     _install_deps(root)
     _create_dirs(root)
     _check_ollama()
+    _check_open_webui()
     _print_summary(root, args.launch)
 
     if args.launch:
