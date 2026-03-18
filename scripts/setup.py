@@ -78,6 +78,8 @@ def _check_ollama() -> None:
 def _print_summary(root: Path, launch: bool) -> None:
     print("\n[4/4] Setup complete! 🎉")
     print()
+    print("      Logs will be written to: logs/swissagent.log")
+    print()
     if launch:
         print("      Launching SwissAgent IDE in your browser…")
     else:

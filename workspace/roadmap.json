@@ -1,147 +1,513 @@
 {
   "project": "SwissAgent",
   "version": "0.1.0",
-  "description": "SwissAgent self-development roadmap. The AI reads this, picks the next task, implements it, and marks it done — building itself out autonomously.",
+  "description": "SwissAgent self-development roadmap. The AI reads this, picks the next task, implements it, and marks it done \u2014 building itself out autonomously.",
   "milestones": [
     {
       "id": "m1",
-      "title": "Phase 1 — Foundation",
+      "title": "Phase 1 \u2014 Foundation",
       "description": "Core agent engine, CLI, REST API, 35 capability modules",
       "status": "done",
       "tasks": [
-        {"id": "t1-1", "title": "Core agent loop (plan→tool_call→execute→reflect)", "status": "done", "priority": "high", "description": "Agentic loop with up to 20 iterations"},
-        {"id": "t1-2", "title": "Click-based CLI", "status": "done", "priority": "high", "description": "swissagent run/serve/list-tools/list-modules commands"},
-        {"id": "t1-3", "title": "FastAPI REST server", "status": "done", "priority": "high", "description": "POST /run, GET /tools, POST /tools/call, GET /health"},
-        {"id": "t1-4", "title": "Module auto-discovery system", "status": "done", "priority": "high", "description": "ModuleLoader scans modules/ and registers all tools.json"},
-        {"id": "t1-5", "title": "Plugin system", "status": "done", "priority": "medium", "description": "PluginLoader auto-discovers drop-in plugins from plugins/"},
-        {"id": "t1-6", "title": "Permission system", "status": "done", "priority": "high", "description": "Fine-grained allow/block per tool and file path"},
-        {"id": "t1-7", "title": "35 capability modules (175+ tools)", "status": "done", "priority": "high", "description": "filesystem, git, build, script, network, image, audio, db, etc."}
+        {
+          "id": "t1-1",
+          "title": "Core agent loop (plan\u2192tool_call\u2192execute\u2192reflect)",
+          "status": "done",
+          "priority": "high",
+          "description": "Agentic loop with up to 20 iterations"
+        },
+        {
+          "id": "t1-2",
+          "title": "Click-based CLI",
+          "status": "done",
+          "priority": "high",
+          "description": "swissagent run/serve/list-tools/list-modules commands"
+        },
+        {
+          "id": "t1-3",
+          "title": "FastAPI REST server",
+          "status": "done",
+          "priority": "high",
+          "description": "POST /run, GET /tools, POST /tools/call, GET /health"
+        },
+        {
+          "id": "t1-4",
+          "title": "Module auto-discovery system",
+          "status": "done",
+          "priority": "high",
+          "description": "ModuleLoader scans modules/ and registers all tools.json"
+        },
+        {
+          "id": "t1-5",
+          "title": "Plugin system",
+          "status": "done",
+          "priority": "medium",
+          "description": "PluginLoader auto-discovers drop-in plugins from plugins/"
+        },
+        {
+          "id": "t1-6",
+          "title": "Permission system",
+          "status": "done",
+          "priority": "high",
+          "description": "Fine-grained allow/block per tool and file path"
+        },
+        {
+          "id": "t1-7",
+          "title": "35 capability modules (175+ tools)",
+          "status": "done",
+          "priority": "high",
+          "description": "filesystem, git, build, script, network, image, audio, db, etc."
+        }
       ]
     },
     {
       "id": "m2",
-      "title": "Phase 2 — Web IDE Foundation",
+      "title": "Phase 2 \u2014 Web IDE Foundation",
       "description": "Monaco editor, file browser, AI agent chat, WebSocket streaming, setup automation",
       "status": "done",
       "tasks": [
-        {"id": "t2-1", "title": "Monaco Editor integration (VS Code engine)", "status": "done", "priority": "high", "description": "Full Monaco editor served from FastAPI with custom dark theme"},
-        {"id": "t2-2", "title": "File tree browser with expand/collapse", "status": "done", "priority": "high", "description": "Lazy-loads directory contents on expand"},
-        {"id": "t2-3", "title": "AI agent chat panel with WebSocket streaming", "status": "done", "priority": "high", "description": "Real-time agent output streamed via /ws/run WebSocket"},
-        {"id": "t2-4", "title": "File read/write API endpoints", "status": "done", "priority": "high", "description": "GET /files, GET /files/read, POST /files/write with path-traversal protection"},
-        {"id": "t2-5", "title": "swissagent ui CLI command", "status": "done", "priority": "high", "description": "Launches server + auto-opens browser"},
-        {"id": "t2-6", "title": "scripts/install.sh one-liner bootstrap", "status": "done", "priority": "high", "description": "bash scripts/install.sh --launch sets up everything and opens IDE"}
+        {
+          "id": "t2-1",
+          "title": "Monaco Editor integration (VS Code engine)",
+          "status": "done",
+          "priority": "high",
+          "description": "Full Monaco editor served from FastAPI with custom dark theme"
+        },
+        {
+          "id": "t2-2",
+          "title": "File tree browser with expand/collapse",
+          "status": "done",
+          "priority": "high",
+          "description": "Lazy-loads directory contents on expand"
+        },
+        {
+          "id": "t2-3",
+          "title": "AI agent chat panel with WebSocket streaming",
+          "status": "done",
+          "priority": "high",
+          "description": "Real-time agent output streamed via /ws/run WebSocket"
+        },
+        {
+          "id": "t2-4",
+          "title": "File read/write API endpoints",
+          "status": "done",
+          "priority": "high",
+          "description": "GET /files, GET /files/read, POST /files/write with path-traversal protection"
+        },
+        {
+          "id": "t2-5",
+          "title": "swissagent ui CLI command",
+          "status": "done",
+          "priority": "high",
+          "description": "Launches server + auto-opens browser"
+        },
+        {
+          "id": "t2-6",
+          "title": "scripts/install.sh one-liner bootstrap",
+          "status": "done",
+          "priority": "high",
+          "description": "bash scripts/install.sh --launch sets up everything and opens IDE"
+        }
       ]
     },
     {
       "id": "m3",
-      "title": "Phase 3 — Build & Test Integration",
+      "title": "Phase 3 \u2014 Build & Test Integration",
       "description": "Real-time build streaming, auto-detect build system, terminal, problems panel",
       "status": "in_progress",
       "tasks": [
-        {"id": "t3-1", "title": "/ws/terminal WebSocket subprocess streaming", "status": "done", "priority": "high", "description": "Streams stdout+stderr of any shell command in real-time"},
-        {"id": "t3-2", "title": "/build/detect auto-detect build system", "status": "done", "priority": "high", "description": "Detects cmake/npm/cargo/python/make from project marker files"},
-        {"id": "t3-3", "title": "Build/Test tabbed output panel in IDE", "status": "pending", "priority": "high", "description": "Separate Build tab showing live build output with ANSI color"},
-        {"id": "t3-4", "title": "Fix with AI button on build failure", "status": "pending", "priority": "high", "description": "Extracts errors and sends to agent with file context"},
-        {"id": "t3-5", "title": "Auto-rebuild on save toggle", "status": "pending", "priority": "medium", "description": "Checkbox in toolbar; triggers build after each file save"},
-        {"id": "t3-6", "title": "Problems panel: list errors/warnings with file+line links", "status": "pending", "priority": "high", "description": "Parse build output for error patterns; click to jump to line"},
-        {"id": "t3-7", "title": "Real interactive terminal tab (full PTY)", "status": "pending", "priority": "high", "description": "xterm.js + PTY backend for a real shell session in the IDE"}
+        {
+          "id": "t3-1",
+          "title": "/ws/terminal WebSocket subprocess streaming",
+          "status": "done",
+          "priority": "high",
+          "description": "Streams stdout+stderr of any shell command in real-time"
+        },
+        {
+          "id": "t3-2",
+          "title": "/build/detect auto-detect build system",
+          "status": "done",
+          "priority": "high",
+          "description": "Detects cmake/npm/cargo/python/make from project marker files"
+        },
+        {
+          "id": "t3-3",
+          "title": "Build/Test tabbed output panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "Separate Build tab showing live build output with ANSI color"
+        },
+        {
+          "id": "t3-4",
+          "title": "Fix with AI button on build failure",
+          "status": "done",
+          "priority": "high",
+          "description": "Extracts errors and sends to agent with file context"
+        },
+        {
+          "id": "t3-5",
+          "title": "Auto-rebuild on save toggle",
+          "status": "done",
+          "priority": "medium",
+          "description": "Checkbox in toolbar; triggers build after each file save"
+        },
+        {
+          "id": "t3-6",
+          "title": "Problems panel: list errors/warnings with file+line links",
+          "status": "done",
+          "priority": "high",
+          "description": "Parse build output for error patterns; click to jump to line"
+        },
+        {
+          "id": "t3-7",
+          "title": "Real interactive terminal tab (full PTY)",
+          "status": "pending",
+          "priority": "high",
+          "description": "xterm.js + PTY backend for a real shell session in the IDE"
+        }
       ]
     },
     {
       "id": "m4",
-      "title": "Phase 4 — Project Import & Management",
+      "title": "Phase 4 \u2014 Project Import & Management",
       "description": "Import local folders, git clone, project switcher",
       "status": "in_progress",
       "tasks": [
-        {"id": "t4-1", "title": "import_project agent tool", "status": "done", "priority": "high", "description": "Copies any local folder into workspace/ with overwrite support"},
-        {"id": "t4-2", "title": "scan_folder agent tool", "status": "done", "priority": "medium", "description": "Lists folder contents + detects project type before importing"},
-        {"id": "t4-3", "title": "Import Project dialog in IDE GUI", "status": "pending", "priority": "high", "description": "📥 button → dialog with path input, scan preview, import button"},
-        {"id": "t4-4", "title": "Git clone into workspace from URL", "status": "pending", "priority": "high", "description": "New clone dialog; uses git_clone tool; shows progress in terminal"},
-        {"id": "t4-5", "title": "Project switcher in sidebar", "status": "pending", "priority": "medium", "description": "Dropdown to switch active project; updates build root and AI context"}
+        {
+          "id": "t4-1",
+          "title": "import_project agent tool",
+          "status": "done",
+          "priority": "high",
+          "description": "Copies any local folder into workspace/ with overwrite support"
+        },
+        {
+          "id": "t4-2",
+          "title": "scan_folder agent tool",
+          "status": "done",
+          "priority": "medium",
+          "description": "Lists folder contents + detects project type before importing"
+        },
+        {
+          "id": "t4-3",
+          "title": "Import Project dialog in IDE GUI",
+          "status": "done",
+          "priority": "high",
+          "description": "\ud83d\udce5 button \u2192 dialog with path input, scan preview, import button"
+        },
+        {
+          "id": "t4-4",
+          "title": "Git clone into workspace from URL",
+          "status": "pending",
+          "priority": "high",
+          "description": "New clone dialog; uses git_clone tool; shows progress in terminal"
+        },
+        {
+          "id": "t4-5",
+          "title": "Project switcher in sidebar",
+          "status": "pending",
+          "priority": "medium",
+          "description": "Dropdown to switch active project; updates build root and AI context"
+        }
       ]
     },
     {
       "id": "m5",
-      "title": "Phase 5 — Roadmap & Autonomous Self-Development",
+      "title": "Phase 5 \u2014 Roadmap & Autonomous Self-Development",
       "description": "Living roadmap, autonomous task execution, progress tracking in IDE",
       "status": "in_progress",
       "tasks": [
-        {"id": "t5-1", "title": "workspace/roadmap.json living data file", "status": "in_progress", "priority": "high", "description": "10-phase roadmap the AI reads, works through, and updates"},
-        {"id": "t5-2", "title": "Roadmap agent tools (list/next/start/complete/add)", "status": "done", "priority": "high", "description": "5 tools for the AI to interact with the roadmap autonomously"},
-        {"id": "t5-3", "title": "Roadmap API endpoints (GET /roadmap, PATCH /roadmap/task)", "status": "pending", "priority": "high", "description": "REST endpoints so GUI can display and update the roadmap"},
-        {"id": "t5-4", "title": "Roadmap panel in IDE with milestone/task view", "status": "pending", "priority": "high", "description": "Visual checklist with progress bars per milestone"},
-        {"id": "t5-5", "title": "Work on Next Task button with auto-advance option", "status": "pending", "priority": "high", "description": "Sends next roadmap task to agent; optionally loops through all"}
+        {
+          "id": "t5-1",
+          "title": "workspace/roadmap.json living data file",
+          "status": "in_progress",
+          "priority": "high",
+          "description": "10-phase roadmap the AI reads, works through, and updates"
+        },
+        {
+          "id": "t5-2",
+          "title": "Roadmap agent tools (list/next/start/complete/add)",
+          "status": "done",
+          "priority": "high",
+          "description": "5 tools for the AI to interact with the roadmap autonomously"
+        },
+        {
+          "id": "t5-3",
+          "title": "Roadmap API endpoints (GET /roadmap, PATCH /roadmap/task)",
+          "status": "done",
+          "priority": "high",
+          "description": "REST endpoints so GUI can display and update the roadmap"
+        },
+        {
+          "id": "t5-4",
+          "title": "Roadmap panel in IDE with milestone/task view",
+          "status": "pending",
+          "priority": "high",
+          "description": "Visual checklist with progress bars per milestone"
+        },
+        {
+          "id": "t5-5",
+          "title": "Work on Next Task button with auto-advance option",
+          "status": "pending",
+          "priority": "high",
+          "description": "Sends next roadmap task to agent; optionally loops through all"
+        }
       ]
     },
     {
       "id": "m6",
-      "title": "Phase 6 — Full VS Code-like Editor Suite",
+      "title": "Phase 6 \u2014 Full VS Code-like Editor Suite",
       "description": "Activity bar, search, git panel, command palette, status bar, split editor",
       "status": "in_progress",
       "tasks": [
-        {"id": "t6-1", "title": "Activity bar with 5 panel modes", "status": "in_progress", "priority": "high", "description": "Icons: Explorer, Search, Git, Roadmap, Profile — switches left panel"},
-        {"id": "t6-2", "title": "Full-text search across all workspace files", "status": "pending", "priority": "high", "description": "GET /search?q= endpoint + search panel with results navigation"},
-        {"id": "t6-3", "title": "Git panel: status, diff viewer, stage/commit", "status": "pending", "priority": "high", "description": "Shows changed files, inline diff, commit message box"},
-        {"id": "t6-4", "title": "Command palette (Ctrl+P file / Ctrl+Shift+P commands)", "status": "pending", "priority": "high", "description": "Fuzzy-search files and commands; keyboard driven"},
-        {"id": "t6-5", "title": "Status bar: file info, git branch, AI status, error count", "status": "pending", "priority": "high", "description": "Persistent bottom bar showing contextual info"},
-        {"id": "t6-6", "title": "File context menu: rename, delete, copy path, new file/folder", "status": "pending", "priority": "medium", "description": "Right-click on file tree item shows action menu"},
-        {"id": "t6-7", "title": "Split editor (two files side by side)", "status": "pending", "priority": "medium", "description": "Drag tab to right half; Monaco handles split model"}
+        {
+          "id": "t6-1",
+          "title": "Activity bar with 5 panel modes",
+          "status": "in_progress",
+          "priority": "high",
+          "description": "Icons: Explorer, Search, Git, Roadmap, Profile \u2014 switches left panel"
+        },
+        {
+          "id": "t6-2",
+          "title": "Full-text search across all workspace files",
+          "status": "done",
+          "priority": "high",
+          "description": "GET /search?q= endpoint + search panel with results navigation"
+        },
+        {
+          "id": "t6-3",
+          "title": "Git panel: status, diff viewer, stage/commit",
+          "status": "pending",
+          "priority": "high",
+          "description": "Shows changed files, inline diff, commit message box"
+        },
+        {
+          "id": "t6-4",
+          "title": "Command palette (Ctrl+P file / Ctrl+Shift+P commands)",
+          "status": "pending",
+          "priority": "high",
+          "description": "Fuzzy-search files and commands; keyboard driven"
+        },
+        {
+          "id": "t6-5",
+          "title": "Status bar: file info, git branch, AI status, error count",
+          "status": "done",
+          "priority": "high",
+          "description": "Persistent bottom bar showing contextual info"
+        },
+        {
+          "id": "t6-6",
+          "title": "File context menu: rename, delete, copy path, new file/folder",
+          "status": "done",
+          "priority": "medium",
+          "description": "Right-click on file tree item shows action menu"
+        },
+        {
+          "id": "t6-7",
+          "title": "Split editor (two files side by side)",
+          "status": "pending",
+          "priority": "medium",
+          "description": "Drag tab to right half; Monaco handles split model"
+        }
       ]
     },
     {
       "id": "m7",
-      "title": "Phase 7 — AI Features Baked Into Editor",
+      "title": "Phase 7 \u2014 AI Features Baked Into Editor",
       "description": "Inline completions, selection actions, diff review, code actions",
       "status": "pending",
       "tasks": [
-        {"id": "t7-1", "title": "Inline AI completions (Copilot-style)", "status": "pending", "priority": "high", "description": "Monaco InlineCompletionsProvider + /ai/complete endpoint; debounced"},
-        {"id": "t7-2", "title": "Floating selection toolbar: Explain/Refactor/Tests/Fix", "status": "pending", "priority": "high", "description": "Appears when text selected; sends selection to agent with context"},
-        {"id": "t7-3", "title": "Monaco right-click AI context menu actions", "status": "pending", "priority": "high", "description": "addAction for Explain, Refactor, Generate Docstring, Generate Tests"},
-        {"id": "t7-4", "title": "Diff viewer: agent proposes changes, user reviews before applying", "status": "pending", "priority": "high", "description": "Monaco DiffEditor shows old vs new; accept/reject buttons"},
-        {"id": "t7-5", "title": "AI explain error hover in Problems panel", "status": "pending", "priority": "medium", "description": "Click error → AI explains it + suggests fix in chat"},
-        {"id": "t7-6", "title": "/ai/complete streaming endpoint for inline suggestions", "status": "pending", "priority": "high", "description": "Accepts file content + cursor offset; returns LLM completion"}
+        {
+          "id": "t7-1",
+          "title": "Inline AI completions (Copilot-style)",
+          "status": "pending",
+          "priority": "high",
+          "description": "Monaco InlineCompletionsProvider + /ai/complete endpoint; debounced"
+        },
+        {
+          "id": "t7-2",
+          "title": "Floating selection toolbar: Explain/Refactor/Tests/Fix",
+          "status": "pending",
+          "priority": "high",
+          "description": "Appears when text selected; sends selection to agent with context"
+        },
+        {
+          "id": "t7-3",
+          "title": "Monaco right-click AI context menu actions",
+          "status": "pending",
+          "priority": "high",
+          "description": "addAction for Explain, Refactor, Generate Docstring, Generate Tests"
+        },
+        {
+          "id": "t7-4",
+          "title": "Diff viewer: agent proposes changes, user reviews before applying",
+          "status": "pending",
+          "priority": "high",
+          "description": "Monaco DiffEditor shows old vs new; accept/reject buttons"
+        },
+        {
+          "id": "t7-5",
+          "title": "AI explain error hover in Problems panel",
+          "status": "pending",
+          "priority": "medium",
+          "description": "Click error \u2192 AI explains it + suggests fix in chat"
+        },
+        {
+          "id": "t7-6",
+          "title": "/ai/complete streaming endpoint for inline suggestions",
+          "status": "pending",
+          "priority": "high",
+          "description": "Accepts file content + cursor offset; returns LLM completion"
+        }
       ]
     },
     {
       "id": "m8",
-      "title": "Phase 8 — Knowledge Base & Per-Project AI Profiles",
+      "title": "Phase 8 \u2014 Knowledge Base & Per-Project AI Profiles",
       "description": "Wiki aggregation, per-project AI personas, rule sets, RAG context injection",
       "status": "in_progress",
       "tasks": [
-        {"id": "t8-1", "title": "knowledge module: fetch_wiki, index_docs, search_knowledge", "status": "in_progress", "priority": "high", "description": "Fetch+chunk+store+search any URL; offline TF-IDF keyword search"},
-        {"id": "t8-2", "title": "project_profile module: AI persona, tech stack, LLM preference", "status": "in_progress", "priority": "high", "description": ".swissagent/profile.json per project; auto-detected from marker files"},
-        {"id": "t8-3", "title": "rules module: project rule sets (must/must_not/prefer)", "status": "in_progress", "priority": "high", "description": ".swissagent/rules.json; injected as constraints into every agent call"},
-        {"id": "t8-4", "title": "Inject active project profile + rules into agent system prompt", "status": "pending", "priority": "high", "description": "core/agent.py reads profile + rules from active project at startup"},
-        {"id": "t8-5", "title": "RAG: retrieve top-K relevant knowledge chunks per agent call", "status": "pending", "priority": "high", "description": "Before each LLM call, search knowledge base and prepend chunks"},
-        {"id": "t8-6", "title": "Knowledge panel in IDE: add/remove sources, search, status", "status": "pending", "priority": "medium", "description": "List of doc URLs with fetch status; search box for knowledge base"},
-        {"id": "t8-7", "title": "Profile wizard: auto-detect tech stack, suggest knowledge packs", "status": "pending", "priority": "medium", "description": "Scans project files and proposes profile + pre-built knowledge packs"},
-        {"id": "t8-8", "title": "Pre-built knowledge packs for major tech stacks", "status": "pending", "priority": "medium", "description": "Python, JavaScript, C++, Rust, Go, React, FastAPI curated doc sets"}
+        {
+          "id": "t8-1",
+          "title": "knowledge module: fetch_wiki, index_docs, search_knowledge",
+          "status": "in_progress",
+          "priority": "high",
+          "description": "Fetch+chunk+store+search any URL; offline TF-IDF keyword search"
+        },
+        {
+          "id": "t8-2",
+          "title": "project_profile module: AI persona, tech stack, LLM preference",
+          "status": "in_progress",
+          "priority": "high",
+          "description": ".swissagent/profile.json per project; auto-detected from marker files"
+        },
+        {
+          "id": "t8-3",
+          "title": "rules module: project rule sets (must/must_not/prefer)",
+          "status": "in_progress",
+          "priority": "high",
+          "description": ".swissagent/rules.json; injected as constraints into every agent call"
+        },
+        {
+          "id": "t8-4",
+          "title": "Inject active project profile + rules into agent system prompt",
+          "status": "pending",
+          "priority": "high",
+          "description": "core/agent.py reads profile + rules from active project at startup"
+        },
+        {
+          "id": "t8-5",
+          "title": "RAG: retrieve top-K relevant knowledge chunks per agent call",
+          "status": "pending",
+          "priority": "high",
+          "description": "Before each LLM call, search knowledge base and prepend chunks"
+        },
+        {
+          "id": "t8-6",
+          "title": "Knowledge panel in IDE: add/remove sources, search, status",
+          "status": "pending",
+          "priority": "medium",
+          "description": "List of doc URLs with fetch status; search box for knowledge base"
+        },
+        {
+          "id": "t8-7",
+          "title": "Profile wizard: auto-detect tech stack, suggest knowledge packs",
+          "status": "pending",
+          "priority": "medium",
+          "description": "Scans project files and proposes profile + pre-built knowledge packs"
+        },
+        {
+          "id": "t8-8",
+          "title": "Pre-built knowledge packs for major tech stacks",
+          "status": "pending",
+          "priority": "medium",
+          "description": "Python, JavaScript, C++, Rust, Go, React, FastAPI curated doc sets"
+        }
       ]
     },
     {
       "id": "m9",
-      "title": "Phase 9 — Plugin Ecosystem",
+      "title": "Phase 9 \u2014 Plugin Ecosystem",
       "description": "Plugin browser, install from URL, hot-reload, template generator",
       "status": "pending",
       "tasks": [
-        {"id": "t9-1", "title": "Plugin browser panel in IDE", "status": "pending", "priority": "medium", "description": "Lists installed plugins + install-from-URL input"},
-        {"id": "t9-2", "title": "Install plugin from GitHub URL", "status": "pending", "priority": "medium", "description": "git clone into plugins/; auto-register without server restart"},
-        {"id": "t9-3", "title": "Hot-reload plugins without server restart", "status": "pending", "priority": "medium", "description": "File watcher on plugins/; re-runs PluginLoader on change"},
-        {"id": "t9-4", "title": "Plugin template generator (AI-assisted)", "status": "pending", "priority": "low", "description": "Agent generates a new plugin skeleton from a description prompt"}
+        {
+          "id": "t9-1",
+          "title": "Plugin browser panel in IDE",
+          "status": "pending",
+          "priority": "medium",
+          "description": "Lists installed plugins + install-from-URL input"
+        },
+        {
+          "id": "t9-2",
+          "title": "Install plugin from GitHub URL",
+          "status": "pending",
+          "priority": "medium",
+          "description": "git clone into plugins/; auto-register without server restart"
+        },
+        {
+          "id": "t9-3",
+          "title": "Hot-reload plugins without server restart",
+          "status": "pending",
+          "priority": "medium",
+          "description": "File watcher on plugins/; re-runs PluginLoader on change"
+        },
+        {
+          "id": "t9-4",
+          "title": "Plugin template generator (AI-assisted)",
+          "status": "pending",
+          "priority": "low",
+          "description": "Agent generates a new plugin skeleton from a description prompt"
+        }
       ]
     },
     {
       "id": "m10",
-      "title": "Phase 10 — Production Hardening",
+      "title": "Phase 10 \u2014 Production Hardening",
       "description": "Auth, Docker, packaging, performance, persistence",
       "status": "pending",
       "tasks": [
-        {"id": "t10-1", "title": "Optional HTTP basic auth for API server", "status": "pending", "priority": "medium", "description": "Configurable via config.toml; protects all endpoints"},
-        {"id": "t10-2", "title": "Docker + docker-compose setup", "status": "pending", "priority": "medium", "description": "Dockerfile + compose with Ollama service; one command startup"},
-        {"id": "t10-3", "title": "Electron wrapper for standalone desktop app", "status": "pending", "priority": "low", "description": "Wraps the web IDE as a native desktop app with system tray"},
-        {"id": "t10-4", "title": "Streaming LLM responses (true token-by-token)", "status": "pending", "priority": "high", "description": "Ollama supports streaming; pipe tokens directly to WebSocket"},
-        {"id": "t10-5", "title": "Persistent chat history per project", "status": "pending", "priority": "medium", "description": "Store conversation history in .swissagent/chat_history.json"},
-        {"id": "t10-6", "title": "Agent session memory across conversations", "status": "pending", "priority": "high", "description": "Use memory module to persist key facts between sessions"}
+        {
+          "id": "t10-1",
+          "title": "Optional HTTP basic auth for API server",
+          "status": "pending",
+          "priority": "medium",
+          "description": "Configurable via config.toml; protects all endpoints"
+        },
+        {
+          "id": "t10-2",
+          "title": "Docker + docker-compose setup",
+          "status": "pending",
+          "priority": "medium",
+          "description": "Dockerfile + compose with Ollama service; one command startup"
+        },
+        {
+          "id": "t10-3",
+          "title": "Electron wrapper for standalone desktop app",
+          "status": "pending",
+          "priority": "low",
+          "description": "Wraps the web IDE as a native desktop app with system tray"
+        },
+        {
+          "id": "t10-4",
+          "title": "Streaming LLM responses (true token-by-token)",
+          "status": "pending",
+          "priority": "high",
+          "description": "Ollama supports streaming; pipe tokens directly to WebSocket"
+        },
+        {
+          "id": "t10-5",
+          "title": "Persistent chat history per project",
+          "status": "pending",
+          "priority": "medium",
+          "description": "Store conversation history in .swissagent/chat_history.json"
+        },
+        {
+          "id": "t10-6",
+          "title": "Agent session memory across conversations",
+          "status": "pending",
+          "priority": "high",
+          "description": "Use memory module to persist key facts between sessions"
+        }
       ]
     }
   ]
