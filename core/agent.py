@@ -2,6 +2,7 @@
 from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from core.config_loader import ConfigLoader
 from core.logger import get_logger
@@ -34,15 +35,49 @@ class Agent:
         permission_system: PermissionSystem,
         task_runner: TaskRunner,
         config: ConfigLoader,
+        project_path: str = "",
     ) -> None:
         self.llm = llm
         self.tools = tool_registry
         self.permissions = permission_system
         self.runner = task_runner
         self.config = config
+        self._project_context = self._load_project_context(project_path)
 
-    def run(self, prompt: str) -> str:
+    # ── Project profile + rules injection ─────────────────────────────────────
+    @staticmethod
+    def _load_project_context(project_path: str) -> str:
+        """Load per-project AI profile and rules as a system-prompt string."""
+        try:
+            from modules.project_profile.src.profile_tools import load_project_context
+            return load_project_context(project_path)
+        except Exception as exc:
+            logger.debug("Could not load project context: %s", exc)
+            return ""
+
+    # ── Knowledge retrieval (RAG) ──────────────────────────────────────────────
+    def _retrieve_knowledge(self, query: str, project_path: str = "") -> str:
+        """Retrieve the top relevant knowledge chunks for the current query."""
+        try:
+            from modules.knowledge.src.knowledge_tools import knowledge_search
+            result = knowledge_search(query, project_path=project_path, top_k=3)
+            chunks = result.get("results", [])
+            if not chunks:
+                return ""
+            parts = ["Relevant documentation:"]
+            for c in chunks:
+                parts.append(f"[{c['source_label']}]\n{c['text']}")
+            return "\n\n".join(parts)
+        except Exception as exc:
+            logger.debug("Knowledge retrieval failed: %s", exc)
+            return ""
+
+    def run(self, prompt: str, project_path: str = "") -> str:
         state = AgentState(prompt=prompt)
+        # Prepend relevant knowledge to the prompt if available
+        knowledge = self._retrieve_knowledge(prompt, project_path)
+        if knowledge:
+            state.prompt = f"{knowledge}\n\n---\nTask: {prompt}"
         logger.info("Agent started. prompt=%r", prompt)
         while not state.done and state.iteration < state.max_iterations:
             state.iteration += 1
@@ -104,6 +139,8 @@ class Agent:
             "You help with code generation, build automation, asset pipelines, and development tasks. "
             "Think step-by-step and use available tools to complete tasks."
         )
+        if self._project_context:
+            base += f"\n\n{self._project_context}"
         if include_tools:
             tool_names = [t["name"] for t in self.tools.list_tools()]
             base += f"\n\nAvailable tools: {', '.join(tool_names)}"
@@ -118,3 +155,4 @@ class Agent:
             if stripped:
                 plan.append(stripped)
         return plan
+

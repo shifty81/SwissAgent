@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SwissAgent IDE</title>
+  <link rel="stylesheet" href="/gui/style.css" />
+</head>
+<body>
+  <!-- ── Top bar ─────────────────────────────────────────────── -->
+  <header id="topbar">
+    <span class="logo">🛠 SwissAgent IDE</span>
+    <div class="topbar-actions">
+      <button id="btn-save" title="Save current file (Ctrl+S)">💾 Save</button>
+      <button id="btn-run-file" title="Run agent on current file">▶ Agent</button>
+      <button id="btn-build" title="Build project (auto-detected)">🔨 Build</button>
+      <button id="btn-test"  title="Run tests (auto-detected)">🧪 Test</button>
+      <label id="label-auto-rebuild" title="Auto-rebuild when a file is saved">
+        <input type="checkbox" id="chk-auto-rebuild" /> Auto-rebuild
+      </label>
+      <select id="llm-backend-select" title="LLM backend">
+        <option value="ollama">Ollama (local)</option>
+        <option value="api">OpenAI API</option>
+        <option value="local">Local GGUF</option>
+      </select>
+      <span id="status-indicator" class="status-idle">● Idle</span>
+    </div>
+  </header>
+
+  <!-- ── Main layout ──────────────────────────────────────────── -->
+  <div id="layout">
+
+    <!-- File tree sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <span>Files</span>
+        <div class="sidebar-buttons">
+          <button id="btn-new-file" title="New file">+</button>
+          <button id="btn-import-project" title="Import a local folder into workspace">📥</button>
+          <button id="btn-refresh-tree" title="Refresh">↺</button>
+        </div>
+      </div>
+      <!-- Project/CWD selector for build -->
+      <div class="sidebar-cwd">
+        <label class="cwd-label">Build root</label>
+        <select id="build-cwd-select">
+          <option value="workspace">workspace/</option>
+          <option value="projects">projects/</option>
+        </select>
+        <select id="build-subdir-select">
+          <option value="">(root)</option>
+        </select>
+      </div>
+      <div id="file-tree"></div>
+    </aside>
+
+    <!-- Editor + output column -->
+    <div id="main-col">
+      <!-- Editor tabs -->
+      <div id="tabs-bar">
+        <div id="tabs-list"></div>
+      </div>
+      <!-- Monaco editor -->
+      <div id="editor-container"></div>
+      <!-- Output panel (tabbed) -->
+      <div id="output-panel">
+        <div id="output-header">
+          <!-- Tab buttons -->
+          <div id="output-tabs">
+            <button class="out-tab active" data-tab="output">Output</button>
+            <button class="out-tab" data-tab="build">Build / Test</button>
+          </div>
+          <div class="output-actions">
+            <button id="btn-fix-ai" class="btn-fix hidden" title="Send build errors to agent for fixing">🪄 Fix with AI</button>
+            <button id="btn-clear-output" title="Clear output">✕ Clear</button>
+          </div>
+        </div>
+        <!-- Pane: agent output -->
+        <pre id="output-content" class="out-pane active"></pre>
+        <!-- Pane: build/test output -->
+        <pre id="build-content" class="out-pane"></pre>
+      </div>
+    </div>
+
+    <!-- Agent chat panel -->
+    <aside id="agent-panel">
+      <div class="agent-header">
+        <span>AI Agent</span>
+        <button id="btn-clear-chat" title="Clear chat">✕</button>
+      </div>
+      <div id="chat-messages"></div>
+      <div id="chat-input-area">
+        <textarea
+          id="chat-input"
+          placeholder="Describe what you want to build or fix…"
+          rows="3"
+        ></textarea>
+        <button id="btn-send-prompt">Send ↵</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ── New-file dialog ──────────────────────────────────────── -->
+  <div id="new-file-dialog" class="dialog hidden">
+    <div class="dialog-box">
+      <h3>New File</h3>
+      <input id="new-file-path" type="text" placeholder="e.g. workspace/hello.py" />
+      <div class="dialog-buttons">
+        <button id="btn-new-file-ok">Create</button>
+        <button id="btn-new-file-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monaco Editor loader -->
+  <script>
+    var require = { paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs" } };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs/loader.js"></script>
+  <script src="/gui/app.js"></script>
+</body>
+</html>
