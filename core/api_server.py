@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -24,6 +25,12 @@ _BROWSER_ROOTS = {"workspace", "projects", "plugins", "templates"}
 
 # Directories allowed as working directories for terminal/build commands.
 _BUILD_ROOTS = {"workspace", "projects"}
+
+# Directories to skip when searching files.
+_SEARCH_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".swissagent", "build", "dist"}
+
+# File extensions to skip when searching (binary/media files).
+_SEARCH_SKIP_EXTS = {".pyc", ".pyo", ".so", ".dll", ".exe", ".bin", ".png", ".jpg", ".gif", ".ico", ".woff", ".woff2", ".ttf"}
 
 # Build-system detection table: (marker_file, system_name, build_cmd, test_cmd)
 _BUILD_DETECTORS: list[tuple[str, str, str, str]] = [
@@ -405,7 +412,18 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         if not found:
             raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
 
-        roadmap_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        # Atomic write: write to temp file then rename
+        content = json.dumps(data, indent=2) + "\n"
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(roadmap_file.parent), suffix=".tmp", prefix=".roadmap_"
+        )
+        try:
+            with open(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+            Path(tmp_path).replace(roadmap_file)
+        except Exception:
+            Path(tmp_path).unlink(missing_ok=True)
+            raise
         return {"status": "ok", "task_id": task_id, "new_status": req.status}
 
     # ── File rename ─────────────────────────────────────────────────────────
@@ -465,9 +483,6 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         except re.error:
             raise HTTPException(status_code=400, detail="Invalid search pattern")
 
-        _SKIP_DIRS = {".git", "__pycache__", "node_modules", ".swissagent", "build", "dist"}
-        _SKIP_EXTS = {".pyc", ".pyo", ".so", ".dll", ".exe", ".bin", ".png", ".jpg", ".gif", ".ico", ".woff", ".woff2", ".ttf"}
-
         def _walk(d: Path, rel: str) -> None:
             if len(results) >= max_results:
                 return
@@ -481,10 +496,10 @@ def create_app(config_dir: str = "configs") -> FastAPI:
                 if item.name.startswith(".") and item.is_dir():
                     continue
                 if item.is_dir():
-                    if item.name in _SKIP_DIRS:
+                    if item.name in _SEARCH_SKIP_DIRS:
                         continue
                     _walk(item, f"{rel}/{item.name}" if rel else item.name)
-                elif item.is_file() and item.suffix.lower() not in _SKIP_EXTS:
+                elif item.is_file() and item.suffix.lower() not in _SEARCH_SKIP_EXTS:
                     try:
                         text = item.read_text(encoding="utf-8", errors="ignore")
                     except Exception:

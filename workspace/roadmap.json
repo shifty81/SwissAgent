@@ -133,28 +133,28 @@
         {
           "id": "t3-3",
           "title": "Build/Test tabbed output panel in IDE",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Separate Build tab showing live build output with ANSI color"
         },
         {
           "id": "t3-4",
           "title": "Fix with AI button on build failure",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Extracts errors and sends to agent with file context"
         },
         {
           "id": "t3-5",
           "title": "Auto-rebuild on save toggle",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Checkbox in toolbar; triggers build after each file save"
         },
         {
           "id": "t3-6",
           "title": "Problems panel: list errors/warnings with file+line links",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Parse build output for error patterns; click to jump to line"
         },
@@ -190,7 +190,7 @@
         {
           "id": "t4-3",
           "title": "Import Project dialog in IDE GUI",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "\ud83d\udce5 button \u2192 dialog with path input, scan preview, import button"
         },
@@ -233,7 +233,7 @@
         {
           "id": "t5-3",
           "title": "Roadmap API endpoints (GET /roadmap, PATCH /roadmap/task)",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "REST endpoints so GUI can display and update the roadmap"
         },
@@ -269,7 +269,7 @@
         {
           "id": "t6-2",
           "title": "Full-text search across all workspace files",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "GET /search?q= endpoint + search panel with results navigation"
         },
@@ -290,14 +290,14 @@
         {
           "id": "t6-5",
           "title": "Status bar: file info, git branch, AI status, error count",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Persistent bottom bar showing contextual info"
         },
         {
           "id": "t6-6",
           "title": "File context menu: rename, delete, copy path, new file/folder",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Right-click on file tree item shows action menu"
         },

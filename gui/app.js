@@ -5,6 +5,9 @@
 (function () {
   "use strict";
 
+  // ── Constants ───────────────────────────────────────────────────────────────
+  const MAX_BUILD_OUTPUT_FOR_AI = 2000;
+
   // ── State ──────────────────────────────────────────────────────────────────
   const state = {
     openFiles: {},        // path → { content, language, modified, model }
@@ -561,7 +564,7 @@
       `${e.file}:${e.line}: ${e.severity}: ${e.message}`
     ).join("\n");
 
-    const prompt = `The build failed with the following errors. Please fix them:\n\n${errorSummary}\n\nFull build output:\n${state.lastBuildOutput.slice(-2000)}`;
+    const prompt = `The build failed with the following errors. Please fix them:\n\n${errorSummary}\n\nFull build output:\n${state.lastBuildOutput.slice(-MAX_BUILD_OUTPUT_FOR_AI)}`;
     sendPrompt(prompt);
   }
 
