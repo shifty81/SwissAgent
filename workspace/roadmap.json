@@ -464,7 +464,7 @@
       "id": "m10",
       "title": "Phase 10 \u2014 Production Hardening",
       "description": "Auth, Docker, packaging, performance, persistence",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t10-1",
@@ -484,9 +484,10 @@
         {
           "id": "t10-3",
           "title": "Electron wrapper for standalone desktop app",
-          "status": "pending",
+          "status": "done",
           "priority": "low",
-          "description": "Wraps the web IDE as a native desktop app with system tray"
+          "description": "Wraps the web IDE as a native desktop app with system tray",
+          "notes": "electron/main.js + preload.js + package.json in electron/"
         },
         {
           "id": "t10-4",

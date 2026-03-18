@@ -102,18 +102,21 @@ def test_roadmap_get(client):
 
 
 def test_roadmap_patch_task(client):
-    # Read roadmap to find a pending task
+    # Use a known task id (t1-1) to test the PATCH endpoint
+    test_task_id = "t1-1"
+
+    # Read current status so we can restore it
     res = client.get("/roadmap")
     data = res.json()
-    test_task_id = None
+    original_status = None
     for m in data["milestones"]:
         for t in m["tasks"]:
-            if t["status"] == "pending":
-                test_task_id = t["id"]
+            if t["id"] == test_task_id:
+                original_status = t["status"]
                 break
-        if test_task_id:
+        if original_status:
             break
-    assert test_task_id is not None, "No pending task found to test"
+    assert original_status is not None, f"Task {test_task_id} not found in roadmap"
 
     # Update to in_progress
     res = client.patch(f"/roadmap/task/{test_task_id}", json={"status": "in_progress"})
@@ -132,8 +135,8 @@ def test_roadmap_patch_task(client):
                 break
     assert found
 
-    # Reset back to pending
-    res = client.patch(f"/roadmap/task/{test_task_id}", json={"status": "pending"})
+    # Restore original status
+    res = client.patch(f"/roadmap/task/{test_task_id}", json={"status": original_status})
     assert res.status_code == 200
 
 

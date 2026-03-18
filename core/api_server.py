@@ -2269,7 +2269,7 @@ def create_app(config_dir: str = "configs") -> FastAPI:
                     detail=f"Patch apply failed: {result.stderr.decode()[:500]}",
                 )
             new_content = target.read_text(encoding="utf-8")
-            return {"applied": True, "path": req.path, "lines_changed": abs(len(new_content.splitlines()) - len(original.splitlines()))}
+            return {"applied": True, "path": req.path, "line_count_delta": len(new_content.splitlines()) - len(original.splitlines())}
         except HTTPException:
             raise
         except FileNotFoundError:
