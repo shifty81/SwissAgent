@@ -328,9 +328,16 @@
       </div>
       <div id="chat-messages"></div>
       <div id="chat-input-area">
+        <div id="slash-cmd-bar">
+          <button class="slash-btn" data-cmd="/fix"      title="Ask AI to fix bugs in the active file">🔧 Fix</button>
+          <button class="slash-btn" data-cmd="/explain"  title="Ask AI to explain the active file">💡 Explain</button>
+          <button class="slash-btn" data-cmd="/test"     title="Ask AI to write tests for the active file">🧪 Test</button>
+          <button class="slash-btn" data-cmd="/docs"     title="Ask AI to add docstrings to the active file">📝 Docs</button>
+          <button class="slash-btn" data-cmd="/refactor" title="Ask AI to refactor the active file">♻ Refactor</button>
+        </div>
         <textarea
           id="chat-input"
-          placeholder="Ask anything… or try /fix  /explain  /test  /docs  /refactor"
+          placeholder="Ask anything… or click a button above"
           rows="3"
         ></textarea>
         <button id="btn-send-prompt">Send ↵</button>

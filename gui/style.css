@@ -709,6 +709,29 @@ body {
 }
 #chat-input:focus { border-color: var(--accent); }
 
+/* ── Slash-command quick buttons ─────────────────────────────────── */
+#slash-cmd-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.slash-btn {
+  background: var(--surface2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+  white-space: nowrap;
+}
+.slash-btn:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
 #btn-send-prompt {
   background: var(--accent);
   color: #fff;

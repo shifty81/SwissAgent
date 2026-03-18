@@ -1324,6 +1324,11 @@
   $("btn-clear-chat").addEventListener("click", () => { chatMessages.innerHTML = ""; });
   $("btn-refresh-tree").addEventListener("click", () => loadFileTree());
 
+  // ── Slash-command quick buttons ─────────────────────────────────────────
+  document.querySelectorAll(".slash-btn").forEach((btn) => {
+    btn.addEventListener("click", () => sendPrompt(btn.dataset.cmd));
+  });
+
   $("btn-send-prompt").addEventListener("click", () => sendPrompt(chatInput.value));
   chatInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPrompt(chatInput.value); }
