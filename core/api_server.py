@@ -1784,7 +1784,7 @@ def create_app(config_dir: str = "configs") -> FastAPI:
     @app.delete("/memory/{key}")
     async def memory_delete(key: str, project_path: str = Query(default="")) -> dict[str, str]:
         """Delete a key from session memory."""
-        mem = _load_session_memory(base_dir, req.project_path if False else project_path)
+        mem = _load_session_memory(base_dir, project_path)
         mem.pop(key, None)
         _save_session_memory(base_dir, project_path, mem)
         return {"status": "ok"}

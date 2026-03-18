@@ -40,6 +40,9 @@ _TELEMETRY_FILE = Path(".swissagent") / "self_build_log.json"
 # ── Context window for source files fed to the LLM ───────────────────────────
 _MAX_SOURCE_CHARS = 12_000  # ~3 k tokens per file, up to this total
 
+# Maximum characters per individual source file snippet
+_MAX_FILE_SNIPPET_CHARS = 2_000
+
 
 def _load_telemetry(base_dir: Path) -> list[dict[str, Any]]:
     path = base_dir / _TELEMETRY_FILE
@@ -113,7 +116,7 @@ def _collect_source_files(base_dir: Path) -> str:
                 text = p.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 continue
-            snippet = f"### {rel}\n{text[:2000]}\n"
+            snippet = f"### {rel}\n{text[:_MAX_FILE_SNIPPET_CHARS]}\n"
             parts.append(snippet)
             total += len(snippet)
     return "\n".join(parts)

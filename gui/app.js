@@ -1810,14 +1810,6 @@
     }
   }
 
-
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
   // ── Command palette ────────────────────────────────────────────────────────
   function escHtmlSimple(s) {
     return String(s)
@@ -2782,6 +2774,7 @@
   // ── Boot ───────────────────────────────────────────────────────────────────
   initMonaco();
   _refreshProjectSwitcher();
+  loadChatHistory("");  // load recent chat history on startup (t10-5)
   appendOutput("SwissAgent IDE ready. Open a file or type a prompt to get started.\n");
   appendOutput("Tip: Ctrl+P = file picker  |  Ctrl+Shift+P = command palette  |  Terminal tab = interactive shell\n");
   updateStatusBar();
