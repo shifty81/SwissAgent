@@ -490,6 +490,71 @@ body {
   font-family: var(--font-mono);
   font-size: 13px;
   white-space: pre-wrap;
+  /* allow rendered code blocks inside agent messages */
+  overflow: hidden;
+}
+
+/* plain text spans inside rendered agent messages */
+.chat-text { white-space: pre-wrap; }
+
+/* ── Copilot-style code blocks in chat ─────────────────────────────────── */
+.code-block {
+  background: #12121c;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 8px 0;
+  overflow: hidden;
+  font-size: 12.5px;
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  background: #1a1a2e;
+  border-bottom: 1px solid var(--border);
+}
+
+.code-lang {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+.code-block-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.code-copy-btn,
+.code-apply-btn {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  transition: background .12s, border-color .12s;
+  white-space: nowrap;
+}
+.code-copy-btn:hover  { background: var(--border); }
+.code-apply-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.code-content {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #a6e3a1;
+  white-space: pre;
+  background: transparent;
 }
 
 .chat-msg.error {

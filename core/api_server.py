@@ -102,7 +102,7 @@ def create_app(config_dir: str = "configs") -> FastAPI:
     app = FastAPI(
         title="SwissAgent API",
         description="Offline AI-powered development platform API",
-        version="0.1.0",
+        version="0.2.0",
     )
     base_dir = Path(__file__).resolve().parent.parent
     gui_dir = base_dir / "gui"
@@ -618,7 +618,7 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         """Lightweight health-check used by Open WebUI tool and status badge."""
         return {
             "status": "ok",
-            "version": "0.1.0",
+            "version": "0.2.0",
             "tools": len(registry.list_tools()),
         }
 

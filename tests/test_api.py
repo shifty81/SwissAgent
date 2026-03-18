@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from core.api_server import create_app
-import modules.import_project.src.import_tools as _import_tools
+import modules.import_project.src.import_tools as import_tools_mod
 
 
 @pytest.fixture(scope="module")

@@ -68,7 +68,7 @@ def import_project(
         dst_rel = dst.relative_to(src)
         skip_name = dst_rel.parts[0]
 
-        def ignore_fn(directory: str, _contents: list) -> set:  # type: ignore[misc]
+        def ignore_fn(directory: str, contents: list) -> set:  # type: ignore[misc]
             if Path(directory).resolve() == src.resolve():
                 return {skip_name}
             return set()
