@@ -711,6 +711,56 @@
           "description": "Panel in the IDE activity bar for running format/lint on current file and viewing diagnostics"
         }
       ]
+    },
+    {
+      "id": "m15",
+      "title": "Phase 15 \u2014 Project Templates & Multi-Language Toolchain",
+      "description": "Project template browser, toolchain detection, quick snippet runner, and a Templates panel in the IDE",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t15-1",
+          "title": "Templates list endpoint (GET /templates)",
+          "status": "done",
+          "priority": "high",
+          "description": "Return available project templates from the templates/ directory with metadata"
+        },
+        {
+          "id": "t15-2",
+          "title": "Template apply endpoint (POST /templates/apply)",
+          "status": "done",
+          "priority": "high",
+          "description": "Copy template files into workspace/<name> with optional variable substitution"
+        },
+        {
+          "id": "t15-3",
+          "title": "Toolchain detection endpoint (GET /toolchain)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Probe PATH for installed compilers/runtimes (python, node, gcc, java, dotnet, go, cargo, etc.)"
+        },
+        {
+          "id": "t15-4",
+          "title": "Quick snippet run endpoint (POST /snippet/run)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Run a short code snippet in a chosen language via subprocess and return stdout/stderr"
+        },
+        {
+          "id": "t15-5",
+          "title": "Template save endpoint (POST /templates/save)",
+          "status": "done",
+          "priority": "low",
+          "description": "Snapshot a workspace sub-directory as a new named template in templates/"
+        },
+        {
+          "id": "t15-6",
+          "title": "Templates & Toolchain panel in IDE",
+          "status": "done",
+          "priority": "medium",
+          "description": "Activity-bar panel for browsing/applying templates, viewing toolchain status, and quick snippet execution"
+        }
+      ]
     }
   ]
 }
