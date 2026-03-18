@@ -7,6 +7,10 @@
 
 SwissAgent is a self-hosted, fully offline coding assistant. Give it a prompt and it plans, calls tools, writes code, runs builds, processes assets, and reports back — all without sending anything to the cloud. It supports **C++, C#, Java, Lua, Python, and Blender** workflows out of the box.
 
+> 🐳 **Docker is completely optional.** SwissAgent runs perfectly without Docker — you only need **Python 3.10+** and **Ollama** (or an API key). Docker is only needed if you want the optional full-stack Compose setup (LocalAI + Open WebUI) or container-isolated sandbox execution.
+>
+> 📖 **New to SwissAgent?** See the **[Step-by-step Setup Guide →](docs/SETUP.md)** for a complete walkthrough including a no-Docker path, Windows instructions, and configuration details.
+
 ## Features
 
 - 🤖 **Agentic AI loop** — plan → tool-call → execute → reflect, up to 20 iterations per task
@@ -32,18 +36,26 @@ SwissAgent is a self-hosted, fully offline coding assistant. Give it a prompt an
 | **Python 3.10+** | [python.org](https://www.python.org/downloads/) |
 | **Ollama** *(recommended)* | [ollama.com](https://ollama.com) — run `ollama pull llama3` after install |
 | **Git** | Required for the `git` module |
+| **Docker** | *Optional* — only needed for the full Compose stack or container-isolated sandbox |
 | **CMake / Make / Ninja** | Optional — required for the `build` module |
 | **Blender** | Optional — required for the `blender` and `render` modules |
 | **SoX** | Optional — required for SFX generation in the audio pipeline |
 
 ## Installation
 
+> For a detailed walkthrough (Windows, no-Docker path, virtual environments, all LLM backends) see **[docs/SETUP.md](docs/SETUP.md)**.
+
+### Quick install (Linux / macOS)
+
 ```bash
 # 1. Clone the repository
 git clone https://github.com/shifty81/SwissAgent.git
 cd SwissAgent
 
-# 2. Install everything and open the web IDE in one step
+# 2. (Recommended) create a virtual environment
+python -m venv .venv && source .venv/bin/activate
+
+# 3. Install everything and open the web IDE in one step
 bash scripts/install.sh
 ```
 
@@ -65,13 +77,18 @@ To bind to all interfaces or use a custom port:
 bash scripts/install.sh --host 0.0.0.0 --port 9000
 ```
 
-### Virtual environment (recommended)
+### Windows (PowerShell / CMD)
 
-```bash
+```powershell
+git clone https://github.com/shifty81/SwissAgent.git
+cd SwissAgent
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-bash scripts/install.sh
+.venv\Scripts\Activate.ps1
+pip install -e .
+python -m core.cli ui
 ```
+
+See [docs/SETUP.md — Windows-Specific Notes](docs/SETUP.md#8-windows-specific-notes) for more details.
 
 ### Install from PyPI (alternative)
 
@@ -290,9 +307,12 @@ The built-in AI Agent chat panel works without any external services:
 | **Inline completions** | Ghost-text suggestions appear as you type in the Monaco editor (requires internet for CDN) |
 | **File push poller** | Files written via `POST /api/ide/push` open in the editor automatically every 3 s |
 
-## Docker — One-Command Full Stack
+## Docker — Optional Full Stack
 
-The fastest way to run the complete open-source AI stack is with Docker Compose:
+> **Docker is not required to run SwissAgent.** See [Installation](#installation) for the no-Docker path.
+
+The Docker Compose setup gives you the complete open-source AI stack
+(**SwissAgent IDE + LocalAI + Open WebUI**) with one command:
 
 ```bash
 # Start SwissAgent IDE + LocalAI + Open WebUI
@@ -312,7 +332,7 @@ docker compose exec localai \
 
 Then set `default_llm_backend = "localai"` in `configs/config.toml`.
 
-See [`docs/self_iteration.md`](docs/self_iteration.md) for the full architecture guide.
+See [`docs/SETUP.md — Path B`](docs/SETUP.md#3-path-b--with-docker-compose-full-ai-stack) for the step-by-step Docker guide and [`docs/self_iteration.md`](docs/self_iteration.md) for the full architecture guide.
 
 ## Autonomous Self-Build (Roadmap Phase 13)
 
