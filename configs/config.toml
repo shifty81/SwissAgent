@@ -20,6 +20,15 @@ key = ""
 # Leave blank to auto-select the first available model
 model = ""
 
+[llm.localai]
+# URL of your running LocalAI instance.
+# docker run -d -p 8080:8080 -v $(pwd)/models:/models ghcr.io/mudler/localai:latest
+base_url = "http://localhost:8080"
+# No API key required for local use — leave blank
+key = ""
+# Model name as listed by LocalAI (e.g. codestral, deepseek-r1, phi-4)
+model = "codestral"
+
 [llm.local]
 model_path = "models/model.gguf"
 

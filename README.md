@@ -106,6 +106,7 @@ swissagent --debug run "build the project with cmake"
 | Backend | Flag | Description |
 |---------|------|-------------|
 | `ollama` *(default)* | `--llm-backend ollama` | Local Ollama server (`http://localhost:11434`). No API key needed. Recommended models: `llama3`, `deepseek-coder`, `codellama`, `qwen2.5-coder` |
+| `localai` | `--llm-backend localai` | [LocalAI](https://github.com/mudler/LocalAI) Docker instance (`http://localhost:8080`). OpenAI-compatible, runs GGUF/GPTQ models. Best choice for Docker Compose deployments. Recommended: `codestral`, `deepseek-r1`, `phi4`. |
 | `openwebui` | `--llm-backend openwebui` | [Open WebUI](https://github.com/open-webui/open-webui) local instance (`http://localhost:3000`). Runs on top of Ollama. Adds a full chat brainstorming UI that can push code directly into the IDE. |
 | `api` | `--llm-backend api` | Any OpenAI-compatible endpoint (OpenAI, Anthropic, Groq, etc.). Set `key` in `configs/config.toml`. |
 | `local` | `--llm-backend local` | GGUF model via `llama-cpp-python` (stub — provide `model_path` in config). |
@@ -180,6 +181,13 @@ model = "llama3"          # any model pulled via `ollama pull <name>`
 base_url = "http://localhost:3000"
 key = ""                  # API key from Open WebUI → Settings → Account → API Keys
 model = ""                # leave blank to auto-select the first available model
+
+[llm.localai]
+# URL of your running LocalAI instance.
+# docker run -d -p 8080:8080 -v $(pwd)/models:/models ghcr.io/mudler/localai:latest
+base_url = "http://localhost:8080"
+key = ""                  # no key needed for local use
+model = "codestral"       # any model loaded in LocalAI
 
 [llm.api]
 base_url = "https://api.openai.com"
@@ -281,6 +289,54 @@ The built-in AI Agent chat panel works without any external services:
 | **Slash commands** | `/fix` `/explain` `/test` `/docs` `/refactor` — auto-inject the currently open file as context |
 | **Inline completions** | Ghost-text suggestions appear as you type in the Monaco editor (requires internet for CDN) |
 | **File push poller** | Files written via `POST /api/ide/push` open in the editor automatically every 3 s |
+
+## Docker — One-Command Full Stack
+
+The fastest way to run the complete open-source AI stack is with Docker Compose:
+
+```bash
+# Start SwissAgent IDE + LocalAI + Open WebUI
+docker compose up -d
+
+# Open the IDE
+open http://localhost:8000
+
+# Open the chat UI (Open WebUI)
+open http://localhost:3000
+
+# Download a coding model into LocalAI (first time only)
+docker compose exec localai \
+  curl -L -o /models/codestral.gguf \
+  https://huggingface.co/bartowski/Codestral-22B-v0.1-GGUF/resolve/main/Codestral-22B-v0.1-Q4_K_M.gguf
+```
+
+Then set `default_llm_backend = "localai"` in `configs/config.toml`.
+
+See [`docs/self_iteration.md`](docs/self_iteration.md) for the full architecture guide.
+
+## Autonomous Self-Build (Roadmap Phase 13)
+
+Once the AI and editor are fully running (Phases 1–10), SwissAgent is designed to
+**build itself** — reading its own roadmap, writing the implementation, running
+tests in a Docker sandbox, and committing the result:
+
+```
+roadmap_next_task()
+  → LLM generates code (LocalAI / Ollama)
+  → dev_mode.apply_patch() writes files
+  → Docker sandbox: pytest tests/
+  → pass  → git commit + roadmap_complete_task() → next task
+  → fail  → feed errors back to LLM (max 3 retries) → rollback on final fail
+```
+
+**Key guardrails:**
+- All generated code runs in an isolated Docker container (never on the host directly)
+- Permission system blocks writes outside `workspace/` and `projects/`
+- `dev_mode.rollback_patch()` reverts any failed self-modification
+- Self-build loop is **opt-in** — triggered only via the "Autonomous Self-Build" button
+
+See [`docs/self_iteration.md`](docs/self_iteration.md) for the full loop diagram,
+model recommendations, and security details.
 
 ## Plugin System
 
