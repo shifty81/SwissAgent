@@ -61,7 +61,24 @@
         <div id="tabs-list"></div>
       </div>
       <!-- Monaco editor -->
-      <div id="editor-container"></div>
+      <div id="editor-container">
+        <!-- Loading overlay shown while Monaco initialises -->
+        <div id="editor-loading">
+          <div class="editor-spinner"></div>
+          <span>Loading editor…</span>
+        </div>
+        <!-- Welcome screen shown when no file is open -->
+        <div id="editor-welcome" class="hidden">
+          <div class="welcome-content">
+            <div class="welcome-icon">🛠</div>
+            <h2>SwissAgent IDE</h2>
+            <p>Open a file from the sidebar, or create a new one with <kbd>+</kbd></p>
+            <p class="welcome-hint">Use the AI Agent panel on the right to generate or improve code.</p>
+          </div>
+        </div>
+        <!-- Fallback plain-text editor when Monaco CDN is unreachable -->
+        <textarea id="fallback-editor" class="hidden" spellcheck="false"></textarea>
+      </div>
       <!-- Output panel (tabbed) -->
       <div id="output-panel">
         <div id="output-header">

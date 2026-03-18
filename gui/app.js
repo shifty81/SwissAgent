@@ -13,6 +13,7 @@
     openFiles: {},        // path → { content, language, modified, model }
     activeFile: null,     // currently visible path
     editor: null,         // Monaco editor instance
+    editorMode: null,     // "monaco" | "fallback" | null
     ws: null,             // active WebSocket for /ws/run
     currentWsAbort: null, // AbortController for fetch-based fallback
     buildErrors: [],      // parsed error objects from last build
@@ -107,11 +108,18 @@
   }
 
   function updateCursorPosition() {
-    if (state.editor) {
+    if (state.editorMode === "monaco" && state.editor) {
       const pos = state.editor.getPosition();
       if (pos) {
         sbCursor.textContent = `Ln ${pos.lineNumber}, Col ${pos.column}`;
       }
+    } else if (state.editorMode === "fallback") {
+      const ta = $("fallback-editor");
+      const text = ta.value.substring(0, ta.selectionStart);
+      const lines = text.split("\n");
+      const line = lines.length;
+      const col = lines[lines.length - 1].length + 1;
+      sbCursor.textContent = `Ln ${line}, Col ${col}`;
     }
   }
 
@@ -295,9 +303,13 @@
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       const lang = extToLang(path);
-      const model = monaco.editor.createModel(data.content, lang);
-      model.onDidChangeContent(() => markModified(path));
-      state.openFiles[path] = { content: data.content, language: lang, modified: false, model };
+      if (state.editorMode === "monaco") {
+        const model = monaco.editor.createModel(data.content, lang);
+        model.onDidChangeContent(() => markModified(path));
+        state.openFiles[path] = { content: data.content, language: lang, modified: false, model };
+      } else {
+        state.openFiles[path] = { content: data.content, language: lang, modified: false, model: null };
+      }
       addTab(path);
       activateTab(path);
     } catch (e) {
@@ -329,9 +341,13 @@
     state.activeFile = path;
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.path === path));
     document.querySelectorAll(".tree-item.file").forEach((t) => t.classList.toggle("active", t.dataset.path === path));
-    if (state.editor && state.openFiles[path]) {
+    if (state.editorMode === "monaco" && state.editor && state.openFiles[path]) {
       state.editor.setModel(state.openFiles[path].model);
+    } else if (state.editorMode === "fallback" && state.openFiles[path]) {
+      $("fallback-editor").value = state.openFiles[path]?.content ?? "";
+      $("fallback-editor").classList.remove("hidden");
     }
+    $("editor-welcome").classList.add("hidden");
     updateStatusBar();
   }
 
@@ -349,7 +365,12 @@
       if (remaining.length > 0) activateTab(remaining[remaining.length - 1]);
       else {
         state.activeFile = null;
-        if (state.editor) state.editor.setModel(null);
+        if (state.editorMode === "monaco" && state.editor) state.editor.setModel(null);
+        if (state.editorMode === "fallback") {
+          $("fallback-editor").value = "";
+          $("fallback-editor").classList.add("hidden");
+          $("editor-welcome").classList.remove("hidden");
+        }
         updateStatusBar();
       }
     }
@@ -369,7 +390,10 @@
     if (!path) return;
     const file = state.openFiles[path];
     if (!file) return;
-    const content = file.model.getValue();
+    const content = state.editorMode === "monaco"
+      ? file.model.getValue()
+      : $("fallback-editor").value;
+    if (state.editorMode === "fallback") file.content = content;
     try {
       const res = await fetch("/files/write", {
         method: "POST",
@@ -670,7 +694,10 @@
       appendOutput("No file open.\n");
       return;
     }
-    const content = state.openFiles[path]?.model?.getValue() || "";
+    const file = state.openFiles[path];
+    const content = state.editorMode === "monaco"
+      ? (file?.model?.getValue() ?? "")
+      : ($("fallback-editor").value || file?.content || "");
     const prompt = `Review and improve the file '${path}':\n\n${content}`;
     sendPrompt(prompt);
   }
@@ -714,8 +741,8 @@
       if (!res.ok) throw new Error((await res.json()).detail || "Scan failed");
       const data = await res.json();
       let text = `📁 ${path}\n`;
-      text += `Type: ${(data.detected_types || []).join(", ") || "unknown"}\n`;
-      text += `Files: ${data.total_files || 0}  Dirs: ${data.total_dirs || 0}\n\n`;
+      text += `Type: ${(data.summary?.detected_project_types ?? []).join(", ") || "unknown"}\n`;
+      text += `Files: ${data.summary?.total_files ?? 0}  Dirs: ${data.summary?.total_dirs ?? 0}\n\n`;
       if (data.entries) {
         for (const e of data.entries.slice(0, 30)) {
           text += `  ${e.type === "dir" ? "📁" : "📄"} ${e.name}\n`;
@@ -749,8 +776,57 @@
   }
 
   // ── Monaco init ────────────────────────────────────────────────────────────
+  function initFallbackEditor() {
+    state.editorMode = "fallback";
+    $("editor-loading").style.display = "none";
+    $("fallback-editor").classList.add("hidden");
+    $("editor-welcome").classList.remove("hidden");
+
+    // Tab key → 4-space indent
+    $("fallback-editor").addEventListener("keydown", (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const ta = $("fallback-editor");
+        const start = ta.selectionStart;
+        const end = ta.selectionEnd;
+        ta.value = ta.value.substring(0, start) + "    " + ta.value.substring(end);
+        ta.selectionStart = ta.selectionEnd = start + 4;
+        if (state.activeFile) markModified(state.activeFile);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        saveActiveFile();
+      }
+    });
+
+    $("fallback-editor").addEventListener("input", () => {
+      if (state.activeFile) markModified(state.activeFile);
+      updateCursorPosition();
+    });
+
+    $("fallback-editor").addEventListener("keyup", updateCursorPosition);
+    $("fallback-editor").addEventListener("click", updateCursorPosition);
+
+    loadFileTree();
+    appendOutput("⚠ Monaco editor CDN unavailable — using fallback text editor.\n");
+  }
+
   function initMonaco() {
+    if (typeof require !== "function") {
+      initFallbackEditor();
+      return;
+    }
+
+    let monacoLoaded = false;
+    const fallbackTimer = setTimeout(() => {
+      if (!monacoLoaded) initFallbackEditor();
+    }, 8000);
+
     require(["vs/editor/editor.main"], function () {
+      if (monacoLoaded) return; // guard against double-fire
+      monacoLoaded = true;
+      clearTimeout(fallbackTimer);
+
       monaco.editor.defineTheme("swissagent-dark", {
         base: "vs-dark",
         inherit: true,
@@ -781,6 +857,10 @@
         renderWhitespace: "selection",
         model: null,
       });
+
+      state.editorMode = "monaco";
+      $("editor-loading").style.display = "none";
+      $("editor-welcome").classList.remove("hidden");
 
       // Ctrl+S to save
       state.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveActiveFile);

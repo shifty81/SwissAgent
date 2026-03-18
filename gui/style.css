@@ -197,6 +197,106 @@ body {
 #editor-container {
   flex: 1;
   overflow: hidden;
+  position: relative;
+}
+
+/* Loading overlay */
+#editor-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 14px;
+  z-index: 10;
+}
+
+.editor-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Welcome screen */
+#editor-welcome {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  z-index: 5;
+  pointer-events: none;
+}
+
+.welcome-content {
+  text-align: center;
+  max-width: 380px;
+  padding: 24px;
+}
+
+.welcome-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.welcome-content h2 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.welcome-content p {
+  font-size: 14px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-bottom: 6px;
+}
+
+.welcome-hint {
+  font-size: 12px !important;
+  opacity: 0.7;
+}
+
+.welcome-content kbd {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* Fallback textarea editor */
+#fallback-editor {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 12px 16px;
+  border: none;
+  outline: none;
+  resize: none;
+  z-index: 4;
+}
+
+#fallback-editor:focus {
+  outline: none;
 }
 
 /* ── Output panel ──────────────────────────────────────────────── */
