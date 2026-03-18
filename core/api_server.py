@@ -1,9 +1,12 @@
 """SwissAgent HTTP API server (FastAPI)."""
 from __future__ import annotations
 import asyncio
+import datetime
 import json
 import os
+import queue
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -12,8 +15,9 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from core.config_loader import ConfigLoader
@@ -185,6 +189,35 @@ class SandboxRunRequest(BaseModel):
     docker_image: str = "python:3.11-slim"
 
 
+# ── Phase 10/11: Chat history + session memory request models ──────────────────
+
+class ChatMessageRequest(BaseModel):
+    role: str  # "user" | "assistant" | "system"
+    content: str
+    project_path: str = ""
+
+
+class SessionMemoryRequest(BaseModel):
+    key: str
+    value: str
+    project_path: str = ""
+
+
+# ── Phase 11: Model download request model ────────────────────────────────────
+
+class ModelDownloadRequest(BaseModel):
+    model_name: str
+    url: str = ""
+    backend: str = "ollama"  # "ollama" | "localai"
+
+
+# ── Phase 13: Self-build request model ────────────────────────────────────────
+
+class SelfBuildRequest(BaseModel):
+    task_id: str = ""
+    llm_backend: str = ""
+
+
 # ── Phase 7: AI editor request models ─────────────────────────────────────────
 
 class AiCompleteRequest(BaseModel):
@@ -271,6 +304,34 @@ def create_app(config_dir: str = "configs") -> FastAPI:
     permissions = PermissionSystem()
     runner = TaskRunner()
 
+    # ── Optional HTTP Basic Auth (t10-1) ───────────────────────────────────
+    _auth_enabled: bool = bool(config.get("auth.enabled", False))
+    _auth_username: str = str(config.get("auth.username", ""))
+    _auth_password: str = str(config.get("auth.password", ""))
+    _http_basic = HTTPBasic(auto_error=False)
+
+    def _require_auth(credentials: Optional[HTTPBasicCredentials] = Depends(_http_basic)) -> None:
+        if not _auth_enabled:
+            return
+        if credentials is None:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required",
+                headers={"WWW-Authenticate": "Basic"},
+            )
+        ok_user = secrets.compare_digest(
+            credentials.username.encode(), _auth_username.encode()
+        )
+        ok_pass = secrets.compare_digest(
+            credentials.password.encode(), _auth_password.encode()
+        )
+        if not (ok_user and ok_pass):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": "Basic"},
+            )
+
     logger.info("SwissAgent API server initialized. %d tools loaded.", len(registry.list_tools()))
 
     # ── Plugin hot-reload watcher ──────────────────────────────────────────
@@ -339,26 +400,60 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             data = json.loads(raw)
             prompt = data.get("prompt", "")
             backend = data.get("llm_backend", "ollama")
+            project_path = data.get("project_path", "")
 
             from core.agent import Agent
             from llm.factory import create_llm
 
             llm = create_llm(backend, config)
-            agent = Agent(llm, registry, permissions, runner, config)
 
-            # Run the agent in a thread; stream output line-by-line
+            # Use a queue so the agent thread can push LLM tokens to the WS
+            token_queue: queue.Queue[str | None] = queue.Queue()
+
+            def _stream_callback(token: str) -> None:
+                token_queue.put(token)
+
+            agent = Agent(llm, registry, permissions, runner, config, project_path)
+
             loop = asyncio.get_event_loop()
 
             def _run() -> str:
-                return agent.run(prompt)
+                result = agent.run(prompt, project_path)
+                token_queue.put(None)  # sentinel
+                return result
 
             future = loop.run_in_executor(None, _run)
 
-            # Poll for result; in future versions agent can push chunks via a queue
+            # Drain token queue until sentinel
+            while True:
+                try:
+                    token = token_queue.get(timeout=0.05)
+                except Exception:
+                    token = None
+                if token is None:
+                    # Check if future is done (sentinel received or future finished)
+                    if future.done():
+                        break
+                    # Empty queue but future not done yet — keep waiting
+                    await asyncio.sleep(0.05)
+                    continue
+                await websocket.send_text(json.dumps({"type": "chunk", "data": token}))
+
+            # Ensure future is awaited
             result = await future
+            # Send any remaining output as chunks
             for line in result.splitlines(keepends=True):
                 await websocket.send_text(json.dumps({"type": "chunk", "data": line}))
             await websocket.send_text(json.dumps({"type": "done"}))
+
+            # Persist to chat history (t10-5)
+            _append_chat_history(
+                base_dir, project_path,
+                [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": result},
+                ],
+            )
         except WebSocketDisconnect:
             pass
         except Exception as exc:
@@ -1641,8 +1736,335 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             "tools": len(registry.list_tools()),
         }
 
+    # ── Phase 10-5: Persistent chat history ───────────────────────────────────
+
+    @app.get("/chat/history")
+    async def chat_history_get(
+        project_path: str = Query(default=""),
+        limit: int = Query(default=100, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        """Return chat history for the given project (or global if no project_path)."""
+        history = _load_chat_history(base_dir, project_path)
+        return {"messages": history[-limit:], "total": len(history)}
+
+    @app.post("/chat/history")
+    async def chat_history_append(req: ChatMessageRequest) -> dict[str, str]:
+        """Append a message to the chat history."""
+        if req.role not in ("user", "assistant", "system"):
+            raise HTTPException(status_code=400, detail="role must be user/assistant/system")
+        _append_chat_history(
+            base_dir, req.project_path,
+            [{"role": req.role, "content": req.content, "ts": datetime.datetime.now(datetime.timezone.utc).isoformat()}],
+        )
+        return {"status": "ok"}
+
+    @app.delete("/chat/history")
+    async def chat_history_clear(project_path: str = Query(default="")) -> dict[str, str]:
+        """Clear the chat history for the given project."""
+        _save_chat_history(base_dir, project_path, [])
+        return {"status": "ok"}
+
+    # ── Phase 10-6: Agent session memory ──────────────────────────────────────
+
+    @app.get("/memory")
+    async def memory_get(project_path: str = Query(default="")) -> dict[str, Any]:
+        """Return the session memory key-value store."""
+        return {"memory": _load_session_memory(base_dir, project_path)}
+
+    @app.post("/memory")
+    async def memory_set(req: SessionMemoryRequest) -> dict[str, str]:
+        """Store a key-value fact in session memory."""
+        if not req.key.strip():
+            raise HTTPException(status_code=400, detail="key must not be empty")
+        mem = _load_session_memory(base_dir, req.project_path)
+        mem[req.key] = req.value
+        _save_session_memory(base_dir, req.project_path, mem)
+        return {"status": "ok"}
+
+    @app.delete("/memory/{key}")
+    async def memory_delete(key: str, project_path: str = Query(default="")) -> dict[str, str]:
+        """Delete a key from session memory."""
+        mem = _load_session_memory(base_dir, req.project_path if False else project_path)
+        mem.pop(key, None)
+        _save_session_memory(base_dir, project_path, mem)
+        return {"status": "ok"}
+
+    # ── Phase 11-7: Model download helper ─────────────────────────────────────
+
+    # Curated list of recommended open-source models
+    _RECOMMENDED_MODELS: list[dict[str, Any]] = [
+        {
+            "name": "codestral",
+            "label": "Codestral 22B",
+            "description": "Mistral's code-specialist model — best for code generation",
+            "backend": "ollama",
+            "pull": "ollama pull codestral",
+            "size_gb": 12.9,
+        },
+        {
+            "name": "deepseek-r1",
+            "label": "DeepSeek R1",
+            "description": "DeepSeek reasoning model — strong at planning & analysis",
+            "backend": "ollama",
+            "pull": "ollama pull deepseek-r1",
+            "size_gb": 4.7,
+        },
+        {
+            "name": "phi4",
+            "label": "Phi-4 14B",
+            "description": "Microsoft Phi-4 — small but capable for code & chat",
+            "backend": "ollama",
+            "pull": "ollama pull phi4",
+            "size_gb": 8.9,
+        },
+        {
+            "name": "qwen2.5-coder",
+            "label": "Qwen 2.5 Coder 7B",
+            "description": "Alibaba Qwen 2.5 Coder — excellent code completion",
+            "backend": "ollama",
+            "pull": "ollama pull qwen2.5-coder",
+            "size_gb": 4.7,
+        },
+        {
+            "name": "llama3.2",
+            "label": "Llama 3.2 3B",
+            "description": "Meta Llama 3.2 — fast & lightweight general assistant",
+            "backend": "ollama",
+            "pull": "ollama pull llama3.2",
+            "size_gb": 2.0,
+        },
+    ]
+
+    @app.get("/models/list")
+    async def models_list() -> dict[str, Any]:
+        """List recommended downloadable models + locally installed models."""
+        ollama_url = config.get("llm.ollama.base_url", "http://localhost:11434")
+        installed: list[str] = []
+        try:
+            import requests as _req  # type: ignore[import]
+            resp = _req.get(f"{ollama_url}/api/tags", timeout=5)
+            if resp.ok:
+                installed = [m.get("name", "") for m in resp.json().get("models", [])]
+        except Exception:
+            pass
+        models = []
+        for m in _RECOMMENDED_MODELS:
+            entry = dict(m)
+            entry["installed"] = any(m["name"] in name for name in installed)
+            models.append(entry)
+        return {"models": models, "installed": installed}
+
+    @app.post("/models/download")
+    async def models_download(req: ModelDownloadRequest) -> dict[str, Any]:
+        """Start a background model download (ollama pull or curl for LocalAI)."""
+        if not req.model_name.strip():
+            raise HTTPException(status_code=400, detail="model_name must not be empty")
+
+        job_id = f"{req.model_name}_{int(time.time())}"
+        _model_download_jobs[job_id] = {"status": "running", "model": req.model_name, "log": []}
+
+        def _do_download() -> None:
+            entry = _model_download_jobs[job_id]
+            try:
+                if req.backend == "ollama":
+                    ollama_url = config.get("llm.ollama.base_url", "http://localhost:11434")
+                    proc = subprocess.Popen(
+                        ["ollama", "pull", req.model_name],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                    )
+                    for line in (proc.stdout or []):
+                        entry["log"].append(line.rstrip())
+                    proc.wait()
+                    entry["status"] = "done" if proc.returncode == 0 else "error"
+                elif req.url:
+                    # Download a .gguf file directly
+                    models_dir = base_dir / "models"
+                    models_dir.mkdir(exist_ok=True)
+                    filename = Path(req.url).name or f"{req.model_name}.gguf"
+                    dest = models_dir / filename
+                    proc = subprocess.Popen(
+                        ["curl", "-L", "-o", str(dest), req.url],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                    )
+                    for line in (proc.stdout or []):
+                        entry["log"].append(line.rstrip())
+                    proc.wait()
+                    entry["status"] = "done" if proc.returncode == 0 else "error"
+                else:
+                    entry["status"] = "error"
+                    entry["log"].append("No download URL provided for non-ollama backend")
+            except Exception as exc:
+                entry["status"] = "error"
+                entry["log"].append(str(exc))
+
+        threading.Thread(target=_do_download, daemon=True, name=f"model-dl-{job_id}").start()
+        return {"status": "started", "job_id": job_id, "model": req.model_name}
+
+    @app.get("/models/download/status")
+    async def models_download_status(job_id: str = Query(...)) -> dict[str, Any]:
+        """Check the status of a model download job."""
+        if job_id not in _model_download_jobs:
+            raise HTTPException(status_code=404, detail="job_id not found")
+        return _model_download_jobs[job_id]
+
+    # ── Phase 13: Autonomous Self-Build ───────────────────────────────────────
+
+    @app.post("/self-build/run", dependencies=[Depends(_require_auth)])
+    async def self_build_run(req: SelfBuildRequest) -> dict[str, Any]:
+        """Run one self-build cycle synchronously (short tasks only)."""
+        from core.self_build import SelfBuildLoop
+        from llm.factory import create_llm
+
+        backend = req.llm_backend or config.get("agent.default_llm_backend", "ollama")
+        llm = create_llm(backend, config)
+        loop_obj = SelfBuildLoop(base_dir, llm)
+        log_lines: list[str] = []
+
+        def _emit(line: str) -> None:
+            log_lines.append(line)
+
+        result = await loop_obj.run(_emit, task_id=req.task_id or None)
+        result["log_text"] = "".join(log_lines)
+        return result
+
+    @app.websocket("/ws/self-build")
+    async def ws_self_build(websocket: WebSocket) -> None:
+        """Stream self-build log output token by token."""
+        await websocket.accept()
+        try:
+            raw = await websocket.receive_text()
+            data = json.loads(raw)
+            backend = data.get("llm_backend", config.get("agent.default_llm_backend", "ollama"))
+            task_id_req = data.get("task_id", "") or None
+
+            from core.self_build import SelfBuildLoop
+            from llm.factory import create_llm
+
+            llm = create_llm(backend, config)
+            loop_obj = SelfBuildLoop(base_dir, llm)
+
+            ws_queue: queue.Queue[str | None] = queue.Queue()
+
+            def _emit(line: str) -> None:
+                ws_queue.put(line)
+
+            async def _run_build() -> None:
+                await loop_obj.run(_emit, task_id=task_id_req)
+                ws_queue.put(None)  # sentinel
+
+            build_task = asyncio.ensure_future(_run_build())
+
+            while True:
+                try:
+                    msg = ws_queue.get(timeout=0.1)
+                except Exception:
+                    if build_task.done():
+                        break
+                    await asyncio.sleep(0.05)
+                    continue
+                if msg is None:
+                    break
+                await websocket.send_text(json.dumps({"type": "log", "data": msg}))
+
+            await build_task
+            await websocket.send_text(json.dumps({"type": "done"}))
+        except WebSocketDisconnect:
+            pass
+        except Exception as exc:
+            try:
+                await websocket.send_text(json.dumps({"type": "error", "data": str(exc)}))
+            except Exception:
+                pass
+
+    @app.get("/self-build/log")
+    async def self_build_log() -> dict[str, Any]:
+        """Return self-build telemetry log."""
+        from core.self_build import _load_telemetry
+        telem = _load_telemetry(base_dir)
+        total = len(telem)
+        successes = sum(1 for e in telem if e.get("success"))
+        avg_attempts = (
+            sum(e.get("attempts", 1) for e in telem) / total if total else 0
+        )
+        return {
+            "entries": telem,
+            "summary": {
+                "total": total,
+                "successes": successes,
+                "failures": total - successes,
+                "success_rate": round(successes / total, 3) if total else 0,
+                "avg_attempts": round(avg_attempts, 2),
+            },
+        }
+
     return app
+
+
+# ── Module-level helper functions for chat history + session memory ────────────
+
+def _chat_history_path(base_dir: Path, project_path: str) -> Path:
+    if project_path:
+        return base_dir / project_path / ".swissagent" / "chat_history.json"
+    return base_dir / ".swissagent" / "chat_history.json"
+
+
+def _load_chat_history(base_dir: Path, project_path: str) -> list[dict[str, Any]]:
+    p = _chat_history_path(base_dir, project_path)
+    if p.is_file():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return []
+
+
+def _save_chat_history(base_dir: Path, project_path: str, history: list[dict[str, Any]]) -> None:
+    p = _chat_history_path(base_dir, project_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(history, indent=2) + "\n", encoding="utf-8")
+
+
+def _append_chat_history(
+    base_dir: Path, project_path: str, messages: list[dict[str, Any]]
+) -> None:
+    history = _load_chat_history(base_dir, project_path)
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    for msg in messages:
+        if "ts" not in msg:
+            msg = dict(msg, ts=now)
+        history.append(msg)
+    # Keep last 500 messages to prevent unbounded growth
+    _save_chat_history(base_dir, project_path, history[-500:])
+
+
+def _memory_path(base_dir: Path, project_path: str) -> Path:
+    if project_path:
+        return base_dir / project_path / ".swissagent" / "session_memory.json"
+    return base_dir / ".swissagent" / "session_memory.json"
+
+
+def _load_session_memory(base_dir: Path, project_path: str) -> dict[str, str]:
+    p = _memory_path(base_dir, project_path)
+    if p.is_file():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def _save_session_memory(base_dir: Path, project_path: str, mem: dict[str, str]) -> None:
+    p = _memory_path(base_dir, project_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(mem, indent=2) + "\n", encoding="utf-8")
 
 
 # In-process store for files pushed via /api/ide/push
 _ide_pending_pushes: list[str] = []
+
+# In-process store for model download jobs
+_model_download_jobs: dict[str, Any] = {}

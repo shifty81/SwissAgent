@@ -1574,7 +1574,10 @@
 
     let html = `<div class="roadmap-header">
       <span>📋 ${data.project || "Roadmap"} — ${data.version || ""}</span>
-      <button id="btn-roadmap-next-task" title="Send next pending task to the AI agent">▶ Work on Next Task</button>
+      <div style="display:flex;gap:6px">
+        <button id="btn-roadmap-next-task" title="Send next pending task to the AI agent">▶ Work on Next Task</button>
+        <button id="btn-roadmap-auto-build" title="Autonomous self-build: LLM generates code, tests, and commits" style="background:var(--accent2,#7c3aed);color:#fff">🤖 Auto-Build Next</button>
+      </div>
     </div>`;
 
     for (const m of (data.milestones || [])) {
@@ -1646,7 +1649,17 @@
         }
       });
     }
-  }
+
+    // "Auto-Build Next" button (t13-3)
+    const autoBuildBtn = $("btn-roadmap-auto-build");
+    if (autoBuildBtn) {
+      autoBuildBtn.addEventListener("click", () => {
+        if (!confirm("Start autonomous self-build? The agent will generate code, run tests, and commit automatically.")) return;
+        switchOutputTab("output");
+        appendOutput("🤖 Starting autonomous self-build…\n");
+        _startSelfBuild("");
+      });
+    }
 
   function _workOnTask(taskId, title, description) {
     const prompt =
@@ -1665,7 +1678,139 @@
     switchOutputTab("output");
   }
 
-  function escHtmlSimple(s) {
+  // ── Autonomous self-build via WebSocket (t13-3) ────────────────────────────
+  let _selfBuildWs = null;
+
+  function _startSelfBuild(taskId) {
+    if (_selfBuildWs && _selfBuildWs.readyState === WebSocket.OPEN) {
+      appendOutput("⚠️ Self-build already running.\n");
+      return;
+    }
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    _selfBuildWs = new WebSocket(`${proto}://${location.host}/ws/self-build`);
+    _selfBuildWs.onopen = () => {
+      _selfBuildWs.send(JSON.stringify({ task_id: taskId }));
+    };
+    _selfBuildWs.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "log") appendOutput(msg.data);
+        else if (msg.type === "done") {
+          appendOutput("✅ Self-build complete.\n");
+          loadRoadmapPanel();  // refresh roadmap
+        } else if (msg.type === "error") {
+          appendOutput(`❌ Self-build error: ${msg.data}\n`);
+        }
+      } catch (e) { appendOutput(ev.data); }
+    };
+    _selfBuildWs.onerror = () => appendOutput("❌ Self-build WebSocket error.\n");
+    _selfBuildWs.onclose = () => { _selfBuildWs = null; };
+  }
+
+  // ── Model download panel (t11-7) ───────────────────────────────────────────
+
+  async function loadModelsPanel() {
+    const container = $("models-panel-content");
+    if (!container) return;
+    container.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px">Loading…</div>';
+    try {
+      const res = await fetch("/models/list");
+      const data = await res.json();
+      const models = data.models || [];
+      let html = `<div style="padding:8px">
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">
+          One-click download for recommended open-source models via Ollama.
+        </div>`;
+      for (const m of models) {
+        const badge = m.installed
+          ? `<span style="color:#22c55e;font-size:11px">✓ installed</span>`
+          : `<span style="color:var(--text-dim);font-size:11px">${m.size_gb} GB</span>`;
+        html += `<div class="model-card" style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:600;font-size:13px">${escHtmlSimple(m.label)}</span>
+            ${badge}
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);margin:4px 0">${escHtmlSimple(m.description)}</div>
+          <div style="display:flex;gap:6px;margin-top:4px">
+            ${!m.installed ? `<button class="model-dl-btn" data-name="${escHtmlSimple(m.name)}" style="font-size:11px;padding:2px 8px">⬇ Download</button>` : ""}
+            <code style="font-size:10px;color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis">${escHtmlSimple(m.pull)}</code>
+          </div>
+          <div id="model-dl-status-${escHtmlSimple(m.name)}" style="font-size:11px;margin-top:4px"></div>
+        </div>`;
+      }
+      html += "</div>";
+      container.innerHTML = html;
+      container.querySelectorAll(".model-dl-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const name = btn.dataset.name;
+          btn.disabled = true;
+          btn.textContent = "⏳ Starting…";
+          const statusEl = $(`model-dl-status-${name}`);
+          try {
+            const r = await fetch("/models/download", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ model_name: name, backend: "ollama" }),
+            });
+            const d = await r.json();
+            if (d.job_id) {
+              btn.textContent = "⏳ Downloading…";
+              _pollModelDownload(d.job_id, name, statusEl, btn);
+            } else {
+              if (statusEl) statusEl.textContent = "Error: " + JSON.stringify(d);
+              btn.disabled = false;
+              btn.textContent = "⬇ Download";
+            }
+          } catch (e) {
+            if (statusEl) statusEl.textContent = "Error: " + e.message;
+            btn.disabled = false;
+            btn.textContent = "⬇ Download";
+          }
+        });
+      });
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--error,#ef4444);padding:8px">Failed to load models: ${e.message}</div>`;
+    }
+  }
+
+  function _pollModelDownload(jobId, modelName, statusEl, btn) {
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch(`/models/download/status?job_id=${encodeURIComponent(jobId)}`);
+        const d = await r.json();
+        const log = (d.log || []).slice(-3).join(" | ");
+        if (statusEl) statusEl.textContent = log || d.status;
+        if (d.status === "done") {
+          clearInterval(interval);
+          if (btn) { btn.textContent = "✓ Done"; btn.style.background = "#22c55e"; }
+          appendOutput(`✅ Model '${modelName}' downloaded successfully.\n`);
+        } else if (d.status === "error") {
+          clearInterval(interval);
+          if (btn) { btn.textContent = "❌ Error"; btn.disabled = false; }
+        }
+      } catch (e) {
+        clearInterval(interval);
+      }
+    }, 2000);
+  }
+
+  // ── Chat history persistence (t10-5) ─────────────────────────────────────
+
+  async function loadChatHistory(projectPath) {
+    try {
+      const url = projectPath ? `/chat/history?project_path=${encodeURIComponent(projectPath)}&limit=50` : "/chat/history?limit=50";
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      const messages = data.messages || [];
+      if (!messages.length) return;
+      appendOutput(`\n── Loaded ${messages.length} messages from chat history ──\n`);
+    } catch (e) {
+      // silently fail — history is optional
+    }
+  }
+
+
     return String(s)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
@@ -1674,6 +1819,14 @@
   }
 
   // ── Command palette ────────────────────────────────────────────────────────
+  function escHtmlSimple(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
   const _palette = {
     visible: false,
     mode: "files",    // "files" | "commands"
@@ -1857,6 +2010,7 @@
       if (panel === "knowledge") { loadKnowledgePanel(); loadProfilePanel(); loadRulesPanel(); }
       if (panel === "roadmap")   loadRoadmapSidebar();
       if (panel === "plugins")   loadPluginsPanel();
+      if (panel === "models")    loadModelsPanel();
       // Focus search input when search panel is shown
       if (panel === "search") setTimeout(() => $("sb-search-input")?.focus(), 50);
     });
@@ -2631,4 +2785,8 @@
   appendOutput("SwissAgent IDE ready. Open a file or type a prompt to get started.\n");
   appendOutput("Tip: Ctrl+P = file picker  |  Ctrl+Shift+P = command palette  |  Terminal tab = interactive shell\n");
   updateStatusBar();
+
+  // Wire models-refresh button
+  const _modelsRefreshBtn = $("btn-models-refresh");
+  if (_modelsRefreshBtn) _modelsRefreshBtn.addEventListener("click", () => loadModelsPanel());
 })();

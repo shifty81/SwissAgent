@@ -476,9 +476,10 @@
         {
           "id": "t10-2",
           "title": "Docker + docker-compose setup",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
-          "description": "Dockerfile + compose with Ollama service; one command startup"
+          "description": "Dockerfile + compose with Ollama service; one command startup",
+          "notes": "Dockerfile + docker-compose.yml already present"
         },
         {
           "id": "t10-3",

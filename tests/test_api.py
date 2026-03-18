@@ -702,3 +702,176 @@ def test_sandbox_run_docker_fallback_when_unavailable(client, monkeypatch):
     assert data.get("docker") is False
     assert "warning" in data
     assert "fallback" in data["warning"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase 10-1 — HTTP Basic Auth
+# ---------------------------------------------------------------------------
+
+def test_auth_disabled_by_default(client):
+    """With auth disabled in config, all endpoints are accessible without credentials."""
+    res = client.get("/health")
+    assert res.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Phase 10-5 — Persistent chat history
+# ---------------------------------------------------------------------------
+
+def test_chat_history_empty(client):
+    """GET /chat/history returns empty list when no history exists."""
+    res = client.get("/chat/history?project_path=_test_no_such_project_xyz")
+    assert res.status_code == 200
+    data = res.json()
+    assert "messages" in data
+    assert data["total"] == 0
+
+
+def test_chat_history_append_and_get(client):
+    """POST /chat/history appends a message; GET retrieves it."""
+    import uuid
+    project = f"_test_chat_{uuid.uuid4().hex[:8]}"
+    try:
+        res = client.post(
+            "/chat/history",
+            json={"role": "user", "content": "Hello from test!", "project_path": project},
+        )
+        assert res.status_code == 200
+        assert res.json()["status"] == "ok"
+
+        res = client.get(f"/chat/history?project_path={project}")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["total"] == 1
+        assert data["messages"][0]["content"] == "Hello from test!"
+    finally:
+        # Clean up
+        client.delete(f"/chat/history?project_path={project}")
+
+
+def test_chat_history_clear(client):
+    """DELETE /chat/history clears history."""
+    import uuid
+    project = f"_test_chat_clear_{uuid.uuid4().hex[:8]}"
+    client.post("/chat/history", json={"role": "user", "content": "hi", "project_path": project})
+    res = client.delete(f"/chat/history?project_path={project}")
+    assert res.status_code == 200
+    res = client.get(f"/chat/history?project_path={project}")
+    assert res.json()["total"] == 0
+
+
+def test_chat_history_invalid_role(client):
+    """POST /chat/history with invalid role returns 400."""
+    res = client.post("/chat/history", json={"role": "robot", "content": "hi"})
+    assert res.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Phase 10-6 — Agent session memory
+# ---------------------------------------------------------------------------
+
+def test_memory_empty(client):
+    """GET /memory returns empty dict when no memory set."""
+    res = client.get("/memory?project_path=_test_no_such_proj_mem")
+    assert res.status_code == 200
+    assert res.json()["memory"] == {}
+
+
+def test_memory_set_and_get(client):
+    """POST /memory stores a key; GET /memory retrieves it."""
+    import uuid
+    project = f"_test_mem_{uuid.uuid4().hex[:8]}"
+    try:
+        res = client.post(
+            "/memory",
+            json={"key": "test_fact", "value": "42", "project_path": project},
+        )
+        assert res.status_code == 200
+
+        res = client.get(f"/memory?project_path={project}")
+        assert res.status_code == 200
+        assert res.json()["memory"].get("test_fact") == "42"
+    finally:
+        client.delete(f"/memory/test_fact?project_path={project}")
+
+
+def test_memory_delete_key(client):
+    """DELETE /memory/{key} removes a specific key."""
+    import uuid
+    project = f"_test_mem_del_{uuid.uuid4().hex[:8]}"
+    client.post("/memory", json={"key": "del_key", "value": "val", "project_path": project})
+    res = client.delete(f"/memory/del_key?project_path={project}")
+    assert res.status_code == 200
+    res = client.get(f"/memory?project_path={project}")
+    assert "del_key" not in res.json()["memory"]
+
+
+def test_memory_empty_key_rejected(client):
+    """POST /memory with empty key returns 400."""
+    res = client.post("/memory", json={"key": "", "value": "x"})
+    assert res.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Phase 11-7 — Model download helper
+# ---------------------------------------------------------------------------
+
+def test_models_list(client):
+    """GET /models/list returns recommended models list."""
+    res = client.get("/models/list")
+    assert res.status_code == 200
+    data = res.json()
+    assert "models" in data
+    assert isinstance(data["models"], list)
+    assert len(data["models"]) >= 4
+    # Each model has required fields
+    for m in data["models"]:
+        assert "name" in m
+        assert "label" in m
+        assert "backend" in m
+        assert "installed" in m
+
+
+def test_models_download_empty_name(client):
+    """POST /models/download with empty model_name returns 400."""
+    res = client.post("/models/download", json={"model_name": "", "backend": "ollama"})
+    assert res.status_code == 400
+
+
+def test_models_download_starts_job(client, monkeypatch):
+    """POST /models/download with valid name starts a background job."""
+    import subprocess as _sp
+
+    # Monkeypatch Popen to avoid actual download
+    class _FakePopen:
+        stdout = iter([])
+        returncode = 0
+        def wait(self): pass
+
+    monkeypatch.setattr(_sp, "Popen", lambda *a, **kw: _FakePopen())
+
+    res = client.post("/models/download", json={"model_name": "test-model", "backend": "ollama"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "started"
+    assert "job_id" in data
+
+
+def test_models_download_status_not_found(client):
+    """GET /models/download/status with unknown job_id returns 404."""
+    res = client.get("/models/download/status?job_id=nonexistent_job")
+    assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Phase 13 — Self-build log endpoint
+# ---------------------------------------------------------------------------
+
+def test_self_build_log_empty(client):
+    """GET /self-build/log returns empty entries when no build has run."""
+    res = client.get("/self-build/log")
+    assert res.status_code == 200
+    data = res.json()
+    assert "entries" in data
+    assert "summary" in data
+    assert data["summary"]["total"] >= 0
