@@ -12,7 +12,12 @@
     <span class="logo">🛠 SwissAgent IDE</span>
     <div class="topbar-actions">
       <button id="btn-save" title="Save current file (Ctrl+S)">💾 Save</button>
-      <button id="btn-run-file" title="Run agent on current file">▶ Run Agent</button>
+      <button id="btn-run-file" title="Run agent on current file">▶ Agent</button>
+      <button id="btn-build" title="Build project (auto-detected)">🔨 Build</button>
+      <button id="btn-test"  title="Run tests (auto-detected)">🧪 Test</button>
+      <label id="label-auto-rebuild" title="Auto-rebuild when a file is saved">
+        <input type="checkbox" id="chk-auto-rebuild" /> Auto-rebuild
+      </label>
       <select id="llm-backend-select" title="LLM backend">
         <option value="ollama">Ollama (local)</option>
         <option value="api">OpenAI API</option>
@@ -31,8 +36,20 @@
         <span>Files</span>
         <div class="sidebar-buttons">
           <button id="btn-new-file" title="New file">+</button>
+          <button id="btn-import-project" title="Import a local folder into workspace">📥</button>
           <button id="btn-refresh-tree" title="Refresh">↺</button>
         </div>
+      </div>
+      <!-- Project/CWD selector for build -->
+      <div class="sidebar-cwd">
+        <label class="cwd-label">Build root</label>
+        <select id="build-cwd-select">
+          <option value="workspace">workspace/</option>
+          <option value="projects">projects/</option>
+        </select>
+        <select id="build-subdir-select">
+          <option value="">(root)</option>
+        </select>
       </div>
       <div id="file-tree"></div>
     </aside>
@@ -45,13 +62,23 @@
       </div>
       <!-- Monaco editor -->
       <div id="editor-container"></div>
-      <!-- Output panel (resizable) -->
+      <!-- Output panel (tabbed) -->
       <div id="output-panel">
         <div id="output-header">
-          <span>Output</span>
-          <button id="btn-clear-output" title="Clear output">✕ Clear</button>
+          <!-- Tab buttons -->
+          <div id="output-tabs">
+            <button class="out-tab active" data-tab="output">Output</button>
+            <button class="out-tab" data-tab="build">Build / Test</button>
+          </div>
+          <div class="output-actions">
+            <button id="btn-fix-ai" class="btn-fix hidden" title="Send build errors to agent for fixing">🪄 Fix with AI</button>
+            <button id="btn-clear-output" title="Clear output">✕ Clear</button>
+          </div>
         </div>
-        <pre id="output-content"></pre>
+        <!-- Pane: agent output -->
+        <pre id="output-content" class="out-pane active"></pre>
+        <!-- Pane: build/test output -->
+        <pre id="build-content" class="out-pane"></pre>
       </div>
     </div>
 

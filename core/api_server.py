@@ -2,7 +2,7 @@
 from __future__ import annotations
 import asyncio
 import json
-import os
+import sys
 from pathlib import Path
 from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -22,6 +22,20 @@ logger = get_logger(__name__)
 # Directories the GUI file browser is allowed to expose.
 _BROWSER_ROOTS = {"workspace", "projects", "plugins", "templates"}
 
+# Directories allowed as working directories for terminal/build commands.
+_BUILD_ROOTS = {"workspace", "projects"}
+
+# Build-system detection table: (marker_file, system_name, build_cmd, test_cmd)
+_BUILD_DETECTORS: list[tuple[str, str, str, str]] = [
+    ("CMakeLists.txt",  "cmake",  "cmake -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build", "ctest --test-dir build --output-on-failure"),
+    ("package.json",    "npm",    "npm install && npm run build",      "npm test"),
+    ("Cargo.toml",      "cargo",  "cargo build",                       "cargo test"),
+    ("pyproject.toml",  "python", f'"{sys.executable}" -m build',      f'"{sys.executable}" -m pytest -v'),
+    ("setup.py",        "python", f'"{sys.executable}" setup.py build', f'"{sys.executable}" -m pytest -v'),
+    ("Makefile",        "make",   "make",                              "make test"),
+    ("requirements.txt","python", f'"{sys.executable}" -m pip install -r requirements.txt', f'"{sys.executable}" -m pytest -v'),
+]
+
 
 class RunRequest(BaseModel):
     prompt: str
@@ -40,6 +54,12 @@ class ToolCallRequest(BaseModel):
 class FileWriteRequest(BaseModel):
     path: str
     content: str
+
+
+class FileImportRequest(BaseModel):
+    source_path: str
+    destination_name: str = ""
+    overwrite: bool = False
 
 
 def _safe_path(base_dir: Path, rel: str) -> Path:
@@ -206,5 +226,114 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
         return {"status": "ok", "path": req.path}
+
+    # ── Import local project into workspace ───────────────────────────────
+    @app.post("/files/import")
+    async def import_project(req: FileImportRequest) -> dict[str, Any]:
+        """Copy a local folder into workspace/ for development."""
+        from modules.import_project.src.import_tools import import_project as _import
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: _import(
+                source_path=req.source_path,
+                destination_name=req.destination_name,
+                overwrite=req.overwrite,
+            ),
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    # ── Scan a local folder (preview before import) ────────────────────────
+    @app.get("/files/scan")
+    async def scan_folder(
+        path: str = Query(..., description="Local path to scan"),
+        max_depth: int = Query(default=2, ge=1, le=5),
+    ) -> dict[str, Any]:
+        """List contents of any local directory to preview before importing."""
+        from modules.import_project.src.import_tools import scan_folder as _scan
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: _scan(path, max_depth)
+        )
+        if result.get("error") and not result.get("exists", True):
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+
+    # ── Build system detection ─────────────────────────────────────────────
+    @app.get("/build/detect")
+    async def detect_build(path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Auto-detect the build system in a project directory."""
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not accessible for builds")
+        target = _safe_path(base_dir, path)
+        if not target.is_dir():
+            raise HTTPException(status_code=404, detail="Directory not found")
+        for marker, system, build_cmd, test_cmd in _BUILD_DETECTORS:
+            if (target / marker).is_file():
+                return {
+                    "system": system,
+                    "marker": marker,
+                    "build_command": build_cmd,
+                    "test_command": test_cmd,
+                    "cwd": path,
+                }
+        return {"system": "unknown", "marker": None, "build_command": None, "test_command": None, "cwd": path}
+
+    # ── Terminal WebSocket – real-time subprocess streaming ────────────────
+    @app.websocket("/ws/terminal")
+    async def ws_terminal(websocket: WebSocket) -> None:
+        """Run a shell command inside workspace/projects and stream its output."""
+        await websocket.accept()
+        proc: Optional[asyncio.subprocess.Process] = None
+        try:
+            raw = await websocket.receive_text()
+            data = json.loads(raw)
+            command: str = data.get("command", "").strip()
+            rel_cwd: str = data.get("cwd", "workspace")
+
+            if not command:
+                await websocket.send_text(json.dumps({"type": "error", "data": "No command provided"}))
+                return
+
+            # Security: restrict working directory to build roots
+            top = Path(rel_cwd).parts[0] if Path(rel_cwd).parts else ""
+            if top not in _BUILD_ROOTS:
+                await websocket.send_text(
+                    json.dumps({"type": "error", "data": f"cwd must be inside {sorted(_BUILD_ROOTS)}"})
+                )
+                return
+
+            cwd = _safe_path(base_dir, rel_cwd)
+            cwd.mkdir(parents=True, exist_ok=True)
+
+            logger.info("Terminal WS: running %r in %s", command, cwd)
+
+            proc = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=str(cwd),
+            )
+
+            assert proc.stdout is not None
+            async for raw_line in proc.stdout:
+                line = raw_line.decode("utf-8", errors="replace")
+                await websocket.send_text(json.dumps({"type": "stdout", "data": line}))
+
+            await proc.wait()
+            await websocket.send_text(json.dumps({"type": "exit", "code": proc.returncode}))
+
+        except WebSocketDisconnect:
+            pass
+        except Exception as exc:
+            logger.exception("Terminal WS error: %s", exc)
+            try:
+                await websocket.send_text(json.dumps({"type": "error", "data": str(exc)}))
+            except Exception:
+                pass
+        finally:
+            if proc is not None and proc.returncode is None:
+                proc.terminate()
 
     return app
