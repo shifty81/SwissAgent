@@ -51,13 +51,52 @@ def run(ctx: click.Context, prompt: str, llm_backend: str) -> None:
 @main.command()
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8000, show_default=True, type=int)
+@click.option("--open-browser/--no-open-browser", default=False, show_default=True,
+              help="Open the GUI in the default browser after starting.")
 @click.pass_context
-def serve(ctx: click.Context, host: str, port: int) -> None:
+def serve(ctx: click.Context, host: str, port: int, open_browser: bool) -> None:
     """Start the SwissAgent HTTP API server."""
     import uvicorn
     from core.api_server import create_app
     app = create_app(ctx.obj["config_dir"])
+    if open_browser:
+        _schedule_browser_open(host, port)
     uvicorn.run(app, host=host, port=port)
+
+
+@main.command("ui")
+@click.option("--host", default="127.0.0.1", show_default=True,
+              help="Host to bind the server to.")
+@click.option("--port", default=8000, show_default=True, type=int,
+              help="Port to listen on.")
+@click.pass_context
+def ui(ctx: click.Context, host: str, port: int) -> None:
+    """Launch the SwissAgent web IDE and open it in the browser."""
+    import uvicorn
+    from core.api_server import create_app
+
+    url = f"http://{host}:{port}"
+    click.echo(f"Starting SwissAgent IDE at {url} …")
+    app = create_app(ctx.obj["config_dir"])
+    _schedule_browser_open(host, port)
+    uvicorn.run(app, host=host, port=port)
+
+
+def _schedule_browser_open(host: str, port: int) -> None:
+    """Open the browser 1.5 s after the server starts (non-blocking)."""
+    import threading
+    import time
+    import webbrowser
+
+    display_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    url = f"http://{display_host}:{port}"
+
+    def _open() -> None:
+        time.sleep(1.5)
+        webbrowser.open(url)
+
+    t = threading.Thread(target=_open, daemon=True)
+    t.start()
 
 
 @main.command("list-tools")
@@ -105,3 +144,4 @@ def list_modules(ctx: click.Context) -> None:
     for meta in loader.loaded_modules.values():
         table.add_row(meta.get("name", ""), meta.get("version", ""), meta.get("description", ""))
     console.print(table)
+
