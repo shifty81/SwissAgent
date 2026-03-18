@@ -59,9 +59,29 @@ def import_project(
             }
         shutil.rmtree(dst)
 
+    # Guard against copying a directory into itself (e.g. importing the
+    # SwissAgent project while running from its own root).  When dst lives
+    # inside src we pass an ignore function that skips the top-level
+    # sub-directory of src that leads to dst, preventing infinite recursion.
+    ignore_fn = None
     try:
-        shutil.copytree(src, dst)
+        dst_rel = dst.relative_to(src)
+        skip_name = dst_rel.parts[0]
+
+        def ignore_fn(directory: str, _contents: list) -> set:  # type: ignore[misc]
+            if Path(directory).resolve() == src.resolve():
+                return {skip_name}
+            return set()
+    except ValueError:
+        pass  # dst is not inside src — normal case, no ignore needed
+
+    try:
+        shutil.copytree(src, dst, ignore=ignore_fn)
     except Exception as exc:
+        # Clean up any partially-created destination so retries don't hit
+        # "already exists" errors.
+        if dst.exists():
+            shutil.rmtree(dst, ignore_errors=True)
         return {"error": f"Copy failed: {exc}"}
 
     # Count copied items for the summary
