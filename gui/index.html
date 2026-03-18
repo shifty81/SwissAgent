@@ -45,6 +45,7 @@
       <button class="ab-btn" data-panel="models"   title="Model Downloads">📥</button>
       <button class="ab-btn" data-panel="quality"  title="Code Quality">🔬</button>
       <button class="ab-btn" data-panel="templates" title="Templates & Toolchain">🧩</button>
+      <button class="ab-btn" data-panel="utilities" title="Utilities (Phase 16)">⚙️</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -321,6 +322,113 @@
           </div>
           <textarea id="snippet-code" rows="5" placeholder="# type code here…" style="width:calc(100% - 16px);margin:0 8px;font-size:11px;font-family:monospace;resize:vertical;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:4px;padding:4px"></textarea>
           <div id="snippet-output" style="padding:8px;font-size:11px;font-family:monospace;white-space:pre-wrap;max-height:160px;overflow-y:auto;background:var(--bg2,#1e1e1e);border-radius:4px;margin:4px 8px;min-height:30px"></div>
+        </div>
+      </div>
+
+      <!-- ── Utilities Panel (Phase 16) ─────────────────────────────── -->
+      <div class="sb-panel" id="panel-utilities">
+        <div class="sidebar-header">
+          <span>⚙️ Utilities</span>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto">
+
+          <!-- Archive Section -->
+          <div style="margin-bottom:12px">
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">📦 ARCHIVE</div>
+            <input id="util-archive-src" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Source path" />
+            <input id="util-archive-dst" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Destination (.zip/.tar/.7z)" />
+            <select id="util-archive-fmt" style="width:100%;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px">
+              <option value="zip">ZIP</option>
+              <option value="tar">TAR</option>
+              <option value="7z">7z</option>
+            </select>
+            <button id="btn-util-archive-pack" style="width:100%;margin-bottom:8px">Pack</button>
+            <input id="util-extract-src" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Archive path" />
+            <input id="util-extract-dst" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Extract to" />
+            <button id="btn-util-archive-extract" style="width:100%">Extract</button>
+          </div>
+
+          <!-- Documentation Section -->
+          <div style="margin-bottom:12px">
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">📄 DOCUMENTATION</div>
+            <input id="util-doc-src" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Source dir (Python files)" />
+            <input id="util-doc-out" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Output path" />
+            <select id="util-doc-fmt" style="width:100%;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px">
+              <option value="markdown">Markdown</option>
+              <option value="html">HTML</option>
+              <option value="json">JSON</option>
+            </select>
+            <button id="btn-util-doc-gen" style="width:100%">Generate Docs</button>
+          </div>
+
+          <!-- Package Manager Section -->
+          <div style="margin-bottom:12px">
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">📥 PACKAGE MANAGER</div>
+            <input id="util-pkg-name" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Package name" />
+            <input id="util-pkg-version" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Version (optional)" />
+            <select id="util-pkg-mgr" style="width:100%;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px">
+              <option value="pip">pip</option>
+              <option value="npm">npm</option>
+              <option value="cargo">cargo</option>
+              <option value="gem">gem</option>
+              <option value="go">go</option>
+            </select>
+            <button id="btn-util-pkg-install" style="width:100%;margin-bottom:4px">Install</button>
+            <button id="btn-util-pkg-uninstall" style="width:100%;margin-bottom:4px">Uninstall</button>
+            <button id="btn-util-pkg-list" style="width:100%">List Packages</button>
+          </div>
+
+          <!-- Image Section -->
+          <div style="margin-bottom:12px">
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">🖼️ IMAGE</div>
+            <div style="display:flex;gap:4px;margin-bottom:4px">
+              <input id="util-img-path" style="flex:1;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Image path" />
+              <button id="btn-util-img-info">Info</button>
+            </div>
+            <div style="display:flex;gap:4px;margin-bottom:4px">
+              <input id="util-img-w" style="width:60px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="W" />
+              <input id="util-img-h" style="width:60px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="H" />
+              <input id="util-img-dst" style="flex:1;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Output (optional)" />
+            </div>
+            <button id="btn-util-img-resize" style="width:100%;margin-bottom:4px">Resize</button>
+            <input id="util-img-fmt" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Format (PNG, JPEG, WEBP…)" />
+            <button id="btn-util-img-convert" style="width:100%">Convert</button>
+          </div>
+
+          <!-- Audio Section -->
+          <div style="margin-bottom:12px">
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">🔊 AUDIO</div>
+            <div style="display:flex;gap:4px;margin-bottom:4px">
+              <input id="util-audio-src" style="flex:1;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Source audio path" />
+              <button id="btn-util-audio-info">Info</button>
+            </div>
+            <input id="util-audio-dst" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Output path" />
+            <input id="util-audio-codec" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Codec (optional)" />
+            <button id="btn-util-audio-convert" style="width:100%;margin-bottom:8px">Convert</button>
+            <div style="display:flex;gap:4px;margin-bottom:4px">
+              <input id="util-audio-start" style="width:80px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Start ms" />
+              <input id="util-audio-end" style="width:80px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="End ms" />
+            </div>
+            <button id="btn-util-audio-trim" style="width:100%">Trim</button>
+          </div>
+
+          <!-- Debug Section -->
+          <div style="margin-bottom:12px">
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">🐛 DEBUG / PROCESS</div>
+            <input id="util-debug-pid" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Process ID" />
+            <div style="display:flex;gap:4px">
+              <button id="btn-util-debug-process" style="flex:1">Inspect</button>
+              <button id="btn-util-debug-memory" style="flex:1">Memory</button>
+              <button id="btn-util-debug-trace" style="flex:1">Trace</button>
+            </div>
+          </div>
+
+          <!-- Output -->
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">OUTPUT</div>
+            <pre id="util-output" style="background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;padding:8px;font-size:11px;min-height:60px;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all"></pre>
+          </div>
+
         </div>
       </div>
 

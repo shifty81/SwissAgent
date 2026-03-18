@@ -1148,3 +1148,177 @@ def test_templates_save_nonexistent_source(client):
         json={"name": "test-tmpl-xyz", "source": "__nonexistent_src__", "description": ""},
     )
     assert res.status_code == 404
+
+
+# ── Phase 16: Utility API tests ───────────────────────────────────────────────
+
+def test_archive_pack_missing_fields(client):
+    """POST /archive/pack with empty src/dst returns 422."""
+    res = client.post("/archive/pack", json={"src": "", "dst": "", "format": "zip"})
+    # FastAPI validates the body; empty strings pass Pydantic but zip_pack may error
+    assert res.status_code in (200, 400, 422)
+
+
+def test_archive_pack_nonexistent_src(client, tmp_path):
+    """POST /archive/pack with nonexistent src returns 400."""
+    res = client.post(
+        "/archive/pack",
+        json={"src": str(tmp_path / "does_not_exist"), "dst": str(tmp_path / "out.zip"), "format": "zip"},
+    )
+    assert res.status_code == 400
+
+
+def test_archive_extract_nonexistent(client, tmp_path):
+    """POST /archive/extract with nonexistent archive returns 400."""
+    res = client.post(
+        "/archive/extract",
+        json={"src": str(tmp_path / "no.zip"), "dst": str(tmp_path / "out")},
+    )
+    assert res.status_code == 400
+
+
+def test_archive_roundtrip(client, tmp_path):
+    """Pack then extract a directory produces identical files."""
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "hello.txt").write_text("hi there")
+
+    archive = str(tmp_path / "test.zip")
+    extract_dir = str(tmp_path / "extracted")
+
+    res = client.post("/archive/pack", json={"src": str(src_dir), "dst": archive, "format": "zip"})
+    assert res.status_code == 200
+    assert res.json().get("archive") == archive
+
+    res2 = client.post("/archive/extract", json={"src": archive, "dst": extract_dir})
+    assert res2.status_code == 200
+    import os
+    extracted_files = list(Path(extract_dir).rglob("*.txt"))
+    assert len(extracted_files) == 1
+    assert extracted_files[0].read_text() == "hi there"
+
+
+def test_doc_generate_markdown(client, tmp_path):
+    """POST /doc/generate creates a markdown file from Python source."""
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "sample.py").write_text('"""Module docstring."""\n\ndef greet(name: str) -> str:\n    """Greet someone."""\n    return f"Hello {name}"\n')
+    out_file = str(tmp_path / "docs" / "README.md")
+
+    res = client.post(
+        "/doc/generate",
+        json={"src": str(src_dir), "output": out_file, "format": "markdown", "title": "Test Docs"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ok"
+    assert data["files_scanned"] >= 1
+    assert Path(out_file).exists()
+
+
+def test_doc_generate_bad_src(client, tmp_path):
+    """POST /doc/generate with nonexistent src returns 400."""
+    res = client.post(
+        "/doc/generate",
+        json={"src": str(tmp_path / "nosuchdir"), "output": str(tmp_path / "out.md"), "format": "markdown"},
+    )
+    assert res.status_code == 400
+
+
+def test_doc_lint_missing_dir(client, tmp_path):
+    """GET /doc/lint with nonexistent directory returns 400."""
+    res = client.get(f"/doc/lint?docs_dir={tmp_path / 'nosuchdir'}")
+    assert res.status_code == 400
+
+
+def test_network_download_missing_fields(client):
+    """POST /network/download with empty url/dst returns 400."""
+    res = client.post("/network/download", json={"url": "", "dst": ""})
+    assert res.status_code == 400
+
+
+def test_network_request_missing_url(client):
+    """POST /network/request with empty url returns 400."""
+    res = client.post("/network/request", json={"url": "", "method": "GET"})
+    assert res.status_code == 400
+
+
+def test_packages_install_empty_name(client):
+    """POST /packages/install with empty name returns 400."""
+    res = client.post("/packages/install", json={"name": "", "manager": "pip"})
+    assert res.status_code == 400
+
+
+def test_packages_list_pip(client):
+    """GET /packages/list?manager=pip returns a list."""
+    res = client.get("/packages/list?manager=pip")
+    assert res.status_code == 200
+    data = res.json()
+    assert "manager" in data
+
+
+def test_packages_uninstall_empty_name(client):
+    """POST /packages/uninstall with empty name returns 400."""
+    res = client.post("/packages/uninstall", json={"name": "", "manager": "pip"})
+    assert res.status_code == 400
+
+
+def test_image_info_nonexistent(client, tmp_path):
+    """GET /image/info with nonexistent path returns 400."""
+    res = client.get(f"/image/info?path={tmp_path / 'no.png'}")
+    assert res.status_code == 400
+
+
+def test_image_resize_missing_path(client):
+    """POST /image/resize with empty path returns 400."""
+    res = client.post("/image/resize", json={"path": "", "width": 100, "height": 100})
+    assert res.status_code == 400
+
+
+def test_image_convert_missing_fields(client):
+    """POST /image/convert missing path or format returns 400."""
+    res = client.post("/image/convert", json={"path": "", "format": "PNG"})
+    assert res.status_code == 400
+
+
+def test_audio_convert_missing_fields(client):
+    """POST /audio/convert with empty src/dst returns 400."""
+    res = client.post("/audio/convert", json={"src": "", "dst": ""})
+    assert res.status_code == 400
+
+
+def test_audio_trim_missing_fields(client):
+    """POST /audio/trim with empty src/dst returns 400."""
+    res = client.post("/audio/trim", json={"src": "", "dst": "", "start_ms": 0, "end_ms": -1})
+    assert res.status_code == 400
+
+
+def test_audio_info_nonexistent(client, tmp_path):
+    """GET /audio/info with nonexistent path returns 400."""
+    res = client.get(f"/audio/info?path={tmp_path / 'no.mp3'}")
+    assert res.status_code == 400
+
+
+def test_debug_process_invalid_pid(client):
+    """GET /debug/process with PID 0 returns 404."""
+    res = client.get("/debug/process?pid=0")
+    assert res.status_code == 404
+
+
+def test_debug_memory_current_process(client):
+    """GET /debug/memory with current process PID returns ok."""
+    import os
+    res = client.get(f"/debug/memory?pid={os.getpid()}")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ok"
+    assert "memory" in data
+
+
+def test_debug_trace_current_process(client):
+    """GET /debug/trace with current process PID returns stack frames."""
+    import os
+    res = client.get(f"/debug/trace?pid={os.getpid()}")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ok"

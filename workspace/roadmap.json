@@ -761,6 +761,77 @@
           "description": "Activity-bar panel for browsing/applying templates, viewing toolchain status, and quick snippet execution"
         }
       ]
+    },
+    {
+      "id": "m16",
+      "title": "Phase 16 \u2014 General-Purpose Utility APIs",
+      "description": "Expose zip/archive, documentation generation, network/HTTP, package management, image processing, audio processing, and debug tools via REST API and IDE Utilities panel",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t16-1",
+          "title": "ZIP/archive endpoints (POST /archive/pack, /archive/extract, /archive/add)",
+          "status": "done",
+          "priority": "high",
+          "description": "Expose the zip module: create ZIP/TAR/7z archives and extract them"
+        },
+        {
+          "id": "t16-2",
+          "title": "Documentation generator endpoints (POST /doc/generate, /doc/lint)",
+          "status": "done",
+          "priority": "high",
+          "description": "Generate markdown/HTML/JSON docs from Python source; lint markdown docs"
+        },
+        {
+          "id": "t16-3",
+          "title": "Network/HTTP endpoints (POST /network/download, /network/request)",
+          "status": "done",
+          "priority": "high",
+          "description": "Download files from URLs; make GET/POST HTTP requests"
+        },
+        {
+          "id": "t16-4",
+          "title": "Package manager endpoints (POST /packages/install, /packages/uninstall, GET /packages/list)",
+          "status": "done",
+          "priority": "high",
+          "description": "Install/uninstall/list packages via pip, npm, cargo, gem, or go"
+        },
+        {
+          "id": "t16-5",
+          "title": "Image processing endpoints (POST /image/resize, /image/convert, GET /image/info)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Resize, convert format, and inspect image files using Pillow"
+        },
+        {
+          "id": "t16-6",
+          "title": "Audio processing endpoints (POST /audio/convert, /audio/trim, GET /audio/info)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Convert, trim, and inspect audio files using FFmpeg or pydub"
+        },
+        {
+          "id": "t16-7",
+          "title": "Debug/process endpoints (GET /debug/process, /debug/memory, /debug/trace)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Inspect running processes, read memory usage, capture stack traces"
+        },
+        {
+          "id": "t16-8",
+          "title": "Utilities panel in IDE",
+          "status": "done",
+          "priority": "medium",
+          "description": "Activity-bar panel for archive, doc generation, package management, image, audio, and debug tools"
+        },
+        {
+          "id": "t16-9",
+          "title": "Fix recursive workspace directory bug in import_project",
+          "status": "done",
+          "priority": "high",
+          "description": "Use os.path.samefile() instead of == for path comparison in ignore_fn to handle Windows case-insensitive paths"
+        }
+      ]
     }
   ]
 }

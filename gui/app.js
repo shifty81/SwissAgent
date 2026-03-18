@@ -2962,4 +2962,158 @@
       if (!_templatesLoaded) { _templatesLoaded = true; _loadTemplates(); }
     });
   }
+
+  // ── Utilities panel (Phase 16) ─────────────────────────────────────────────
+
+  async function utilPost(url, body) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return await res.json();
+    } catch (e) {
+      return { error: e.message };
+    }
+  }
+
+  function utilOut(data) {
+    const el = $("util-output");
+    if (!el) return;
+    el.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  }
+
+  $("btn-util-archive-pack")?.addEventListener("click", async () => {
+    const src = ($("util-archive-src")?.value ?? "").trim();
+    const dst = ($("util-archive-dst")?.value ?? "").trim();
+    const format = $("util-archive-fmt")?.value ?? "zip";
+    utilOut("Packing…");
+    utilOut(await utilPost("/archive/pack", { src, dst, format }));
+  });
+
+  $("btn-util-archive-extract")?.addEventListener("click", async () => {
+    const src = ($("util-extract-src")?.value ?? "").trim();
+    const dst = ($("util-extract-dst")?.value ?? "").trim();
+    utilOut("Extracting…");
+    utilOut(await utilPost("/archive/extract", { src, dst }));
+  });
+
+  $("btn-util-doc-gen")?.addEventListener("click", async () => {
+    const src = ($("util-doc-src")?.value ?? "").trim();
+    const output = ($("util-doc-out")?.value ?? "").trim();
+    const format = $("util-doc-fmt")?.value ?? "markdown";
+    utilOut("Generating docs…");
+    utilOut(await utilPost("/doc/generate", { src, output, format }));
+  });
+
+  $("btn-util-pkg-install")?.addEventListener("click", async () => {
+    const name = ($("util-pkg-name")?.value ?? "").trim();
+    const version = ($("util-pkg-version")?.value ?? "").trim();
+    const manager = $("util-pkg-mgr")?.value ?? "pip";
+    if (!name) return utilOut("Enter a package name.");
+    utilOut(`Installing ${name}…`);
+    utilOut(await utilPost("/packages/install", { name, version, manager }));
+  });
+
+  $("btn-util-pkg-uninstall")?.addEventListener("click", async () => {
+    const name = ($("util-pkg-name")?.value ?? "").trim();
+    const manager = $("util-pkg-mgr")?.value ?? "pip";
+    if (!name) return utilOut("Enter a package name.");
+    utilOut(`Uninstalling ${name}…`);
+    utilOut(await utilPost("/packages/uninstall", { name, manager }));
+  });
+
+  $("btn-util-pkg-list")?.addEventListener("click", async () => {
+    const manager = $("util-pkg-mgr")?.value ?? "pip";
+    utilOut("Loading…");
+    try {
+      const res = await fetch(`/packages/list?manager=${manager}`);
+      utilOut(await res.json());
+    } catch (e) { utilOut({ error: e.message }); }
+  });
+
+  $("btn-util-img-info")?.addEventListener("click", async () => {
+    const path = ($("util-img-path")?.value ?? "").trim();
+    if (!path) return utilOut("Enter an image path.");
+    try {
+      const res = await fetch(`/image/info?path=${encodeURIComponent(path)}`);
+      utilOut(await res.json());
+    } catch (e) { utilOut({ error: e.message }); }
+  });
+
+  $("btn-util-img-resize")?.addEventListener("click", async () => {
+    const path = ($("util-img-path")?.value ?? "").trim();
+    const width = parseInt($("util-img-w")?.value ?? "0") || 0;
+    const height = parseInt($("util-img-h")?.value ?? "0") || 0;
+    const dst = ($("util-img-dst")?.value ?? "").trim();
+    if (!path || !width || !height) return utilOut("Path, width, and height required.");
+    utilOut("Resizing…");
+    utilOut(await utilPost("/image/resize", { path, width, height, dst }));
+  });
+
+  $("btn-util-img-convert")?.addEventListener("click", async () => {
+    const path = ($("util-img-path")?.value ?? "").trim();
+    const format = ($("util-img-fmt")?.value ?? "").trim();
+    const dst = ($("util-img-dst")?.value ?? "").trim();
+    if (!path || !format) return utilOut("Path and format required.");
+    utilOut("Converting…");
+    utilOut(await utilPost("/image/convert", { path, format, dst }));
+  });
+
+  $("btn-util-audio-info")?.addEventListener("click", async () => {
+    const path = ($("util-audio-src")?.value ?? "").trim();
+    if (!path) return utilOut("Enter an audio path.");
+    try {
+      const res = await fetch(`/audio/info?path=${encodeURIComponent(path)}`);
+      utilOut(await res.json());
+    } catch (e) { utilOut({ error: e.message }); }
+  });
+
+  $("btn-util-audio-convert")?.addEventListener("click", async () => {
+    const src = ($("util-audio-src")?.value ?? "").trim();
+    const dst = ($("util-audio-dst")?.value ?? "").trim();
+    const codec = ($("util-audio-codec")?.value ?? "").trim();
+    if (!src || !dst) return utilOut("src and dst required.");
+    utilOut("Converting audio…");
+    utilOut(await utilPost("/audio/convert", { src, dst, codec }));
+  });
+
+  $("btn-util-audio-trim")?.addEventListener("click", async () => {
+    const src = ($("util-audio-src")?.value ?? "").trim();
+    const dst = ($("util-audio-dst")?.value ?? "").trim();
+    const start_ms = parseInt($("util-audio-start")?.value ?? "0") || 0;
+    const end_ms = parseInt($("util-audio-end")?.value ?? "-1") || -1;
+    if (!src || !dst) return utilOut("src and dst required.");
+    utilOut("Trimming audio…");
+    utilOut(await utilPost("/audio/trim", { src, dst, start_ms, end_ms }));
+  });
+
+  $("btn-util-debug-process")?.addEventListener("click", async () => {
+    const pid = parseInt($("util-debug-pid")?.value ?? "0") || 0;
+    if (!pid) return utilOut("Enter a process ID.");
+    try {
+      const res = await fetch(`/debug/process?pid=${pid}`);
+      utilOut(await res.json());
+    } catch (e) { utilOut({ error: e.message }); }
+  });
+
+  $("btn-util-debug-memory")?.addEventListener("click", async () => {
+    const pid = parseInt($("util-debug-pid")?.value ?? "0") || 0;
+    if (!pid) return utilOut("Enter a process ID.");
+    try {
+      const res = await fetch(`/debug/memory?pid=${pid}`);
+      utilOut(await res.json());
+    } catch (e) { utilOut({ error: e.message }); }
+  });
+
+  $("btn-util-debug-trace")?.addEventListener("click", async () => {
+    const pid = parseInt($("util-debug-pid")?.value ?? "0") || 0;
+    if (!pid) return utilOut("Enter a process ID.");
+    try {
+      const res = await fetch(`/debug/trace?pid=${pid}`);
+      utilOut(await res.json());
+    } catch (e) { utilOut({ error: e.message }); }
+  });
+
 })();
