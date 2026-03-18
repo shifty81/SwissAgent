@@ -271,3 +271,61 @@ def test_files_import_nonexistent_source(client):
     )
     assert res.status_code == 400
     assert "does not exist" in res.json()["detail"]
+
+
+# ── New endpoint tests ────────────────────────────────────────────────────────
+
+def test_roadmap_next_returns_task(client):
+    """GET /roadmap/next must return a task (or null if all done)."""
+    res = client.get("/roadmap/next")
+    assert res.status_code == 200
+    data = res.json()
+    assert "task" in data
+    assert "milestone" in data
+    # If a task exists it must have id, title, status
+    if data["task"] is not None:
+        assert "id" in data["task"]
+        assert "title" in data["task"]
+        assert "status" in data["task"]
+
+
+def test_git_clone_missing_url(client):
+    """POST /git/clone with empty url must return 400."""
+    res = client.post("/git/clone", json={"url": ""})
+    assert res.status_code == 400
+    assert "URL is required" in res.json()["detail"]
+
+
+def test_git_clone_existing_destination(client, tmp_path):
+    """POST /git/clone into an already-existing destination must return 400."""
+    import shutil
+    from pathlib import Path
+    base = Path(".")
+    dest = Path("projects/_test_clone_exists")
+    dest.mkdir(parents=True, exist_ok=True)
+    try:
+        res = client.post(
+            "/git/clone",
+            json={"url": "https://github.com/example/repo.git", "destination": "_test_clone_exists"},
+        )
+        assert res.status_code == 400
+        assert "already exists" in res.json()["detail"]
+    finally:
+        if dest.exists():
+            shutil.rmtree(str(dest))
+
+
+def test_git_clone_invalid_url(client):
+    """POST /git/clone with a non-existent remote must return 400."""
+    res = client.post(
+        "/git/clone",
+        json={"url": "https://invalid.invalid/nonexistent/repo.git", "destination": "_test_clone_invalid"},
+        timeout=15,
+    )
+    assert res.status_code in (400, 500)
+    # Make sure destination was not left behind
+    import shutil
+    from pathlib import Path
+    dest = Path("projects/_test_clone_invalid")
+    if dest.exists():
+        shutil.rmtree(str(dest))

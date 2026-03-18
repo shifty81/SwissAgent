@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SwissAgent IDE</title>
   <link rel="stylesheet" href="/gui/style.css" />
+  <!-- xterm.js — loaded from CDN for the PTY terminal tab -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
 </head>
 <body>
   <!-- ── Top bar ─────────────────────────────────────────────── -->
@@ -37,6 +39,7 @@
         <span>Files</span>
         <div class="sidebar-buttons">
           <button id="btn-new-file" title="New file">+</button>
+          <button id="btn-clone-repo" title="Clone a git repository">⬇ Clone</button>
           <button id="btn-import-project" title="Import a local folder into workspace">📥</button>
           <button id="btn-refresh-tree" title="Refresh">↺</button>
         </div>
@@ -50,6 +53,12 @@
         </select>
         <select id="build-subdir-select">
           <option value="">(root)</option>
+        </select>
+      </div>
+      <!-- Project switcher -->
+      <div class="sidebar-projects">
+        <select id="project-switcher" title="Switch active project">
+          <option value="">— open project —</option>
         </select>
       </div>
       <div id="file-tree"></div>
@@ -88,6 +97,8 @@
             <button class="out-tab active" data-tab="output">Output</button>
             <button class="out-tab" data-tab="build">Build / Test</button>
             <button class="out-tab" data-tab="problems">Problems</button>
+            <button class="out-tab" data-tab="terminal">Terminal</button>
+            <button class="out-tab" data-tab="roadmap">Roadmap</button>
           </div>
           <div class="output-actions">
             <button id="btn-fix-ai" class="btn-fix hidden" title="Send build errors to agent for fixing">🪄 Fix with AI</button>
@@ -100,6 +111,10 @@
         <pre id="build-content" class="out-pane"></pre>
         <!-- Pane: problems list -->
         <div id="problems-content" class="out-pane"></div>
+        <!-- Pane: PTY terminal -->
+        <div id="terminal-content" class="out-pane terminal-pane"></div>
+        <!-- Pane: roadmap -->
+        <div id="roadmap-content" class="out-pane roadmap-pane"></div>
       </div>
     </div>
 
@@ -171,12 +186,43 @@
     <div class="ctx-item ctx-danger" data-action="delete">🗑 Delete</div>
   </div>
 
+  <!-- ── Git clone dialog ─────────────────────────────────────────────────── -->
+  <div id="clone-dialog" class="dialog hidden">
+    <div class="dialog-box dialog-wide">
+      <h3>⬇ Clone Repository</h3>
+      <label class="dialog-label">Repository URL</label>
+      <input id="clone-url" type="text" placeholder="https://github.com/user/repo.git" />
+      <label class="dialog-label">Destination name (optional)</label>
+      <input id="clone-dest" type="text" placeholder="auto-detected from URL" />
+      <label class="dialog-label">Branch (optional)</label>
+      <input id="clone-branch" type="text" placeholder="main" />
+      <div id="clone-status" class="clone-status hidden"></div>
+      <div class="dialog-buttons">
+        <button id="btn-clone-ok">Clone</button>
+        <button id="btn-clone-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Command palette ──────────────────────────────────────────────────── -->
+  <div id="cmd-palette" class="cmd-palette hidden">
+    <div class="cmd-palette-box">
+      <input id="cmd-palette-input" type="text" placeholder="Type a file name or command…" autocomplete="off" />
+      <div id="cmd-palette-list"></div>
+    </div>
+  </div>
+
   <!-- Monaco Editor loader (CDN — used when online; app.js handles offline fallback) -->
   <script>
     var require = { paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs" } };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs/loader.js"
           onerror="window.__monacoLoaderFailed=true"></script>
+  <!-- xterm.js for the PTY terminal tab -->
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"
+          onerror="window.__xtermLoaderFailed=true"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"
+          onerror="window.__xtermLoaderFailed=true"></script>
   <script src="/gui/app.js"></script>
 </body>
 </html>

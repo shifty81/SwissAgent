@@ -680,10 +680,17 @@
       t.classList.toggle("active", t.dataset.tab === tabName)
     );
     document.querySelectorAll(".out-pane").forEach((p) => p.classList.remove("active"));
-    const target = tabName === "build" ? buildContent
-                 : tabName === "problems" ? problemsContent
-                 : outputContent;
+    const paneMap = {
+      build: buildContent,
+      problems: problemsContent,
+      terminal: $("terminal-content"),
+      roadmap: $("roadmap-content"),
+    };
+    const target = paneMap[tabName] || outputContent;
     target.classList.add("active");
+
+    if (tabName === "terminal") _ensureTerminal();
+    if (tabName === "roadmap") loadRoadmapPanel();
   }
 
   // ── Slash commands ─────────────────────────────────────────────────────────
@@ -1135,8 +1142,483 @@
     if (e.key === "Escape") $("import-dialog").classList.add("hidden");
   });
 
+  // Clone repo button + dialog
+  $("btn-clone-repo").addEventListener("click", showCloneDialog);
+  $("btn-clone-ok").addEventListener("click", doClone);
+  $("btn-clone-cancel").addEventListener("click", () => $("clone-dialog").classList.add("hidden"));
+  $("clone-url").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doClone();
+    if (e.key === "Escape") $("clone-dialog").classList.add("hidden");
+  });
+
+  // ── Git clone ──────────────────────────────────────────────────────────────
+  function showCloneDialog() {
+    $("clone-url").value = "";
+    $("clone-dest").value = "";
+    $("clone-branch").value = "";
+    const status = $("clone-status");
+    status.className = "clone-status hidden";
+    status.textContent = "";
+    $("clone-dialog").classList.remove("hidden");
+    $("clone-url").focus();
+  }
+
+  async function doClone() {
+    const url = $("clone-url").value.trim();
+    if (!url) return;
+    const dest = $("clone-dest").value.trim();
+    const branch = $("clone-branch").value.trim();
+    const status = $("clone-status");
+    status.className = "clone-status running";
+    status.textContent = "⟳ Cloning… (this may take a moment)";
+    $("btn-clone-ok").disabled = true;
+    try {
+      const res = await fetch("/git/clone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, destination: dest, branch }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Clone failed");
+      status.className = "clone-status success";
+      status.textContent = `✓ Cloned into ${data.destination} (${data.files} files)`;
+      await loadFileTree();
+      await _refreshProjectSwitcher();
+      appendOutput(`✓ Cloned ${url} → ${data.destination}\n`);
+      setTimeout(() => $("clone-dialog").classList.add("hidden"), 1500);
+    } catch (e) {
+      status.className = "clone-status error";
+      status.textContent = `⚠ ${e.message}`;
+    } finally {
+      $("btn-clone-ok").disabled = false;
+    }
+  }
+
+  // ── Project switcher ───────────────────────────────────────────────────────
+  async function _refreshProjectSwitcher() {
+    const sel = $("project-switcher");
+    try {
+      // Collect subdirs from both workspace/ and projects/
+      const [wsRes, prRes] = await Promise.all([
+        fetch("/files?path=workspace"),
+        fetch("/files?path=projects"),
+      ]);
+      const options = [{ value: "", label: "— open project —" }];
+      if (wsRes.ok) {
+        const data = await wsRes.json();
+        for (const e of (data.entries || [])) {
+          if (e.type === "dir") options.push({ value: `workspace/${e.name}`, label: `workspace/${e.name}` });
+        }
+      }
+      if (prRes.ok) {
+        const data = await prRes.json();
+        for (const e of (data.entries || [])) {
+          if (e.type === "dir") options.push({ value: `projects/${e.name}`, label: `projects/${e.name}` });
+        }
+      }
+      sel.innerHTML = options.map((o) =>
+        `<option value="${o.value}">${o.label}</option>`
+      ).join("");
+    } catch { /* ignore */ }
+  }
+
+  $("project-switcher").addEventListener("change", async (e) => {
+    const path = e.target.value;
+    if (!path) return;
+    // Load the file tree rooted at this project dir
+    await loadFileTree(path);
+    e.target.value = "";  // reset so it can be re-selected
+  });
+
+  // ── PTY terminal ─────────────────────────────────────────────────────────
+  const _ptyState = { term: null, fitAddon: null, ws: null, ready: false };
+
+  function _ensureTerminal() {
+    const container = $("terminal-content");
+    if (_ptyState.ready) {
+      if (_ptyState.fitAddon) _ptyState.fitAddon.fit();
+      return;
+    }
+    if (window.__xtermLoaderFailed || typeof Terminal === "undefined") {
+      container.innerHTML =
+        '<div style="padding:16px;color:var(--text-dim)">' +
+        "⚠ xterm.js CDN unavailable. Connect to the internet to use the terminal tab.<br>" +
+        "You can still run commands via the Build/Test buttons." +
+        "</div>";
+      return;
+    }
+    _ptyState.ready = true;
+
+    const term = new Terminal({
+      theme: {
+        background: "#1e1e2e",
+        foreground: "#cdd6f4",
+        cursor: "#f5c2e7",
+        selectionBackground: "#45475a",
+      },
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      cursorBlink: true,
+      convertEol: true,
+    });
+    _ptyState.term = term;
+
+    let fitAddon = null;
+    if (typeof FitAddon !== "undefined") {
+      fitAddon = new FitAddon.FitAddon();
+      term.loadAddon(fitAddon);
+      _ptyState.fitAddon = fitAddon;
+    }
+
+    term.open(container);
+    if (fitAddon) fitAddon.fit();
+
+    // Resize observer to keep terminal sized correctly
+    const ro = new ResizeObserver(() => { if (fitAddon) fitAddon.fit(); });
+    ro.observe(container);
+
+    _connectPty(term, fitAddon);
+  }
+
+  function _connectPty(term, fitAddon) {
+    const wsProto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${wsProto}://${location.host}/ws/pty`);
+    _ptyState.ws = ws;
+
+    ws.onopen = () => {
+      const cols = fitAddon ? term.cols : 120;
+      const rows = fitAddon ? term.rows : 30;
+      ws.send(JSON.stringify({ type: "init", cwd: "workspace", cols, rows }));
+    };
+
+    ws.onmessage = (ev) => {
+      try {
+        const pkt = JSON.parse(ev.data);
+        if (pkt.type === "output") term.write(pkt.data);
+        else if (pkt.type === "exit") term.write(`\r\n\x1b[33m[Process exited with code ${pkt.code}]\x1b[0m\r\n`);
+        else if (pkt.type === "error") term.write(`\r\n\x1b[31m[Error: ${pkt.data}]\x1b[0m\r\n`);
+      } catch { /* ignore */ }
+    };
+
+    ws.onclose = () => {
+      term.write("\r\n\x1b[33m[Connection closed — click here to reconnect]\x1b[0m\r\n");
+      _ptyState.ready = false;
+      // Allow reconnect on click
+      $("terminal-content").addEventListener("click", () => {
+        if (!_ptyState.ready) {
+          $("terminal-content").innerHTML = "";
+          _ensureTerminal();
+        }
+      }, { once: true });
+    };
+
+    ws.onerror = () => ws.close();
+
+    // Forward keyboard input to PTY
+    term.onData((data) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "input", data }));
+      }
+    });
+
+    // Forward resize events
+    term.onResize(({ cols, rows }) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "resize", cols, rows }));
+      }
+    });
+  }
+
+  // ── Roadmap panel ─────────────────────────────────────────────────────────
+  const _roadmapCache = { data: null };
+
+  async function loadRoadmapPanel() {
+    const container = $("roadmap-content");
+    try {
+      const res = await fetch("/roadmap");
+      if (!res.ok) throw new Error("Roadmap not found");
+      const data = await res.json();
+      _roadmapCache.data = data;
+      renderRoadmapPanel(container, data);
+    } catch (e) {
+      container.innerHTML = `<div style="padding:16px;color:var(--danger)">⚠ ${e.message}</div>`;
+    }
+  }
+
+  function renderRoadmapPanel(container, data) {
+    const statusIcon = { done: "✅", in_progress: "🔄", pending: "⬜" };
+
+    let html = `<div class="roadmap-header">
+      <span>📋 ${data.project || "Roadmap"} — ${data.version || ""}</span>
+      <button id="btn-roadmap-next-task" title="Send next pending task to the AI agent">▶ Work on Next Task</button>
+    </div>`;
+
+    for (const m of (data.milestones || [])) {
+      const badge = `<span class="milestone-badge badge-${m.status}">${m.status.replace("_", " ")}</span>`;
+      const tasks = (m.tasks || []).map((t) => {
+        const workBtn = (t.status !== "done")
+          ? `<button class="task-work-btn" data-task-id="${t.id}" data-task-title="${encodeURIComponent(t.title)}" data-task-desc="${encodeURIComponent(t.description || "")}">▶ Work</button>`
+          : "";
+        return `<div class="task-row">
+          <span class="task-status-icon">${statusIcon[t.status] || "⬜"}</span>
+          <div class="task-info">
+            <div class="task-title">${escHtmlSimple(t.title)}</div>
+            ${t.description ? `<div class="task-desc">${escHtmlSimple(t.description)}</div>` : ""}
+          </div>
+          ${workBtn}
+        </div>`;
+      }).join("");
+
+      html += `<div class="milestone-block">
+        <div class="milestone-title" data-milestone="${m.id}">
+          <span class="milestone-arrow">▶</span>
+          <span class="milestone-label">${escHtmlSimple(m.title)}</span>
+          ${badge}
+        </div>
+        <div class="milestone-tasks ${m.status !== "done" ? "open" : ""}" id="mt-${m.id}">${tasks}</div>
+      </div>`;
+    }
+
+    container.innerHTML = html;
+
+    // Collapse/expand milestones
+    container.querySelectorAll(".milestone-title").forEach((el) => {
+      el.addEventListener("click", () => {
+        const id = el.dataset.milestone;
+        const tasks = $(`mt-${id}`);
+        const arrow = el.querySelector(".milestone-arrow");
+        if (tasks) {
+          const open = tasks.classList.toggle("open");
+          if (arrow) arrow.classList.toggle("open", open);
+        }
+      });
+    });
+
+    // "Work" buttons on individual tasks
+    container.querySelectorAll(".task-work-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const title = decodeURIComponent(btn.dataset.taskTitle || "");
+        const desc = decodeURIComponent(btn.dataset.taskDesc || "");
+        const taskId = btn.dataset.taskId;
+        _workOnTask(taskId, title, desc);
+      });
+    });
+
+    // "Work on Next Task" button
+    const nextBtn = $("btn-roadmap-next-task");
+    if (nextBtn) {
+      nextBtn.addEventListener("click", async () => {
+        try {
+          const res = await fetch("/roadmap/next");
+          const data = await res.json();
+          if (!data.task) {
+            appendOutput("🎉 All roadmap tasks are complete!\n");
+            return;
+          }
+          _workOnTask(data.task.id, data.task.title, data.task.description || "");
+        } catch (e) {
+          appendOutput(`Error fetching next task: ${e.message}\n`);
+        }
+      });
+    }
+  }
+
+  function _workOnTask(taskId, title, description) {
+    const prompt =
+      `You are implementing a task from the SwissAgent roadmap.\n\n` +
+      `Task: ${title}\n` +
+      (description ? `Description: ${description}\n\n` : "\n") +
+      `Please implement this task now. Make the required code changes, ` +
+      `create any new files needed, and explain what you did.`;
+    sendPrompt(prompt);
+    // Mark task in_progress
+    fetch(`/roadmap/task/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "in_progress" }),
+    }).catch(() => {});
+    switchOutputTab("output");
+  }
+
+  function escHtmlSimple(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // ── Command palette ────────────────────────────────────────────────────────
+  const _palette = {
+    visible: false,
+    mode: "files",    // "files" | "commands"
+    items: [],
+    activeIdx: 0,
+    _fileCache: null,
+  };
+
+  const _commands = [
+    { icon: "💾", label: "Save File", hint: "Ctrl+S", action: () => saveActiveFile() },
+    { icon: "▶", label: "Run Agent on File", hint: "", action: () => runAgentOnFile() },
+    { icon: "🔨", label: "Build Project", hint: "", action: () => runBuildOrTest("build") },
+    { icon: "🧪", label: "Run Tests", hint: "", action: () => runBuildOrTest("test") },
+    { icon: "⬇", label: "Clone Repository", hint: "", action: () => showCloneDialog() },
+    { icon: "📥", label: "Import Project", hint: "", action: () => showImportDialog() },
+    { icon: "↺", label: "Refresh File Tree", hint: "", action: () => loadFileTree() },
+    { icon: "📋", label: "View Roadmap", hint: "", action: () => switchOutputTab("roadmap") },
+    { icon: "⬛", label: "Open Terminal", hint: "", action: () => switchOutputTab("terminal") },
+    { icon: "🔍", label: "Search Files", hint: "", action: () => { /* handled by searchbox */ } },
+    { icon: "✕", label: "Clear Output", hint: "", action: () => {
+      clearOutput();
+      buildContent.textContent = "";
+      problemsContent.innerHTML = "";
+    }},
+  ];
+
+  async function _paletteGetFiles() {
+    if (_palette._fileCache) return _palette._fileCache;
+    const results = [];
+    const roots = ["workspace", "projects"];
+    for (const root of roots) {
+      try {
+        await _walkForPalette(root, results, 4);
+      } catch { /* ignore */ }
+    }
+    _palette._fileCache = results;
+    // Cache invalidates after 30s
+    setTimeout(() => { _palette._fileCache = null; }, 30000);
+    return results;
+  }
+
+  async function _walkForPalette(path, results, depth) {
+    if (depth <= 0 || results.length > 500) return;
+    const res = await fetch(`/files?path=${encodeURIComponent(path)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    for (const e of (data.entries || [])) {
+      const fullPath = `${path}/${e.name}`;
+      if (e.type === "file") results.push(fullPath);
+      else if (e.type === "dir" && !e.name.startsWith(".")) await _walkForPalette(fullPath, results, depth - 1);
+    }
+  }
+
+  function openPalette(mode) {
+    _palette.mode = mode;
+    _palette.visible = true;
+    _palette._fileCache = null;
+    const overlay = $("cmd-palette");
+    const input = $("cmd-palette-input");
+    overlay.classList.remove("hidden");
+    input.value = "";
+    input.placeholder = mode === "commands" ? "Type a command…" : "Type a file name…";
+    input.focus();
+    _renderPalette("");
+  }
+
+  function closePalette() {
+    _palette.visible = false;
+    $("cmd-palette").classList.add("hidden");
+  }
+
+  async function _renderPalette(query) {
+    const list = $("cmd-palette-list");
+    list.innerHTML = '<div style="padding:10px 16px;color:var(--text-dim);font-size:12px">Loading…</div>';
+    _palette.activeIdx = 0;
+
+    if (_palette.mode === "commands") {
+      const filtered = _commands.filter((c) =>
+        !query || c.label.toLowerCase().includes(query.toLowerCase())
+      );
+      _palette.items = filtered;
+      list.innerHTML = filtered.length
+        ? filtered.map((c, i) => `<div class="palette-item${i === 0 ? " active" : ""}" data-idx="${i}">
+            <span class="palette-item-icon">${c.icon}</span>
+            <span class="palette-item-label">${c.label}</span>
+            <span class="palette-item-hint">${c.hint}</span>
+          </div>`).join("")
+        : '<div style="padding:10px 16px;color:var(--text-dim);font-size:12px">No commands match.</div>';
+    } else {
+      const files = await _paletteGetFiles();
+      const lq = query.toLowerCase();
+      const filtered = query
+        ? files.filter((f) => f.toLowerCase().includes(lq)).slice(0, 50)
+        : files.slice(0, 50);
+      _palette.items = filtered;
+      list.innerHTML = filtered.length
+        ? filtered.map((f, i) => {
+            const parts = f.split("/");
+            const name = parts.pop();
+            const dir = parts.join("/");
+            return `<div class="palette-item${i === 0 ? " active" : ""}" data-idx="${i}">
+              <span class="palette-item-icon">📄</span>
+              <span class="palette-item-label">${escHtmlSimple(name)}</span>
+              <span class="palette-item-hint">${escHtmlSimple(dir)}</span>
+            </div>`;
+          }).join("")
+        : '<div style="padding:10px 16px;color:var(--text-dim);font-size:12px">No files found.</div>';
+    }
+
+    // Bind click handlers
+    list.querySelectorAll(".palette-item").forEach((el) => {
+      el.addEventListener("click", () => _paletteActivateIdx(Number(el.dataset.idx)));
+    });
+  }
+
+  function _paletteActivateIdx(idx) {
+    _palette.activeIdx = idx;
+    if (_palette.mode === "commands") {
+      const cmd = _palette.items[idx];
+      if (cmd) { closePalette(); cmd.action(); }
+    } else {
+      const file = _palette.items[idx];
+      if (file) { closePalette(); openFile(file); }
+    }
+  }
+
+  function _paletteMove(delta) {
+    const list = $("cmd-palette-list");
+    const items = list.querySelectorAll(".palette-item");
+    if (!items.length) return;
+    items[_palette.activeIdx]?.classList.remove("active");
+    _palette.activeIdx = Math.max(0, Math.min(items.length - 1, _palette.activeIdx + delta));
+    items[_palette.activeIdx]?.classList.add("active");
+    items[_palette.activeIdx]?.scrollIntoView({ block: "nearest" });
+  }
+
+  $("cmd-palette-input").addEventListener("input", (e) => {
+    _renderPalette(e.target.value);
+  });
+
+  $("cmd-palette-input").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { closePalette(); e.preventDefault(); }
+    else if (e.key === "ArrowDown") { _paletteMove(1); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { _paletteMove(-1); e.preventDefault(); }
+    else if (e.key === "Enter") { _paletteActivateIdx(_palette.activeIdx); e.preventDefault(); }
+  });
+
+  $("cmd-palette").addEventListener("click", (e) => {
+    if (e.target === $("cmd-palette")) closePalette();
+  });
+
+  // Global keyboard shortcuts
+  document.addEventListener("keydown", (e) => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.shiftKey && e.key.toLowerCase() === "p") {
+      e.preventDefault();
+      if (_palette.visible) closePalette();
+      else openPalette("commands");
+    } else if (mod && !e.shiftKey && e.key.toLowerCase() === "p") {
+      e.preventDefault();
+      if (_palette.visible) closePalette();
+      else openPalette("files");
+    }
+  });
+
   // ── Boot ───────────────────────────────────────────────────────────────────
   initMonaco();
+  _refreshProjectSwitcher();
   appendOutput("SwissAgent IDE ready. Open a file or type a prompt to get started.\n");
+  appendOutput("Tip: Ctrl+P = file picker  |  Ctrl+Shift+P = command palette  |  Terminal tab = interactive shell\n");
   updateStatusBar();
 })();

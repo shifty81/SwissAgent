@@ -114,7 +114,7 @@
       "id": "m3",
       "title": "Phase 3 \u2014 Build & Test Integration",
       "description": "Real-time build streaming, auto-detect build system, terminal, problems panel",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t3-1",
@@ -161,7 +161,7 @@
         {
           "id": "t3-7",
           "title": "Real interactive terminal tab (full PTY)",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "xterm.js + PTY backend for a real shell session in the IDE"
         }
@@ -171,7 +171,7 @@
       "id": "m4",
       "title": "Phase 4 \u2014 Project Import & Management",
       "description": "Import local folders, git clone, project switcher",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t4-1",
@@ -197,14 +197,14 @@
         {
           "id": "t4-4",
           "title": "Git clone into workspace from URL",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "New clone dialog; uses git_clone tool; shows progress in terminal"
         },
         {
           "id": "t4-5",
           "title": "Project switcher in sidebar",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Dropdown to switch active project; updates build root and AI context"
         }
@@ -240,14 +240,14 @@
         {
           "id": "t5-4",
           "title": "Roadmap panel in IDE with milestone/task view",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Visual checklist with progress bars per milestone"
         },
         {
           "id": "t5-5",
           "title": "Work on Next Task button with auto-advance option",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Sends next roadmap task to agent; optionally loops through all"
         }
@@ -283,7 +283,7 @@
         {
           "id": "t6-4",
           "title": "Command palette (Ctrl+P file / Ctrl+Shift+P commands)",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Fuzzy-search files and commands; keyboard driven"
         },
