@@ -1,0 +1,82 @@
+============================================================
+  SwissAgent Installer — 2026-03-17 23:38:09
+  Log file: /c/GIT PROJECTS/SwissAgent/logs/install.log
+============================================================
+
+[0;34m[INFO][0m  Checking Python version…
+[0;32m[ OK ][0m  Found Python 3.13 (python3)
+[0;34m[INFO][0m  Upgrading pip…
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: pip in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (26.0.1)
+[0;32m[ OK ][0m  pip is up to date.
+[0;34m[INFO][0m  Installing SwissAgent and Python dependencies…
+[0;34m[INFO][0m  (this may take a minute — all output is captured to /c/GIT PROJECTS/SwissAgent/logs/install.log)
+Defaulting to user installation because normal site-packages is not writeable
+Obtaining file:///C:/GIT%20PROJECTS/SwissAgent
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Checking if build backend supports build_editable: started
+  Checking if build backend supports build_editable: finished with status 'done'
+  Getting requirements to build editable: started
+  Getting requirements to build editable: finished with status 'done'
+  Preparing editable metadata (pyproject.toml): started
+  Preparing editable metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: fastapi>=0.110.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from swissagent==0.1.0) (0.135.1)
+Requirement already satisfied: uvicorn>=0.29.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from uvicorn[standard]>=0.29.0->swissagent==0.1.0) (0.42.0)
+Requirement already satisfied: httpx>=0.27.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from swissagent==0.1.0) (0.28.1)
+Requirement already satisfied: pydantic>=2.6.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from swissagent==0.1.0) (2.12.5)
+Requirement already satisfied: click>=8.1.7 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from swissagent==0.1.0) (8.3.1)
+Requirement already satisfied: rich>=13.7.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from swissagent==0.1.0) (14.3.3)
+Requirement already satisfied: toml>=0.10.2 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from swissagent==0.1.0) (0.10.2)
+Requirement already satisfied: gitpython>=3.1.41 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from swissagent==0.1.0) (3.1.46)
+Requirement already satisfied: Pillow>=10.2.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from swissagent==0.1.0) (12.1.1)
+Requirement already satisfied: requests>=2.31.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from swissagent==0.1.0) (2.32.5)
+Requirement already satisfied: colorama in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from click>=8.1.7->swissagent==0.1.0) (0.4.6)
+Requirement already satisfied: starlette>=0.46.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from fastapi>=0.110.0->swissagent==0.1.0) (0.52.1)
+Requirement already satisfied: typing-extensions>=4.8.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from fastapi>=0.110.0->swissagent==0.1.0) (4.15.0)
+Requirement already satisfied: typing-inspection>=0.4.2 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from fastapi>=0.110.0->swissagent==0.1.0) (0.4.2)
+Requirement already satisfied: annotated-doc>=0.0.2 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from fastapi>=0.110.0->swissagent==0.1.0) (0.0.4)
+Requirement already satisfied: gitdb<5,>=4.0.1 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from gitpython>=3.1.41->swissagent==0.1.0) (4.0.12)
+Requirement already satisfied: smmap<6,>=3.0.1 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from gitdb<5,>=4.0.1->gitpython>=3.1.41->swissagent==0.1.0) (5.0.3)
+Requirement already satisfied: anyio in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from httpx>=0.27.0->swissagent==0.1.0) (4.12.1)
+Requirement already satisfied: certifi in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from httpx>=0.27.0->swissagent==0.1.0) (2026.2.25)
+Requirement already satisfied: httpcore==1.* in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from httpx>=0.27.0->swissagent==0.1.0) (1.0.9)
+Requirement already satisfied: idna in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from httpx>=0.27.0->swissagent==0.1.0) (3.11)
+Requirement already satisfied: h11>=0.16 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from httpcore==1.*->httpx>=0.27.0->swissagent==0.1.0) (0.16.0)
+Requirement already satisfied: annotated-types>=0.6.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from pydantic>=2.6.0->swissagent==0.1.0) (0.7.0)
+Requirement already satisfied: pydantic-core==2.41.5 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from pydantic>=2.6.0->swissagent==0.1.0) (2.41.5)
+Requirement already satisfied: charset_normalizer<4,>=2 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from requests>=2.31.0->swissagent==0.1.0) (3.4.6)
+Requirement already satisfied: urllib3<3,>=1.21.1 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from requests>=2.31.0->swissagent==0.1.0) (2.6.3)
+Requirement already satisfied: markdown-it-py>=2.2.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from rich>=13.7.0->swissagent==0.1.0) (4.0.0)
+Requirement already satisfied: pygments<3.0.0,>=2.13.0 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from rich>=13.7.0->swissagent==0.1.0) (2.19.2)
+Requirement already satisfied: mdurl~=0.1 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from markdown-it-py>=2.2.0->rich>=13.7.0->swissagent==0.1.0) (0.1.2)
+Requirement already satisfied: httptools>=0.6.3 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from uvicorn[standard]>=0.29.0->swissagent==0.1.0) (0.7.1)
+Requirement already satisfied: python-dotenv>=0.13 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from uvicorn[standard]>=0.29.0->swissagent==0.1.0) (1.2.2)
+Requirement already satisfied: pyyaml>=5.1 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from uvicorn[standard]>=0.29.0->swissagent==0.1.0) (6.0.3)
+Requirement already satisfied: watchfiles>=0.20 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from uvicorn[standard]>=0.29.0->swissagent==0.1.0) (1.1.1)
+Requirement already satisfied: websockets>=10.4 in C:\Users\Shifty\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages (from uvicorn[standard]>=0.29.0->swissagent==0.1.0) (16.0)
+Building wheels for collected packages: swissagent
+  Building editable for swissagent (pyproject.toml): started
+  Building editable for swissagent (pyproject.toml): finished with status 'done'
+  Created wheel for swissagent: filename=swissagent-0.1.0-0.editable-py3-none-any.whl size=17233 sha256=c2c20ac103eb49018158f6ef18f343f869c89d1be5a59cfba8f96ca26748ed80
+  Stored in directory: C:\Users\Shifty\AppData\Local\Temp\pip-ephem-wheel-cache-w_nv0m7v\wheels\8e\d2\22\4f427437ce2a0b314ee6ec0f265f1c3e3051b155a9b3df19bb
+Successfully built swissagent
+Installing collected packages: swissagent
+  Attempting uninstall: swissagent
+    Found existing installation: swissagent 0.1.0
+    Uninstalling swissagent-0.1.0:
+      Successfully uninstalled swissagent-0.1.0
+Successfully installed swissagent-0.1.0
+[0;32m[ OK ][0m  Python dependencies installed.
+[0;34m[INFO][0m  Creating required directories…
+[0;32m[ OK ][0m  Directories ready.
+[0;34m[INFO][0m  Checking Ollama (local LLM backend)…
+[0;32m[ OK ][0m  Ollama found at /c/Users/Shifty/AppData/Local/Programs/Ollama/ollama.
+
+[0;32m[ OK ][0m  Setup complete! 🎉
+
+  Full install log: /c/GIT PROJECTS/SwissAgent/logs/install.log
+
+[0;34m[INFO][0m  Starting SwissAgent IDE at http://127.0.0.1:8000 …
+[0;34m[INFO][0m  Press Ctrl+C to stop the server.
+
