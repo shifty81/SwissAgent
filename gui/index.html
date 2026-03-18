@@ -347,6 +347,29 @@
     </div>
   </div>
 
+  <!-- ── Floating AI selection toolbar (t7-2) ────────────────────────────── -->
+  <div id="sel-toolbar" class="sel-toolbar hidden">
+    <button class="sel-tb-btn" data-action="explain"   title="Explain this code">💡 Explain</button>
+    <button class="sel-tb-btn" data-action="refactor"  title="Refactor this code">🔧 Refactor</button>
+    <button class="sel-tb-btn" data-action="tests"     title="Generate unit tests">🧪 Tests</button>
+    <button class="sel-tb-btn" data-action="fix"       title="Fix bugs in this code">🪲 Fix</button>
+    <button class="sel-tb-btn" data-action="docstring" title="Add docstrings">📝 Docs</button>
+  </div>
+
+  <!-- ── AI Diff Viewer overlay (t7-4) ────────────────────────────────────── -->
+  <div id="ai-diff-overlay" class="dialog hidden">
+    <div class="dialog-box dialog-fullscreen">
+      <div class="diff-header">
+        <span id="diff-title">🤖 Proposed Changes</span>
+        <div class="diff-header-actions">
+          <button id="btn-diff-accept" class="btn-diff-accept" title="Accept proposed changes">✓ Accept</button>
+          <button id="btn-diff-reject" class="btn-diff-reject" title="Reject proposed changes">✕ Reject</button>
+        </div>
+      </div>
+      <div id="diff-editor-container" class="diff-editor-container"></div>
+    </div>
+  </div>
+
   <!-- ── Command palette ──────────────────────────────────────────────────── -->
   <div id="cmd-palette" class="cmd-palette hidden">
     <div class="cmd-palette-box">

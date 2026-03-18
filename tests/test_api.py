@@ -508,3 +508,83 @@ def test_scaffold_tests_endpoint(client, tmp_path):
     data = res.json()
     # filesystem tests might already exist; that's fine
     assert "status" in data or "error" in data
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 — AI editor endpoints
+# ---------------------------------------------------------------------------
+
+def test_ai_complete_returns_completion_key(client):
+    """/ai/complete returns a JSON object with a 'completion' key."""
+    res = client.post("/ai/complete", json={
+        "file_content": "def greet(name):\n    ",
+        "cursor_offset": 20,
+        "language": "python",
+        "path": "workspace/test_greet.py",
+        "llm_backend": "ollama",
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert "completion" in data
+    assert isinstance(data["completion"], str)
+
+
+def test_ai_complete_empty_content(client):
+    """/ai/complete handles empty file content gracefully."""
+    res = client.post("/ai/complete", json={
+        "file_content": "",
+        "cursor_offset": 0,
+        "language": "python",
+    })
+    assert res.status_code == 200
+    assert "completion" in res.json()
+
+
+def test_ai_action_explain(client):
+    """/ai/action returns a result for 'explain' action."""
+    res = client.post("/ai/action", json={
+        "action": "explain",
+        "selection": "x = x + 1",
+        "language": "python",
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert "result" in data
+    assert isinstance(data["result"], str)
+
+
+def test_ai_action_all_types(client):
+    """/ai/action accepts all documented action types."""
+    for action in ("explain", "refactor", "tests", "fix", "docstring"):
+        res = client.post("/ai/action", json={
+            "action": action,
+            "selection": "print('hello')",
+            "language": "python",
+        })
+        assert res.status_code == 200, f"action={action} returned {res.status_code}"
+        assert "result" in res.json()
+
+
+def test_ai_propose_returns_proposed_content(client):
+    """/ai/propose returns a JSON object with a 'proposed_content' key."""
+    res = client.post("/ai/propose", json={
+        "instruction": "Add a docstring to the function",
+        "file_content": "def add(a, b):\n    return a + b\n",
+        "language": "python",
+        "path": "workspace/test_add.py",
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert "proposed_content" in data
+    assert isinstance(data["proposed_content"], str)
+
+
+def test_ai_propose_empty_instruction(client):
+    """/ai/propose works with an empty instruction."""
+    res = client.post("/ai/propose", json={
+        "instruction": "",
+        "file_content": "x = 1\n",
+        "language": "python",
+    })
+    assert res.status_code == 200
+    assert "proposed_content" in res.json()

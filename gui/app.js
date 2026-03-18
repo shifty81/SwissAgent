@@ -646,7 +646,20 @@
       row.appendChild(line);
       row.appendChild(msg);
 
-      // Click to jump to file+line
+      // AI explain button (t7-5)
+      const explainBtn = document.createElement("button");
+      explainBtn.className = "problem-explain-btn";
+      explainBtn.title = "Ask AI to explain this error and suggest a fix";
+      explainBtn.textContent = "🤖 Explain";
+      explainBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const errDesc = `${err.file || "unknown"}:${err.line || "?"}: ${err.severity || "error"}: ${err.message || ""}`;
+        sendPrompt(`Please explain this error and suggest how to fix it:\n\n${errDesc}`);
+        switchOutputTab("output");
+      });
+      row.appendChild(explainBtn);
+
+      // Click row to jump to file+line
       row.addEventListener("click", async () => {
         // Try to map the file path to a workspace-relative path
         let filePath = err.file;
@@ -1026,7 +1039,7 @@
       // Track cursor position for status bar
       state.editor.onDidChangeCursorPosition(updateCursorPosition);
 
-      // ── Copilot-style inline completions ──────────────────────────────────
+      // ── Copilot-style inline completions (t7-1) ──────────────────────────
       let _completionTimer = null;
       monaco.languages.registerInlineCompletionsProvider({ pattern: "**" }, {
         provideInlineCompletions(model, position) {
@@ -1034,16 +1047,14 @@
             clearTimeout(_completionTimer);
             _completionTimer = setTimeout(async () => {
               try {
-                const offset   = model.getOffsetAt(position);
-                const allText  = model.getValue();
-                const prefix   = allText.slice(0, offset);
-                const suffix   = allText.slice(offset);
-                const res = await fetch("/api/complete", {
+                const allText      = model.getValue();
+                const cursorOffset = model.getOffsetAt(position);
+                const res = await fetch("/ai/complete", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    prefix,
-                    suffix,
+                    file_content: allText,
+                    cursor_offset: cursorOffset,
                     language: model.getLanguageId(),
                     path: state.activeFile || "",
                     llm_backend: llmSelect.value,
@@ -1068,6 +1079,80 @@
         freeInlineCompletions() {},
       });
 
+      // ── Floating selection toolbar (t7-2) ─────────────────────────────────
+      const selToolbar = $("sel-toolbar");
+      const SEL_TOOLBAR_HEIGHT   = 40;  // px — toolbar height + gap above selection
+      const SEL_TOOLBAR_MIN_EDGE = 4;   // px — minimum margin from viewport edge
+      const SEL_TOOLBAR_EST_W    = 320; // px — approximate toolbar width for right-edge clamping
+
+      state.editor.onDidChangeCursorSelection(() => {
+        const sel = state.editor.getSelection();
+        if (!sel || sel.isEmpty()) { selToolbar.classList.add("hidden"); return; }
+        const selText = state.editor.getModel().getValueInRange(sel);
+        if (!selText.trim()) { selToolbar.classList.add("hidden"); return; }
+
+        const startPos = { lineNumber: sel.startLineNumber, column: sel.startColumn };
+        const coords = state.editor.getScrolledVisiblePosition(startPos);
+        const editorRect = $("editor-container").getBoundingClientRect();
+        if (!coords) { selToolbar.classList.add("hidden"); return; }
+
+        let x = editorRect.left + coords.left;
+        let y = editorRect.top  + coords.top - SEL_TOOLBAR_HEIGHT;
+        // Keep toolbar inside the viewport
+        x = Math.max(SEL_TOOLBAR_MIN_EDGE, Math.min(x, window.innerWidth - SEL_TOOLBAR_EST_W));
+        y = Math.max(SEL_TOOLBAR_MIN_EDGE, y);
+
+        selToolbar.style.left = `${x}px`;
+        selToolbar.style.top  = `${y}px`;
+        selToolbar.dataset.selection = selText;
+        selToolbar.classList.remove("hidden");
+      });
+
+      document.addEventListener("mousedown", (e) => {
+        if (!selToolbar.contains(e.target)) selToolbar.classList.add("hidden");
+      });
+
+      selToolbar.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-action]");
+        if (!btn) return;
+        const selText = selToolbar.dataset.selection || "";
+        selToolbar.classList.add("hidden");
+        _sendAiAction(btn.dataset.action, selText);
+      });
+
+      // ── Monaco right-click AI context menu actions (t7-3) ─────────────────
+      const _AI_CONTEXT_ACTIONS = [
+        { id: "ai.explain",   label: "🤖 Explain Selection",  action: "explain"   },
+        { id: "ai.refactor",  label: "🤖 Refactor Selection", action: "refactor"  },
+        { id: "ai.tests",     label: "🤖 Generate Tests",     action: "tests"     },
+        { id: "ai.docstring", label: "🤖 Add Docstrings",     action: "docstring" },
+        { id: "ai.fix",       label: "🤖 Fix Code",           action: "fix"       },
+      ];
+      for (const { id, label, action } of _AI_CONTEXT_ACTIONS) {
+        state.editor.addAction({
+          id,
+          label,
+          contextMenuGroupId: "navigation",
+          contextMenuOrder: 1.5,
+          run(ed) {
+            const s = ed.getSelection();
+            const text = (s && !s.isEmpty())
+              ? ed.getModel().getValueInRange(s)
+              : ed.getModel().getValue();
+            _sendAiAction(action, text);
+          },
+        });
+      }
+
+      // Propose Changes action (t7-4) in context menu
+      state.editor.addAction({
+        id: "ai.propose",
+        label: "🤖 Propose Changes…",
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 1.6,
+        run() { _promptAndShowDiff(); },
+      });
+
       // Load file tree after editor is ready
       loadFileTree();
       _startPendingPushPoller();
@@ -1089,6 +1174,136 @@
       } catch { /* server may not be ready yet */ }
     }, 3000);
   }
+
+  // ── AI action helper (t7-2 / t7-3) ────────────────────────────────────────
+  async function _sendAiAction(action, selection) {
+    if (!selection.trim()) { appendOutput("No code selected for AI action.\n"); return; }
+    const model    = state.editor && state.editor.getModel();
+    const language = model ? model.getLanguageId() : "";
+    setStatus("running");
+    try {
+      const res = await fetch("/ai/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          selection,
+          file_content: model ? model.getValue() : "",
+          language,
+          path: state.activeFile || "",
+          llm_backend: llmSelect.value,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      if (data.result) {
+        const labels = {
+          explain:   "💡 Explanation",
+          refactor:  "🔧 Refactored Code",
+          tests:     "🧪 Generated Tests",
+          fix:       "🪲 Fixed Code",
+          docstring: "📝 Documented Code",
+        };
+        const label = labels[action] || "AI Result";
+        const msgEl = appendChat(`${label}:\n\n${data.result}`, "agent");
+        _finaliseAgentMessage(msgEl);
+        appendOutput(`${label}:\n${data.result}\n`);
+      }
+    } catch (e) {
+      appendOutput(`AI action error: ${e.message}\n`);
+    } finally {
+      setStatus("idle");
+    }
+  }
+
+  // ── AI Diff Viewer (t7-4) ──────────────────────────────────────────────────
+  let _diffEditor = null;
+  let _proposedContent = "";
+
+  function _promptAndShowDiff() {
+    const instruction = window.prompt("Describe the changes AI should make to this file:");
+    if (instruction) _showAiDiff(instruction);
+  }
+
+  async function _showAiDiff(instruction) {
+    if (!state.activeFile || !state.editor) {
+      appendOutput("No file open for AI proposal.\n");
+      return;
+    }
+    const model       = state.editor.getModel();
+    const fileContent = model.getValue();
+    const language    = model.getLanguageId();
+    setStatus("running");
+    try {
+      const res = await fetch("/ai/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instruction,
+          file_content: fileContent,
+          language,
+          path: state.activeFile,
+          llm_backend: llmSelect.value,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      if (data.error) { appendOutput(`AI propose error: ${data.error}\n`); return; }
+      _proposedContent = data.proposed_content;
+
+      const overlay = $("ai-diff-overlay");
+      overlay.classList.remove("hidden");
+      $("diff-title").textContent = `🤖 Proposed Changes — ${state.activeFile}`;
+
+      // Create or update Monaco DiffEditor
+      const container = $("diff-editor-container");
+      if (_diffEditor) {
+        _diffEditor.dispose();
+        _diffEditor = null;
+      }
+      if (typeof monaco !== "undefined") {
+        _diffEditor = monaco.editor.createDiffEditor(container, {
+          theme:            "swissagent-dark",
+          automaticLayout:  true,
+          renderSideBySide: true,
+          fontSize:         13,
+          readOnly:         false,
+        });
+        const origModel = monaco.editor.createModel(fileContent, language);
+        const modModel  = monaco.editor.createModel(_proposedContent, language);
+        _diffEditor.setModel({ original: origModel, modified: modModel });
+      }
+    } catch (e) {
+      appendOutput(`AI diff error: ${e.message}\n`);
+    } finally {
+      setStatus("idle");
+    }
+  }
+
+  $("btn-diff-accept").addEventListener("click", async () => {
+    const content = (_diffEditor)
+      ? _diffEditor.getModifiedEditor().getModel().getValue()
+      : _proposedContent;
+    try {
+      await fetch("/files/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: state.activeFile, content }),
+      });
+      if (state.editor) state.editor.getModel().setValue(content);
+      appendOutput(`✓ AI changes accepted and saved to ${state.activeFile}\n`);
+      state.openFiles[state.activeFile] = { ...state.openFiles[state.activeFile], modified: false };
+      updateStatusBar();
+    } catch (e) {
+      appendOutput(`Error saving AI changes: ${e.message}\n`);
+    }
+    $("ai-diff-overlay").classList.add("hidden");
+  });
+
+  $("btn-diff-reject").addEventListener("click", () => {
+    $("ai-diff-overlay").classList.add("hidden");
+    appendOutput("AI proposal rejected.\n");
+  });
 
   // ── Output tab wiring ─────────────────────────────────────────────────────
   document.querySelectorAll(".out-tab").forEach((btn) => {

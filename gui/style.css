@@ -1076,3 +1076,111 @@ body {
   color: var(--text-dim);
   border-top: 1px solid var(--border);
 }
+
+/* ── Floating AI selection toolbar (t7-2) ────────────────────────────────── */
+.sel-toolbar {
+  position: fixed;
+  z-index: 8000;
+  display: flex;
+  gap: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  pointer-events: all;
+}
+.sel-toolbar.hidden { display: none; }
+
+.sel-tb-btn {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.sel-tb-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+/* ── AI Diff Viewer overlay (t7-4) ──────────────────────────────────────── */
+.dialog-fullscreen {
+  width: 92vw;
+  max-width: 1400px;
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.diff-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.diff-header span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.diff-header-actions {
+  display: flex;
+  gap: 8px;
+}
+.btn-diff-accept {
+  background: #2ea043;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-diff-accept:hover { background: #3fb950; }
+.btn-diff-reject {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-diff-reject:hover { background: #c0392b; color: #fff; border-color: #c0392b; }
+
+.diff-editor-container {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Problem row AI explain button (t7-5) ─────────────────────────────── */
+.problem-explain-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 3px;
+  padding: 0px 5px;
+  font-size: 11px;
+  cursor: pointer;
+  margin-left: auto;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.problem-explain-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}

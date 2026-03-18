@@ -157,6 +157,65 @@ class IdePushRequest(BaseModel):
     open_in_editor: bool = True
 
 
+# ── Phase 7: AI editor request models ─────────────────────────────────────────
+
+class AiCompleteRequest(BaseModel):
+    file_content: str = ""
+    cursor_offset: int = 0
+    language: str = ""
+    path: str = ""
+    llm_backend: str = ""
+
+
+class AiActionRequest(BaseModel):
+    action: str  # explain | refactor | tests | fix | docstring
+    selection: str = ""
+    file_content: str = ""
+    language: str = ""
+    path: str = ""
+    llm_backend: str = ""
+
+
+class AiProposeRequest(BaseModel):
+    instruction: str
+    file_content: str = ""
+    language: str = ""
+    path: str = ""
+    llm_backend: str = ""
+
+
+# ── Phase 7: AI action prompt templates ───────────────────────────────────────
+
+# Context window sizes sent to the LLM.  Prefix is longer because the model
+# needs more "before" context to produce a relevant completion; suffix only
+# needs enough to understand what follows the cursor.
+_AI_COMPLETE_PREFIX_CHARS = 800
+_AI_COMPLETE_SUFFIX_CHARS = 300
+
+_AI_ACTION_PROMPTS: dict[str, str] = {
+    "explain": (
+        "Explain the following code in clear, concise terms. "
+        "Describe what it does, how it works, and any notable patterns:"
+    ),
+    "refactor": (
+        "Refactor the following code to improve readability, efficiency, and "
+        "maintainability. Return ONLY the refactored code without extra explanation:"
+    ),
+    "tests": (
+        "Generate comprehensive unit tests for the following code. "
+        "Cover happy-path and edge cases:"
+    ),
+    "fix": (
+        "Fix any bugs or issues in the following code. "
+        "Return the fixed code followed by a brief explanation of what was changed:"
+    ),
+    "docstring": (
+        "Add comprehensive docstrings/comments to the following code. "
+        "Return the complete code with docstrings added:"
+    ),
+}
+
+
 def _safe_path(base_dir: Path, rel: str) -> Path:
     """Resolve *rel* under *base_dir* and reject path-traversal attempts."""
     resolved = (base_dir / rel).resolve()
@@ -1138,9 +1197,9 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         )
         user_msg = (
             f"{lang_hint}{file_hint}"
-            f"Code before cursor:\n{req.prefix[-800:]}\n"
+            f"Code before cursor:\n{req.prefix[-_AI_COMPLETE_PREFIX_CHARS:]}\n"
             f"<CURSOR>\n"
-            f"Code after cursor:\n{req.suffix[:300]}"
+            f"Code after cursor:\n{req.suffix[:_AI_COMPLETE_SUFFIX_CHARS]}"
         )
 
         try:
@@ -1163,6 +1222,138 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             completion = "\n".join(inner)
 
         return {"completion": completion}
+
+    # ── AI editor endpoints (Phase 7) ─────────────────────────────────────────
+
+    @app.post("/ai/complete")
+    async def ai_complete(req: AiCompleteRequest) -> dict[str, Any]:
+        """Inline code completion using file content + cursor offset (t7-1/t7-6).
+
+        The frontend passes the full file content and the cursor byte offset;
+        this endpoint derives the prefix/suffix and queries the LLM.
+        """
+        from llm.factory import create_llm
+
+        backend = req.llm_backend or config.get("agent.default_llm_backend", "ollama")
+        llm = create_llm(backend, config)
+
+        prefix = req.file_content[: req.cursor_offset]
+        suffix = req.file_content[req.cursor_offset :]
+        lang_hint = f"Language: {req.language}\n" if req.language else ""
+        file_hint = f"File: {req.path}\n" if req.path else ""
+        system_msg = (
+            "You are a code completion assistant. "
+            "Complete the code exactly at the <CURSOR> marker. "
+            "Return ONLY the completion text — no explanation, no markdown fences, "
+            "no repetition of the prefix."
+        )
+        user_msg = (
+            f"{lang_hint}{file_hint}"
+            f"Code before cursor:\n{prefix[-_AI_COMPLETE_PREFIX_CHARS:]}\n"
+            f"<CURSOR>\n"
+            f"Code after cursor:\n{suffix[:_AI_COMPLETE_SUFFIX_CHARS]}"
+        )
+
+        try:
+            raw = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: llm.chat([
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ]),
+            )
+        except Exception as exc:
+            logger.warning("AI complete error: %s", exc)
+            return {"completion": ""}
+
+        completion = raw.strip()
+        if completion.startswith("```"):
+            lines = completion.splitlines()
+            inner = lines[1:-1] if lines and lines[-1].strip() == "```" else lines[1:]
+            completion = "\n".join(inner)
+
+        return {"completion": completion}
+
+    @app.post("/ai/action")
+    async def ai_action(req: AiActionRequest) -> dict[str, Any]:
+        """Run an AI action (explain/refactor/tests/fix/docstring) on a code selection.
+
+        Used by the floating selection toolbar (t7-2) and Monaco context menu (t7-3).
+        """
+        from llm.factory import create_llm
+
+        backend = req.llm_backend or config.get("agent.default_llm_backend", "ollama")
+        llm = create_llm(backend, config)
+
+        lang_hint = f"Language: {req.language}\n" if req.language else ""
+        file_hint = f"File: {req.path}\n" if req.path else ""
+        prompt_intro = _AI_ACTION_PROMPTS.get(req.action, "Analyse the following code:")
+        system_msg = "You are an expert software developer. Be concise and precise."
+        user_msg = (
+            f"{lang_hint}{file_hint}"
+            f"{prompt_intro}\n\n"
+            f"```\n{req.selection}\n```"
+        )
+
+        try:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: llm.chat([
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ]),
+            )
+        except Exception as exc:
+            logger.warning("AI action error: %s", exc)
+            return {"result": f"Error: {exc}"}
+
+        return {"result": result}
+
+    @app.post("/ai/propose")
+    async def ai_propose(req: AiProposeRequest) -> dict[str, Any]:
+        """Return a proposed new version of a file based on a natural-language instruction.
+
+        Used by the diff viewer (t7-4): the frontend shows old vs new in a Monaco
+        DiffEditor so the user can accept or reject the change.
+        """
+        from llm.factory import create_llm
+
+        backend = req.llm_backend or config.get("agent.default_llm_backend", "ollama")
+        llm = create_llm(backend, config)
+
+        lang_hint = f"Language: {req.language}\n" if req.language else ""
+        file_hint = f"File: {req.path}\n" if req.path else ""
+        system_msg = (
+            "You are an expert software developer. "
+            "Given a file and an instruction, return the complete modified file content. "
+            "Return ONLY the file content — no explanation, no markdown fences, "
+            "no preamble, no trailing commentary."
+        )
+        user_msg = (
+            f"{lang_hint}{file_hint}"
+            f"Instruction: {req.instruction}\n\n"
+            f"Current file content:\n{req.file_content}"
+        )
+
+        try:
+            proposed = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: llm.chat([
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ]),
+            )
+        except Exception as exc:
+            logger.warning("AI propose error: %s", exc)
+            return {"proposed_content": "", "error": str(exc)}
+
+        proposed = proposed.strip()
+        if proposed.startswith("```"):
+            lines = proposed.splitlines()
+            inner = lines[1:-1] if lines and lines[-1].strip() == "```" else lines[1:]
+            proposed = "\n".join(inner)
+
+        return {"proposed_content": proposed}
 
     # ── IDE push endpoint (Open WebUI tool / external integrations) ────────────
     @app.post("/api/ide/push")
