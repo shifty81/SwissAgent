@@ -774,3 +774,183 @@ body {
 .problem-file { color: #89b4fa; font-size: 11px; }
 .problem-line { color: var(--text-dim); font-size: 11px; }
 .problem-msg  { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Project switcher ──────────────────────────────────────────────────── */
+.sidebar-projects {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-projects select {
+  width: 100%;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sidebar-projects select:focus { border-color: var(--accent); outline: none; }
+
+/* ── Git clone dialog ─────────────────────────────────────────────────── */
+.clone-status {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  background: var(--surface2);
+  color: var(--text);
+}
+.clone-status.hidden { display: none; }
+.clone-status.error  { color: var(--danger); }
+.clone-status.success { color: var(--accent2); }
+.clone-status.running { color: #f9e2af; }
+
+/* ── Terminal pane (xterm.js container) ──────────────────────────────── */
+.terminal-pane { padding: 0 !important; overflow: hidden; }
+#terminal-content .xterm { height: 100%; }
+#terminal-content .xterm-viewport { background: #1e1e2e !important; }
+#terminal-content.active { display: flex; flex-direction: column; }
+
+/* ── Roadmap pane ────────────────────────────────────────────────────── */
+.roadmap-pane { overflow-y: auto; padding: 0; }
+.roadmap-pane.active { display: block; }
+
+.roadmap-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.roadmap-header span { font-size: 13px; font-weight: 600; color: var(--text); }
+.roadmap-header button {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.roadmap-header button:hover { opacity: 0.85; }
+
+.milestone-block {
+  border-bottom: 1px solid var(--border);
+}
+.milestone-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--surface);
+}
+.milestone-title:hover { background: var(--surface2); }
+.milestone-arrow { color: var(--text-dim); font-size: 11px; transition: transform 0.15s; }
+.milestone-arrow.open { transform: rotate(90deg); }
+.milestone-label { flex: 1; font-size: 12px; font-weight: 600; color: var(--text); }
+.milestone-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.badge-done     { background: #a6e3a1; color: #1e1e2e; }
+.badge-in_progress { background: #f9e2af; color: #1e1e2e; }
+.badge-pending  { background: var(--surface2); color: var(--text-dim); }
+
+.milestone-tasks { display: none; padding-left: 12px; }
+.milestone-tasks.open { display: block; }
+
+.task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.task-row:hover { background: var(--surface2); }
+.task-status-icon { flex-shrink: 0; margin-top: 1px; }
+.task-info { flex: 1; }
+.task-title { color: var(--text); line-height: 1.4; }
+.task-desc  { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+.task-work-btn {
+  flex-shrink: 0;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 3px;
+  padding: 2px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.task-work-btn:hover { opacity: 0.85; }
+
+/* ── Command palette ─────────────────────────────────────────────────── */
+.cmd-palette {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px;
+}
+.cmd-palette.hidden { display: none; }
+
+.cmd-palette-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 540px;
+  max-width: 96vw;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+}
+#cmd-palette-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface2);
+  color: var(--text);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  font-size: 15px;
+  outline: none;
+}
+#cmd-palette-list {
+  max-height: 360px;
+  overflow-y: auto;
+}
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.palette-item:hover,
+.palette-item.active { background: var(--surface2); }
+.palette-item-icon { color: var(--text-dim); font-size: 14px; flex-shrink: 0; }
+.palette-item-label { flex: 1; }
+.palette-item-hint { color: var(--text-dim); font-size: 11px; }
+.palette-section-header {
+  padding: 6px 16px 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+}

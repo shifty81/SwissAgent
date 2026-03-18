@@ -83,6 +83,12 @@ class RoadmapTaskUpdate(BaseModel):
     notes: str = ""
 
 
+class GitCloneRequest(BaseModel):
+    url: str
+    destination: str = ""
+    branch: str = ""
+
+
 class IdePushRequest(BaseModel):
     path: str
     content: str
@@ -365,6 +371,147 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             if proc is not None and proc.returncode is None:
                 proc.terminate()
 
+    # ── PTY terminal WebSocket – full interactive shell ────────────────────
+    @app.websocket("/ws/pty")
+    async def ws_pty(websocket: WebSocket) -> None:
+        """Provide a real interactive PTY shell session over WebSocket.
+
+        Protocol:
+          Client → Server: JSON ``{"type": "input", "data": "<chars>"}``
+                        or ``{"type": "resize", "cols": N, "rows": N}``
+          Server → Client: JSON ``{"type": "output", "data": "<chars>"}``
+                        or ``{"type": "exit", "code": N}``
+        """
+        import os
+        import pty
+        import select
+        import signal
+        import fcntl
+        import struct
+        import termios
+
+        await websocket.accept()
+
+        master_fd: Optional[int] = None
+        child_pid: Optional[int] = None
+
+        try:
+            # Parse optional init message for cwd / cols / rows
+            raw = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            init = json.loads(raw)
+            rel_cwd: str = init.get("cwd", "workspace")
+            cols: int = int(init.get("cols", 120))
+            rows: int = int(init.get("rows", 30))
+
+            # Restrict cwd to allowed roots
+            top = Path(rel_cwd).parts[0] if Path(rel_cwd).parts else ""
+            if top not in _BUILD_ROOTS:
+                await websocket.send_text(
+                    json.dumps({"type": "error", "data": f"cwd must be inside {sorted(_BUILD_ROOTS)}"})
+                )
+                return
+
+            cwd = _safe_path(base_dir, rel_cwd)
+            cwd.mkdir(parents=True, exist_ok=True)
+
+            # Fork a child process attached to a PTY
+            child_pid, master_fd = pty.fork()
+
+            if child_pid == 0:
+                # ── Child process ──
+                os.chdir(str(cwd))
+                shell = os.environ.get("SHELL", "/bin/bash")
+                os.execvpe(shell, [shell], {
+                    **os.environ,
+                    "TERM": "xterm-256color",
+                    "COLUMNS": str(cols),
+                    "LINES": str(rows),
+                })
+                os._exit(1)  # should not reach here
+
+            # ── Parent process ──
+            # Set initial terminal size
+            winsize = struct.pack("HHHH", rows, cols, 0, 0)
+            fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
+
+            loop = asyncio.get_event_loop()
+
+            async def _read_pty() -> None:
+                """Continuously read PTY output and forward to WebSocket."""
+                fd = master_fd
+                pid = child_pid
+                while True:
+                    try:
+                        r, _, _ = await loop.run_in_executor(
+                            None, lambda fd=fd: select.select([fd], [], [], 0.05)
+                        )
+                        if not r:
+                            # Check if child exited
+                            result = await loop.run_in_executor(
+                                None, lambda pid=pid: os.waitpid(pid, os.WNOHANG)
+                            )
+                            if result[0] != 0:
+                                code = os.waitstatus_to_exitcode(result[1])
+                                await websocket.send_text(json.dumps({"type": "exit", "code": code}))
+                                return
+                            continue
+                        data = await loop.run_in_executor(None, lambda fd=fd: os.read(fd, 4096))
+                        if not data:
+                            break
+                        text = data.decode("utf-8", errors="replace")
+                        await websocket.send_text(json.dumps({"type": "output", "data": text}))
+                    except OSError:
+                        break
+
+            async def _read_ws() -> None:
+                """Forward WebSocket input to PTY."""
+                fd = master_fd
+                while True:
+                    try:
+                        msg = await websocket.receive_text()
+                        pkt = json.loads(msg)
+                        if pkt.get("type") == "input":
+                            payload = pkt.get("data", "").encode("utf-8", errors="replace")
+                            await loop.run_in_executor(
+                                None, lambda fd=fd, p=payload: os.write(fd, p)
+                            )
+                        elif pkt.get("type") == "resize":
+                            c = int(pkt.get("cols", cols))
+                            r = int(pkt.get("rows", rows))
+                            ws_struct = struct.pack("HHHH", r, c, 0, 0)
+                            fcntl.ioctl(fd, termios.TIOCSWINSZ, ws_struct)
+                    except WebSocketDisconnect:
+                        return
+                    except Exception:
+                        return
+
+            await asyncio.gather(_read_pty(), _read_ws(), return_exceptions=True)
+
+        except WebSocketDisconnect:
+            pass
+        except asyncio.TimeoutError:
+            try:
+                await websocket.send_text(json.dumps({"type": "error", "data": "Init timeout"}))
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.exception("PTY WS error: %s", exc)
+            try:
+                await websocket.send_text(json.dumps({"type": "error", "data": str(exc)}))
+            except Exception:
+                pass
+        finally:
+            if child_pid is not None:
+                try:
+                    os.kill(child_pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            if master_fd is not None:
+                try:
+                    os.close(master_fd)
+                except OSError:
+                    pass
+
     # ── Roadmap API ─────────────────────────────────────────────────────────
     @app.get("/roadmap")
     async def get_roadmap() -> dict[str, Any]:
@@ -431,6 +578,84 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             Path(tmp_path).unlink(missing_ok=True)
             raise
         return {"status": "ok", "task_id": task_id, "new_status": req.status}
+
+    @app.get("/roadmap/next")
+    async def get_next_roadmap_task() -> dict[str, Any]:
+        """Return the next pending (or in_progress) task from the roadmap."""
+        roadmap_file = base_dir / "workspace" / "roadmap.json"
+        if not roadmap_file.is_file():
+            raise HTTPException(status_code=404, detail="roadmap.json not found")
+        data = json.loads(roadmap_file.read_text(encoding="utf-8"))
+        for milestone in data.get("milestones", []):
+            if milestone.get("status") == "done":
+                continue
+            for task in milestone.get("tasks", []):
+                if task.get("status") in ("pending", "in_progress"):
+                    return {
+                        "task": task,
+                        "milestone": {
+                            "id": milestone["id"],
+                            "title": milestone["title"],
+                        },
+                    }
+        return {"task": None, "milestone": None}
+
+    # ── Git clone ─────────────────────────────────────────────────────────────
+    @app.post("/git/clone")
+    async def git_clone(req: GitCloneRequest) -> dict[str, Any]:
+        """Clone a git repository URL into workspace/ or projects/."""
+        import re
+        url = req.url.strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="URL is required")
+
+        # Determine destination name from URL if not provided
+        dest_name = req.destination.strip()
+        if not dest_name:
+            # Extract repo name from URL (e.g. https://github.com/user/repo.git → repo)
+            m = re.search(r"/([^/]+?)(?:\.git)?$", url)
+            dest_name = m.group(1) if m else "cloned_repo"
+
+        # Sanitise: only allow safe folder names
+        dest_name = re.sub(r"[^A-Za-z0-9_\-.]", "_", dest_name)
+        if not dest_name:
+            raise HTTPException(status_code=400, detail="Could not determine destination name")
+
+        dest = base_dir / "projects" / dest_name
+        if dest.exists():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Destination 'projects/{dest_name}' already exists",
+            )
+
+        # Run git clone in executor so it doesn't block the event loop
+        import subprocess
+        cmd = ["git", "clone", "--depth", "1"]
+        if req.branch:
+            cmd += ["--branch", req.branch]
+        cmd += [url, str(dest)]
+        try:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, capture_output=True, text=True, timeout=120),
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Clone failed: {exc}")
+
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"git clone failed: {(result.stderr or result.stdout).strip()}",
+            )
+
+        # Count cloned files
+        n_files = sum(1 for _ in dest.rglob("*") if _.is_file())
+        return {
+            "status": "ok",
+            "destination": f"projects/{dest_name}",
+            "files": n_files,
+            "url": url,
+        }
 
     # ── File rename ─────────────────────────────────────────────────────────
     @app.post("/files/rename")
