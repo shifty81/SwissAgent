@@ -314,47 +314,47 @@
       "id": "m7",
       "title": "Phase 7 \u2014 AI Features Baked Into Editor",
       "description": "Inline completions, selection actions, diff review, code actions",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t7-1",
           "title": "Inline AI completions (Copilot-style)",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Monaco InlineCompletionsProvider + /ai/complete endpoint; debounced"
         },
         {
           "id": "t7-2",
           "title": "Floating selection toolbar: Explain/Refactor/Tests/Fix",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Appears when text selected; sends selection to agent with context"
         },
         {
           "id": "t7-3",
           "title": "Monaco right-click AI context menu actions",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "addAction for Explain, Refactor, Generate Docstring, Generate Tests"
         },
         {
           "id": "t7-4",
           "title": "Diff viewer: agent proposes changes, user reviews before applying",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Monaco DiffEditor shows old vs new; accept/reject buttons"
         },
         {
           "id": "t7-5",
           "title": "AI explain error hover in Problems panel",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Click error \u2192 AI explains it + suggests fix in chat"
         },
         {
           "id": "t7-6",
           "title": "/ai/complete streaming endpoint for inline suggestions",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Accepts file content + cursor offset; returns LLM completion"
         }
@@ -428,7 +428,7 @@
       "id": "m9",
       "title": "Phase 9 \u2014 Plugin Ecosystem",
       "description": "Plugin browser, install from URL, hot-reload, template generator",
-      "status": "pending",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "t9-1",
