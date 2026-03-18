@@ -1,0 +1,9 @@
+{
+  "name": "javascript",
+  "description": "Node.js project template",
+  "version": "0.1.0",
+  "files": [
+    "index.js",
+    "package.json"
+  ]
+}

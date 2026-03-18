@@ -218,6 +218,26 @@ class SelfBuildRequest(BaseModel):
     llm_backend: str = ""
 
 
+# ── Phase 15: Templates & toolchain request models ────────────────────────────
+
+class TemplateApplyRequest(BaseModel):
+    name: str                          # template name (dir under templates/)
+    dest: str                          # destination relative to workspace/
+    context: dict[str, str] = {}       # variable substitution map
+
+
+class SnippetRunRequest(BaseModel):
+    code: str
+    language: str = "python"           # python | javascript | bash | lua
+    timeout: int = 15                  # seconds
+
+
+class TemplateSaveRequest(BaseModel):
+    source: str   # relative path inside workspace/ to snapshot
+    name: str     # new template name
+    description: str = ""
+
+
 # ── Phase 14: Code quality request models ─────────────────────────────────────
 
 class FormatRequest(BaseModel):
@@ -2279,6 +2299,188 @@ def create_app(config_dir: str = "configs") -> FastAPI:
                 Path(patch_file).unlink(missing_ok=True)
             except Exception:
                 pass
+
+    # ── Phase 15: Project Templates & Multi-Language Toolchain ────────────────
+
+    @app.get("/templates")
+    async def list_templates() -> dict[str, Any]:
+        """Return available project templates from the templates/ directory."""
+        tmpl_root = base_dir / "templates"
+        templates: list[dict[str, Any]] = []
+        if tmpl_root.is_dir():
+            for entry in sorted(tmpl_root.iterdir()):
+                if not entry.is_dir():
+                    continue
+                meta_file = entry / "template.json"
+                if meta_file.is_file():
+                    try:
+                        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                    except Exception:
+                        meta = {}
+                else:
+                    meta = {}
+                src_dir = entry / "src"
+                file_list: list[str] = []
+                if src_dir.is_dir():
+                    file_list = [f.name for f in sorted(src_dir.iterdir()) if f.is_file()]
+                templates.append({
+                    "name": entry.name,
+                    "description": meta.get("description", ""),
+                    "version": meta.get("version", "0.1.0"),
+                    "files": file_list,
+                })
+        return {"templates": templates}
+
+    @app.post("/templates/apply")
+    async def apply_template(req: TemplateApplyRequest) -> dict[str, Any]:
+        """Copy a template into workspace/<dest> with optional variable substitution."""
+        if not req.name or not req.dest:
+            raise HTTPException(status_code=400, detail="name and dest are required")
+        tmpl_src = base_dir / "templates" / req.name / "src"
+        if not tmpl_src.is_dir():
+            raise HTTPException(status_code=404, detail=f"Template '{req.name}' not found")
+        dest_path = _safe_path(base_dir / "workspace", req.dest)
+        dest_path.mkdir(parents=True, exist_ok=True)
+        copied: list[str] = []
+        for src_file in tmpl_src.rglob("*"):
+            if not src_file.is_file():
+                continue
+            rel = src_file.relative_to(tmpl_src)
+            dst_file = dest_path / rel
+            dst_file.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                content = src_file.read_text(encoding="utf-8")
+                for key, val in req.context.items():
+                    content = content.replace(f"{{{{{key}}}}}", val)
+                dst_file.write_text(content, encoding="utf-8")
+            except UnicodeDecodeError:
+                shutil.copy2(src_file, dst_file)
+            copied.append(str(rel))
+        return {"applied": True, "template": req.name, "dest": req.dest, "files": copied}
+
+    @app.get("/toolchain")
+    async def detect_toolchain() -> dict[str, Any]:
+        """Probe PATH for installed language runtimes and compilers."""
+        _PROBES: list[tuple[str, str, list[str]]] = [
+            ("python",     "Python",      [sys.executable, "--version"]),
+            ("node",       "Node.js",     ["node", "--version"]),
+            ("npm",        "npm",         ["npm", "--version"]),
+            ("gcc",        "GCC",         ["gcc", "--version"]),
+            ("g++",        "G++",         ["g++", "--version"]),
+            ("clang",      "Clang",       ["clang", "--version"]),
+            ("java",       "Java",        ["java", "-version"]),
+            ("javac",      "Java Compiler",["javac", "-version"]),
+            ("dotnet",     ".NET",        ["dotnet", "--version"]),
+            ("go",         "Go",          ["go", "version"]),
+            ("cargo",      "Rust/Cargo",  ["cargo", "--version"]),
+            ("rustc",      "Rust",        ["rustc", "--version"]),
+            ("lua",        "Lua",         ["lua", "-v"]),
+            ("lua5.4",     "Lua 5.4",     ["lua5.4", "-v"]),
+            ("ruby",       "Ruby",        ["ruby", "--version"]),
+            ("cmake",      "CMake",       ["cmake", "--version"]),
+            ("make",       "Make",        ["make", "--version"]),
+            ("git",        "Git",         ["git", "--version"]),
+        ]
+        tools: list[dict[str, Any]] = []
+        loop = asyncio.get_event_loop()
+
+        def _probe(cmd: list[str]) -> tuple[bool, str]:
+            try:
+                r = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    timeout=5,
+                )
+                out = (r.stdout or r.stderr or b"").decode(errors="replace").split("\n")[0].strip()
+                return (r.returncode == 0 or bool(out)), out
+            except (FileNotFoundError, subprocess.TimeoutExpired, PermissionError):
+                return False, ""
+
+        for key, label, cmd in _PROBES:
+            available, version_str = await loop.run_in_executor(None, _probe, cmd)
+            if available:
+                tools.append({"key": key, "label": label, "version": version_str, "available": True})
+
+        return {"toolchain": tools, "count": len(tools)}
+
+    @app.post("/snippet/run")
+    async def run_snippet(req: SnippetRunRequest) -> dict[str, Any]:
+        """Run a short code snippet in a chosen language and return output."""
+        lang = req.language.lower()
+        timeout = max(1, min(req.timeout, 30))  # clamp between 1s and 30s
+
+        _LANG_RUNNERS: dict[str, tuple[str, str]] = {
+            "python":     (sys.executable, ".py"),
+            "javascript": ("node",          ".js"),
+            "bash":       ("bash",          ".sh"),
+            "lua":        ("lua",           ".lua"),
+            "ruby":       ("ruby",          ".rb"),
+        }
+
+        if lang not in _LANG_RUNNERS:
+            raise HTTPException(status_code=400, detail=f"Unsupported language '{lang}'. Supported: {list(_LANG_RUNNERS)}")
+
+        runner_cmd, ext = _LANG_RUNNERS[lang]
+        # Check runner is available
+        if runner_cmd != sys.executable and not shutil.which(runner_cmd):
+            raise HTTPException(status_code=501, detail=f"Runtime '{runner_cmd}' not found on this system")
+
+        with tempfile.NamedTemporaryFile(
+            suffix=ext, mode="w", encoding="utf-8", delete=False
+        ) as tmp:
+            tmp.write(req.code)
+            tmp_path = tmp.name
+
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    [runner_cmd, tmp_path],
+                    capture_output=True,
+                    timeout=timeout,
+                ),
+            )
+            return {
+                "stdout": result.stdout.decode(errors="replace"),
+                "stderr": result.stderr.decode(errors="replace"),
+                "returncode": result.returncode,
+                "language": lang,
+            }
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=408, detail=f"Snippet timed out after {timeout}s")
+        finally:
+            try:
+                Path(tmp_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    @app.post("/templates/save")
+    async def save_template(req: TemplateSaveRequest) -> dict[str, Any]:
+        """Snapshot a workspace sub-directory as a new named template."""
+        if not req.name or not req.source:
+            raise HTTPException(status_code=400, detail="name and source are required")
+        # Validate template name (alphanumeric + dash/underscore)
+        if not re.match(r"^[a-zA-Z0-9_-]+$", req.name):
+            raise HTTPException(status_code=400, detail="Template name must be alphanumeric (dash/underscore allowed)")
+        src_path = _safe_path(base_dir / "workspace", req.source)
+        if not src_path.exists():
+            raise HTTPException(status_code=404, detail="Source path not found in workspace")
+        tmpl_dest = base_dir / "templates" / req.name
+        if tmpl_dest.exists():
+            raise HTTPException(status_code=409, detail=f"Template '{req.name}' already exists")
+        tmpl_dest.mkdir(parents=True)
+        src_dir = tmpl_dest / "src"
+        if src_path.is_dir():
+            shutil.copytree(src_path, src_dir)
+            files = [f.name for f in sorted(src_dir.rglob("*")) if f.is_file()]
+        else:
+            src_dir.mkdir()
+            shutil.copy2(src_path, src_dir / src_path.name)
+            files = [src_path.name]
+        meta = {"name": req.name, "description": req.description, "version": "0.1.0", "files": files}
+        (tmpl_dest / "template.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+        return {"saved": True, "name": req.name, "files": files}
 
     return app
 

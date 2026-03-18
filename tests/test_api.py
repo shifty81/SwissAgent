@@ -984,3 +984,167 @@ def test_diff_apply_nonexistent_file(client):
     """POST /diff/apply with nonexistent file returns 404."""
     res = client.post("/diff/apply", json={"path": "nonexistent_xyz.py", "patch": "--- a\n+++ b\n"})
     assert res.status_code == 404
+
+
+# ── Phase 15: Project Templates & Multi-Language Toolchain ────────────────────
+
+def test_templates_list_returns_structure(client):
+    """GET /templates returns list of templates with required keys."""
+    res = client.get("/templates")
+    assert res.status_code == 200
+    data = res.json()
+    assert "templates" in data
+    assert isinstance(data["templates"], list)
+    for t in data["templates"]:
+        assert "name" in t
+        assert "description" in t
+        assert "files" in t
+
+
+def test_templates_list_includes_builtin(client):
+    """GET /templates includes at least the built-in python template."""
+    res = client.get("/templates")
+    assert res.status_code == 200
+    names = [t["name"] for t in res.json()["templates"]]
+    assert "python" in names
+
+
+def test_templates_apply_unknown_template(client):
+    """POST /templates/apply with unknown template returns 404."""
+    res = client.post(
+        "/templates/apply",
+        json={"name": "__nonexistent__", "dest": "tmp_apply_test", "context": {}},
+    )
+    assert res.status_code == 404
+
+
+def test_templates_apply_missing_fields(client):
+    """POST /templates/apply with empty name returns 400."""
+    res = client.post(
+        "/templates/apply",
+        json={"name": "", "dest": "tmp_dest", "context": {}},
+    )
+    assert res.status_code == 400
+
+
+def test_templates_apply_python_template(client):
+    """POST /templates/apply with python template creates files in workspace."""
+    # Use a unique dest name based on timestamp to avoid collisions
+    import time
+    dest = f"phase15_test_{int(time.time() * 1000)}"
+    res = client.post(
+        "/templates/apply",
+        json={"name": "python", "dest": dest, "context": {"project_name": "myapp"}},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["applied"] is True
+    assert data["template"] == "python"
+    assert isinstance(data["files"], list)
+    assert len(data["files"]) > 0
+    # Cleanup: remove test directory
+    import shutil
+    from pathlib import Path
+    test_dir = Path("workspace") / dest
+    if test_dir.exists():
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
+def test_toolchain_returns_structure(client):
+    """GET /toolchain returns toolchain list."""
+    res = client.get("/toolchain")
+    assert res.status_code == 200
+    data = res.json()
+    assert "toolchain" in data
+    assert "count" in data
+    assert isinstance(data["toolchain"], list)
+    assert data["count"] == len(data["toolchain"])
+
+
+def test_toolchain_includes_python(client):
+    """GET /toolchain always includes Python since we run in Python."""
+    res = client.get("/toolchain")
+    assert res.status_code == 200
+    keys = [t["key"] for t in res.json()["toolchain"]]
+    assert "python" in keys
+
+
+def test_toolchain_tool_has_required_keys(client):
+    """Each toolchain entry has key, label, version, available."""
+    res = client.get("/toolchain")
+    assert res.status_code == 200
+    for t in res.json()["toolchain"]:
+        assert "key" in t
+        assert "label" in t
+        assert "version" in t
+        assert "available" in t
+
+
+def test_snippet_run_python(client):
+    """POST /snippet/run runs a Python snippet and returns stdout."""
+    res = client.post(
+        "/snippet/run",
+        json={"code": "print('hello phase15')\n", "language": "python"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert "stdout" in data
+    assert "stderr" in data
+    assert "returncode" in data
+    assert "hello phase15" in data["stdout"]
+    assert data["returncode"] == 0
+
+
+def test_snippet_run_python_error(client):
+    """POST /snippet/run with invalid Python returns non-zero exit code."""
+    res = client.post(
+        "/snippet/run",
+        json={"code": "raise ValueError('boom')\n", "language": "python"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["returncode"] != 0
+    assert "ValueError" in data["stderr"]
+
+
+def test_snippet_run_unsupported_language(client):
+    """POST /snippet/run with unknown language returns 400."""
+    res = client.post(
+        "/snippet/run",
+        json={"code": "x = 1", "language": "cobol"},
+    )
+    assert res.status_code == 400
+
+
+def test_snippet_run_missing_runtime(client):
+    """POST /snippet/run with language whose runtime is absent returns 501."""
+    # Use 'lua' which is very likely absent in CI; if it IS installed, it will just run fine
+    res = client.post(
+        "/snippet/run",
+        json={"code": "print('hi')", "language": "lua"},
+    )
+    assert res.status_code in (200, 501)
+
+
+def test_templates_save_missing_fields(client):
+    """POST /templates/save with empty name/source returns 400."""
+    res = client.post("/templates/save", json={"name": "", "source": "workspace"})
+    assert res.status_code == 400
+
+
+def test_templates_save_invalid_name(client):
+    """POST /templates/save with invalid name chars returns 400."""
+    res = client.post(
+        "/templates/save",
+        json={"name": "bad name!", "source": "workspace", "description": ""},
+    )
+    assert res.status_code == 400
+
+
+def test_templates_save_nonexistent_source(client):
+    """POST /templates/save when source path doesn't exist returns 404."""
+    res = client.post(
+        "/templates/save",
+        json={"name": "test-tmpl-xyz", "source": "__nonexistent_src__", "description": ""},
+    )
+    assert res.status_code == 404

@@ -2854,4 +2854,112 @@
       _qualityOutput(lines.join("\n"));
     } catch(e) { _qualityOutput("Error: " + e); }
   };
+
+  // ── Templates & Toolchain panel (Phase 15) ────────────────────────────────
+  let _selectedTemplate = null;
+
+  function _tmplOut(msg) { const el = $("toolchain-output"); if (el) el.textContent = msg; }
+  function _snippetOut(msg) { const el = $("snippet-output"); if (el) el.textContent = msg; }
+
+  // Detect toolchain
+  const btnToolchain = $("btn-detect-toolchain");
+  if (btnToolchain) btnToolchain.onclick = async () => {
+    _tmplOut("Detecting…");
+    try {
+      const r = await fetch("/toolchain");
+      const d = await r.json();
+      if (!r.ok) { _tmplOut("Error: " + (d.detail || r.status)); return; }
+      if (d.toolchain.length === 0) {
+        _tmplOut("No toolchains detected.");
+      } else {
+        _tmplOut(d.toolchain.map(t => `✅ ${t.label.padEnd(18)} ${t.version}`).join("\n"));
+      }
+    } catch(e) { _tmplOut("Error: " + e); }
+  };
+
+  // List templates
+  async function _loadTemplates() {
+    const listEl = $("templates-list");
+    if (!listEl) return;
+    listEl.innerHTML = '<span style="color:var(--text-muted,#888);font-size:11px">Loading…</span>';
+    try {
+      const r = await fetch("/templates");
+      const d = await r.json();
+      if (!r.ok || !d.templates.length) {
+        listEl.innerHTML = '<span style="color:var(--text-muted,#888);font-size:11px">No templates found.</span>';
+        return;
+      }
+      listEl.innerHTML = "";
+      d.templates.forEach(t => {
+        const row = document.createElement("div");
+        row.style.cssText = "padding:4px 2px;cursor:pointer;border-radius:3px;font-size:11px";
+        row.textContent = `📦 ${t.name} — ${t.description || "no description"}`;
+        row.dataset.name = t.name;
+        row.onclick = () => {
+          document.querySelectorAll("#templates-list div").forEach(x => x.style.background = "");
+          row.style.background = "var(--accent-bg,#264f78)";
+          _selectedTemplate = t.name;
+        };
+        listEl.appendChild(row);
+      });
+    } catch(e) {
+      listEl.innerHTML = '<span style="color:#f44">Error loading templates.</span>';
+    }
+  }
+
+  const btnListTemplates = $("btn-list-templates");
+  if (btnListTemplates) btnListTemplates.onclick = _loadTemplates;
+
+  // Apply template
+  const btnApplyTemplate = $("btn-apply-template");
+  if (btnApplyTemplate) btnApplyTemplate.onclick = async () => {
+    const dest = ($("tmpl-apply-dest") || {}).value || "";
+    if (!_selectedTemplate) { _tmplOut("Select a template first."); return; }
+    if (!dest.trim()) { _tmplOut("Enter a destination folder name."); return; }
+    _tmplOut("Applying template…");
+    try {
+      const r = await fetch("/templates/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: _selectedTemplate, dest: dest.trim(), context: {} }),
+      });
+      const d = await r.json();
+      if (!r.ok) { _tmplOut("Error: " + (d.detail || r.status)); return; }
+      _tmplOut(`✅ Template '${d.template}' applied to workspace/${d.dest}\n` +
+               `Files: ${d.files.join(", ") || "(none)"}`);
+    } catch(e) { _tmplOut("Error: " + e); }
+  };
+
+  // Run snippet
+  const btnRunSnippet = $("btn-run-snippet");
+  if (btnRunSnippet) btnRunSnippet.onclick = async () => {
+    const code = ($("snippet-code") || {}).value || "";
+    const lang = ($("snippet-lang") || {}).value || "python";
+    if (!code.trim()) { _snippetOut("Enter some code first."); return; }
+    _snippetOut("Running…");
+    try {
+      const r = await fetch("/snippet/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, language: lang, timeout: 15 }),
+      });
+      const d = await r.json();
+      if (!r.ok) { _snippetOut("Error: " + (d.detail || r.status)); return; }
+      const out = [
+        d.stdout && `STDOUT:\n${d.stdout}`,
+        d.stderr && `STDERR:\n${d.stderr}`,
+        `Exit code: ${d.returncode}`,
+      ].filter(Boolean).join("\n");
+      _snippetOut(out || "(no output)");
+    } catch(e) { _snippetOut("Error: " + e); }
+  };
+
+  // Auto-load templates when panel is first shown
+  const abBtnTemplates = document.querySelector('[data-panel="templates"]');
+  if (abBtnTemplates) {
+    let _templatesLoaded = false;
+    abBtnTemplates.addEventListener("click", () => {
+      if (!_templatesLoaded) { _templatesLoaded = true; _loadTemplates(); }
+    });
+  }
 })();
