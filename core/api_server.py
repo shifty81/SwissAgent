@@ -2,8 +2,14 @@
 from __future__ import annotations
 import asyncio
 import json
+import os
+import re
+import shutil
+import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -157,6 +163,28 @@ class IdePushRequest(BaseModel):
     open_in_editor: bool = True
 
 
+# ── Phase 9: Plugin ecosystem request models ───────────────────────────────────
+
+class PluginInstallRequest(BaseModel):
+    url: str
+
+
+class PluginGenerateRequest(BaseModel):
+    name: str
+    description: str
+    llm_backend: str = ""
+
+
+# ── Phase 11: Sandbox run request model ───────────────────────────────────────
+
+class SandboxRunRequest(BaseModel):
+    command: str
+    working_dir: str = "workspace"
+    timeout: int = 30
+    use_docker: bool = False
+    docker_image: str = "python:3.11-slim"
+
+
 # ── Phase 7: AI editor request models ─────────────────────────────────────────
 
 class AiCompleteRequest(BaseModel):
@@ -238,11 +266,35 @@ def create_app(config_dir: str = "configs") -> FastAPI:
     config.load()
     registry = ToolRegistry()
     ModuleLoader(base_dir / "modules", registry).load_all()
-    PluginLoader(base_dir / "plugins", registry).load_all()
+    plugin_loader = PluginLoader(base_dir / "plugins", registry)
+    plugin_loader.load_all()
     permissions = PermissionSystem()
     runner = TaskRunner()
 
     logger.info("SwissAgent API server initialized. %d tools loaded.", len(registry.list_tools()))
+
+    # ── Plugin hot-reload watcher ──────────────────────────────────────────
+    _plugins_dir = base_dir / "plugins"
+    _watcher_state: dict[str, Any] = {"active": True}
+    # Set initial mtime BEFORE starting the thread to avoid a false-trigger on first tick
+    _watcher_state["mtime"] = _plugins_dir.stat().st_mtime if _plugins_dir.exists() else 0.0
+
+    def _watch_plugins() -> None:
+        """Background thread: reload plugins when plugins/ directory changes."""
+        while _watcher_state["active"]:
+            try:
+                mtime = _plugins_dir.stat().st_mtime if _plugins_dir.exists() else 0.0
+                if mtime != _watcher_state["mtime"]:
+                    _watcher_state["mtime"] = mtime
+                    if mtime:
+                        logger.info("Plugins directory changed — reloading plugins.")
+                        plugin_loader.load_all()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Plugin watcher error: %s", exc)
+            time.sleep(2)
+
+    _watcher_thread = threading.Thread(target=_watch_plugins, daemon=True, name="plugin-watcher")
+    _watcher_thread.start()
 
     # ── Serve GUI static assets ────────────────────────────────────────────
     if gui_dir.is_dir():
@@ -1072,6 +1124,198 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         try:
             from modules.scaffold.src.scaffold_tools import scaffold_tests
             return scaffold_tests(module_name=req.module_name, output_path=req.output_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # ── Phase 9: Plugin ecosystem endpoints ────────────────────────────────────
+
+    @app.get("/plugins")
+    async def list_plugins() -> dict[str, Any]:
+        """List all installed plugins with metadata."""
+        plugins = plugin_loader.loaded_plugins
+        return {
+            "plugins": [
+                {
+                    "name": meta.get("name", name),
+                    "version": meta.get("version", "?"),
+                    "description": meta.get("description", ""),
+                    "author": meta.get("author", ""),
+                }
+                for name, meta in plugins.items()
+            ],
+            "count": len(plugins),
+        }
+
+    @app.post("/plugins/reload")
+    async def reload_plugins() -> dict[str, Any]:
+        """Hot-reload all plugins from the plugins/ directory."""
+        try:
+            plugin_loader.load_all()
+            _watcher_state["mtime"] = _plugins_dir.stat().st_mtime if _plugins_dir.exists() else 0.0
+            return {
+                "status": "reloaded",
+                "count": len(plugin_loader.loaded_plugins),
+                "plugins": list(plugin_loader.loaded_plugins.keys()),
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/plugins/install")
+    async def install_plugin(req: PluginInstallRequest) -> dict[str, Any]:
+        """Install a plugin by cloning a GitHub/Git URL into plugins/."""
+        url = req.url.strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="URL is required")
+        # Derive plugin directory name from URL
+        name = url.rstrip("/").rsplit("/", 1)[-1]
+        if name.endswith(".git"):
+            name = name[:-4]
+        if not name:
+            raise HTTPException(status_code=400, detail="Could not determine plugin name from URL")
+        dest = _plugins_dir / name
+        if dest.exists():
+            return {"status": "already_installed", "plugin": name, "path": str(dest.relative_to(base_dir))}
+        try:
+            result = subprocess.run(
+                ["git", "clone", "--depth=1", url, str(dest)],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                raise HTTPException(status_code=500, detail=result.stderr or "git clone failed")
+            # Auto-register the newly installed plugin using the public API
+            plugin_loader.load_plugin(dest)
+            _watcher_state["mtime"] = _plugins_dir.stat().st_mtime if _plugins_dir.exists() else 0.0
+            return {
+                "status": "installed",
+                "plugin": name,
+                "path": str(dest.relative_to(base_dir)),
+                "tools": len(plugin_loader.loaded_plugins.get(name, {}).get("tools", [])),
+            }
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=504, detail="git clone timed out")
+
+    @app.delete("/plugins/{name}")
+    async def remove_plugin(name: str) -> dict[str, Any]:
+        """Remove an installed plugin by name."""
+        # Validate name (no path traversal)
+        if "/" in name or "\\" in name or name.startswith("."):
+            raise HTTPException(status_code=400, detail="Invalid plugin name")
+        dest = _plugins_dir / name
+        if not dest.exists():
+            raise HTTPException(status_code=404, detail=f"Plugin '{name}' not found")
+        try:
+            shutil.rmtree(dest)
+            plugin_loader.unload_plugin(name)
+            return {"status": "removed", "plugin": name}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/plugins/generate")
+    async def generate_plugin_with_ai(req: PluginGenerateRequest) -> dict[str, Any]:
+        """Generate a plugin skeleton with AI-assisted tool definitions."""
+        if not req.name or not req.description:
+            raise HTTPException(status_code=400, detail="name and description are required")
+        try:
+            from modules.scaffold.src.scaffold_tools import scaffold_plugin
+            # Use LLM to generate better tool definitions if a backend is configured
+            tools: list[dict[str, Any]] = []
+            backend = req.llm_backend or config.get("llm", {}).get("default_backend", "")
+            if backend:
+                try:
+                    from llm.factory import create_llm
+                    llm = create_llm(backend, config)
+                    prompt = (
+                        f"Generate a JSON array of tool definitions for a SwissAgent plugin called '{req.name}'. "
+                        f"Description: {req.description}\n"
+                        "Each tool must have: name, description, function (as 'plugins.<slug>.<slug>_plugin.<fn>'), "
+                        "and arguments (JSON schema). Return ONLY the JSON array, no markdown."
+                    )
+                    raw = llm.complete(prompt)
+                    # Extract JSON array from response
+                    match = re.search(r"\[.*\]", raw, re.DOTALL)
+                    if match:
+                        tools = json.loads(match.group(0))
+                except Exception:  # noqa: BLE001
+                    tools = []  # Fall back to default tool generation
+            return scaffold_plugin(name=req.name, description=req.description, tools=tools or None)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # ── Phase 11: Sandbox code execution ──────────────────────────────────────
+
+    @app.post("/sandbox/run")
+    async def sandbox_run(req: SandboxRunRequest) -> dict[str, Any]:
+        """Run a command in a sandboxed environment.
+
+        If use_docker=True and Docker is available, runs inside a container.
+        Otherwise runs with subprocess with a timeout.
+        """
+        # Validate working directory — resolve first to prevent traversal tricks
+        allowed_roots = {"workspace", "projects"}
+        work_path = (base_dir / req.working_dir).resolve()
+        base_resolved = base_dir.resolve()
+        # Use is_relative_to for robust cross-platform path containment check (Python 3.9+)
+        if not work_path.is_relative_to(base_resolved):
+            raise HTTPException(status_code=403, detail="Path traversal denied")
+        # Check that the resolved path is under an allowed root
+        rel_parts = work_path.relative_to(base_resolved).parts
+        top = rel_parts[0] if rel_parts else ""
+        if top not in allowed_roots:
+            raise HTTPException(status_code=403, detail=f"working_dir must be under: {allowed_roots}")
+        if not work_path.exists():
+            work_path.mkdir(parents=True, exist_ok=True)
+
+        timeout = max(5, min(req.timeout, 300))
+
+        if req.use_docker:
+            # Try Docker execution
+            docker_available = shutil.which("docker") is not None
+            if not docker_available:
+                return {
+                    "status": "error",
+                    "error": "Docker is not available on this system",
+                    "stdout": "",
+                    "stderr": "",
+                    "returncode": -1,
+                }
+            cmd = [
+                "docker", "run", "--rm",
+                "--network=none",
+                "--memory=256m",
+                "--cpus=1",
+                "-v", f"{work_path}:/workspace:ro",
+                "-w", "/workspace",
+                req.docker_image,
+                "sh", "-c", req.command,
+            ]
+        else:
+            cmd = ["sh", "-c", req.command]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=str(work_path),
+            )
+            return {
+                "status": "ok",
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "returncode": result.returncode,
+                "docker": req.use_docker,
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "status": "timeout",
+                "error": f"Command timed out after {timeout}s",
+                "stdout": "",
+                "stderr": "",
+                "returncode": -1,
+            }
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
 

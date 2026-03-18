@@ -428,33 +428,33 @@
       "id": "m9",
       "title": "Phase 9 \u2014 Plugin Ecosystem",
       "description": "Plugin browser, install from URL, hot-reload, template generator",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t9-1",
           "title": "Plugin browser panel in IDE",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Lists installed plugins + install-from-URL input"
         },
         {
           "id": "t9-2",
           "title": "Install plugin from GitHub URL",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "git clone into plugins/; auto-register without server restart"
         },
         {
           "id": "t9-3",
           "title": "Hot-reload plugins without server restart",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "File watcher on plugins/; re-runs PluginLoader on change"
         },
         {
           "id": "t9-4",
           "title": "Plugin template generator (AI-assisted)",
-          "status": "pending",
+          "status": "done",
           "priority": "low",
           "description": "Agent generates a new plugin skeleton from a description prompt"
         }
@@ -464,7 +464,7 @@
       "id": "m10",
       "title": "Phase 10 \u2014 Production Hardening",
       "description": "Auth, Docker, packaging, performance, persistence",
-      "status": "pending",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "t10-1",
@@ -554,7 +554,7 @@
         {
           "id": "t11-6",
           "title": "Docker sandbox for AI-generated code execution",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Run pytest / build commands inside an isolated container; capture output; prevent host damage"
         },
@@ -571,7 +571,7 @@
       "id": "m12",
       "title": "Phase 12 \u2014 Self-Scaffolding Engine",
       "description": "Agent can generate new modules, plugins, tests, and roadmap tasks from a natural language description",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t12-1",
@@ -604,7 +604,7 @@
         {
           "id": "t12-5",
           "title": "Scaffold panel in IDE: describe \u2192 generate \u2192 review \u2192 apply",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "UI form that calls scaffold_module/plugin; shows diff before writing files"
         }

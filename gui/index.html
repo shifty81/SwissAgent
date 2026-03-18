@@ -40,6 +40,8 @@
       <button class="ab-btn" data-panel="git"      title="Git">⎇</button>
       <button class="ab-btn" data-panel="knowledge" title="Knowledge & Profile">📚</button>
       <button class="ab-btn" data-panel="roadmap"  title="Roadmap">🗺</button>
+      <button class="ab-btn" data-panel="plugins"  title="Plugins">🔌</button>
+      <button class="ab-btn" data-panel="scaffold" title="Scaffold">⚡</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -188,6 +190,64 @@
           <div class="roadmap-sb-actions">
             <button id="btn-roadmap-work-next-sb" title="Work on next task">▶ Work on Next</button>
           </div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Plugins ────────────────────────────────────── -->
+      <div class="sb-panel" id="panel-plugins">
+        <div class="sidebar-header">
+          <span>Plugins</span>
+          <div class="sidebar-buttons">
+            <button id="btn-plugins-reload" title="Reload plugins">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body">
+          <!-- Installed plugins list -->
+          <div class="kp-section-title">🔌 Installed Plugins</div>
+          <div id="plugins-list" class="plugins-list"></div>
+
+          <!-- Install from URL -->
+          <div class="kp-section-title" style="margin-top:10px;">🔗 Install from URL</div>
+          <div class="search-row">
+            <input id="plugin-install-url" type="text" placeholder="GitHub URL…" />
+            <button id="btn-plugin-install" title="Install plugin">⬇</button>
+          </div>
+          <div id="plugin-install-status" style="font-size:11px;margin-top:4px;color:var(--text-dim);"></div>
+
+          <!-- AI Generate plugin -->
+          <div class="kp-section-title" style="margin-top:10px;">🤖 Generate Plugin (AI)</div>
+          <input id="plugin-gen-name" type="text" placeholder="Plugin name…" style="width:100%;margin-bottom:4px;" />
+          <input id="plugin-gen-desc" type="text" placeholder="Description…" style="width:100%;margin-bottom:4px;" />
+          <button id="btn-plugin-gen" style="width:100%;margin-top:2px;">✨ Generate</button>
+          <div id="plugin-gen-status" style="font-size:11px;margin-top:4px;color:var(--text-dim);"></div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Scaffold ───────────────────────────────────── -->
+      <div class="sb-panel" id="panel-scaffold">
+        <div class="sidebar-header">
+          <span>Scaffold</span>
+        </div>
+        <div class="sb-panel-body">
+          <!-- Generate module -->
+          <div class="kp-section-title">📦 New Module</div>
+          <input id="scaffold-mod-name" type="text" placeholder="Module name…" style="width:100%;margin-bottom:4px;" />
+          <input id="scaffold-mod-desc" type="text" placeholder="Description…" style="width:100%;margin-bottom:4px;" />
+          <button id="btn-scaffold-mod" style="width:100%;margin-top:2px;">⚡ Generate Module</button>
+          <div id="scaffold-mod-result" class="scaffold-result"></div>
+
+          <!-- Generate plugin -->
+          <div class="kp-section-title" style="margin-top:10px;">🔌 New Plugin</div>
+          <input id="scaffold-plugin-name" type="text" placeholder="Plugin name…" style="width:100%;margin-bottom:4px;" />
+          <input id="scaffold-plugin-desc" type="text" placeholder="Description…" style="width:100%;margin-bottom:4px;" />
+          <button id="btn-scaffold-plugin" style="width:100%;margin-top:2px;">⚡ Generate Plugin</button>
+          <div id="scaffold-plugin-result" class="scaffold-result"></div>
+
+          <!-- Generate tests -->
+          <div class="kp-section-title" style="margin-top:10px;">🧪 Generate Tests</div>
+          <input id="scaffold-test-name" type="text" placeholder="Module/plugin name…" style="width:100%;margin-bottom:4px;" />
+          <button id="btn-scaffold-tests" style="width:100%;margin-top:2px;">🧪 Generate Tests</button>
+          <div id="scaffold-test-result" class="scaffold-result"></div>
         </div>
       </div>
 

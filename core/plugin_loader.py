@@ -40,6 +40,23 @@ class PluginLoader:
         except Exception as exc:
             logger.error("Failed to load plugin %s: %s", plugin_dir.name, exc)
 
+    def load_plugin(self, plugin_dir: str | Path) -> None:
+        """Public method to load a single plugin from a directory path."""
+        self._load_plugin(Path(plugin_dir))
+
+    def unload_plugin(self, name: str) -> bool:
+        """Remove a plugin from the in-memory registry by name.
+
+        Note: tools registered via tools.json are *not* removed from the
+        ToolRegistry (it has no unregister API), but the plugin will no
+        longer appear in loaded_plugins and won't be re-loaded automatically.
+        """
+        if name in self._loaded:
+            del self._loaded[name]
+            logger.info("Plugin unloaded: %s", name)
+            return True
+        return False
+
     @property
     def loaded_plugins(self) -> dict[str, dict[str, Any]]:
         return dict(self._loaded)
