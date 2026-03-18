@@ -74,7 +74,36 @@ ok()    { printf "\033[0;32m[ OK ]\033[0m  %s\n" "$*"; }
 warn()  { printf "\033[0;33m[WARN]\033[0m  %s\n" "$*"; }
 error() { printf "\033[0;31m[ERR ]\033[0m  %s\n" "$*" >&2; }
 
+# ── Progress bar ────────────────────────────────────────────────────────────
+# Shows a sticky progress bar at the very bottom of the terminal.
+# Writes directly to /dev/tty so it bypasses the tee log redirect and
+# does not pollute logs/install.log with ANSI escape sequences.
+TOTAL_STEPS=6   # Python · pip · deps · dirs · Ollama · done
+
+_progress() {
+  # Usage: _progress <current_step> <total_steps> <message>
+  [[ -w /dev/tty ]] && [[ "${TERM:-}" != "dumb" ]] || return 0
+  local step=$1 total=$2 msg=${3:-}
+  local width=40 bar="" i
+  local pct=$(( step * 100 / total ))
+  local filled=$(( step * width / total ))
+  for (( i=0; i<filled;  i++ )); do bar+="█"; done
+  for (( i=filled; i<width; i++ )); do bar+="░"; done
+  # ESC[s   = save cursor   ESC[999B = jump to bottom   ESC[2K = erase line
+  # ESC[u   = restore cursor — keeps all normal output above intact
+  printf '\033[s\033[999B\r\033[2K\033[0;36m  [%s] \033[1m%3d%%\033[0m  %s\033[u' \
+    "$bar" "$pct" "$msg" >/dev/tty 2>/dev/null || true
+}
+
+_progress_clear() {
+  # Erase the progress bar line (call before handing the terminal to a child
+  # process such as the live server, so its output is not mixed with the bar).
+  [[ -w /dev/tty ]] || return 0
+  printf '\033[s\033[999B\r\033[2K\033[u' >/dev/tty 2>/dev/null || true
+}
+
 # ── Python check ────────────────────────────────────────────────────────────
+_progress 1 $TOTAL_STEPS "Checking Python version…"
 info "Checking Python version…"
 PYTHON_CMD=""
 for cmd in python3 python; do
@@ -97,11 +126,13 @@ if [[ -z "$PYTHON_CMD" ]]; then
 fi
 
 # ── Upgrade pip ─────────────────────────────────────────────────────────────
+_progress 2 $TOTAL_STEPS "Upgrading pip…"
 info "Upgrading pip…"
 "$PYTHON_CMD" -m pip install --upgrade pip
 ok "pip is up to date."
 
 # ── Install deps ────────────────────────────────────────────────────────────
+_progress 3 $TOTAL_STEPS "Installing dependencies…"
 info "Installing SwissAgent and Python dependencies…"
 info "(this may take a minute — all output is captured to $LOG_FILE)"
 cd "$ROOT_DIR"
@@ -109,6 +140,7 @@ cd "$ROOT_DIR"
 ok "Python dependencies installed."
 
 # ── Create directories ──────────────────────────────────────────────────────
+_progress 4 $TOTAL_STEPS "Creating directories…"
 info "Creating required directories…"
 DIRS=(
   logs cache models workspace projects plugins
@@ -126,6 +158,7 @@ touch "$ROOT_DIR/cache/.gitkeep" 2>/dev/null || true
 ok "Directories ready."
 
 # ── Ollama check ────────────────────────────────────────────────────────────
+_progress 5 $TOTAL_STEPS "Checking Ollama…"
 info "Checking Ollama (local LLM backend)…"
 if command -v ollama &>/dev/null; then
   ok "Ollama found at $(command -v ollama)."
@@ -152,6 +185,7 @@ except Exception:
   else
     warn "Ollama model '$OLLAMA_MODEL' was not found in 'ollama list'."
     warn "Pulling it now (this may take several minutes on the first run)…"
+    _progress 5 $TOTAL_STEPS "Downloading model '$OLLAMA_MODEL' (may take minutes)…"
     if ollama pull "$OLLAMA_MODEL"; then
       ok "Model '$OLLAMA_MODEL' downloaded successfully."
     else
@@ -168,6 +202,7 @@ else
 fi
 
 # ── Done ────────────────────────────────────────────────────────────────────
+_progress $TOTAL_STEPS $TOTAL_STEPS "Setup complete! 🎉"
 echo ""
 ok "Setup complete! 🎉"
 echo ""
@@ -178,6 +213,7 @@ if [[ "$LAUNCH" -eq 1 ]]; then
   info "Starting SwissAgent IDE at http://$HOST:$PORT …"
   info "Press Ctrl+C to stop the server."
   echo ""
+  _progress_clear
   # Run the server directly (not via exec) so that any startup error is
   # captured by the tee pipe and shown on screen before this script exits.
   "$PYTHON_CMD" -m core.cli ui --host "$HOST" --port "$PORT"
