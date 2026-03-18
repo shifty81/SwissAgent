@@ -41,3 +41,6 @@ root/
 modules/_test_*/
 plugins/_test_*/
 tests/test_filesystem.py
+# Test-generated chat/memory directories
+_test_chat_*/
+_test_mem_*/

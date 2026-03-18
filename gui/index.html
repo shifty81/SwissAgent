@@ -42,6 +42,7 @@
       <button class="ab-btn" data-panel="roadmap"  title="Roadmap">🗺</button>
       <button class="ab-btn" data-panel="plugins"  title="Plugins">🔌</button>
       <button class="ab-btn" data-panel="scaffold" title="Scaffold">⚡</button>
+      <button class="ab-btn" data-panel="models"   title="Model Downloads">📥</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -248,6 +249,17 @@
           <input id="scaffold-test-name" type="text" placeholder="Module/plugin name…" style="width:100%;margin-bottom:4px;" />
           <button id="btn-scaffold-tests" style="width:100%;margin-top:2px;">🧪 Generate Tests</button>
           <div id="scaffold-test-result" class="scaffold-result"></div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Models ─────────────────────────────────────── -->
+      <div class="sb-panel" id="panel-models">
+        <div class="sidebar-header">
+          <span>📥 Model Downloads</span>
+          <button id="btn-models-refresh" title="Refresh">↺</button>
+        </div>
+        <div class="sb-panel-body" id="models-panel-content">
+          <div style="color:var(--text-dim);font-size:12px;padding:8px">Loading…</div>
         </div>
       </div>
 

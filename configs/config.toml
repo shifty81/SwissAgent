@@ -2,6 +2,13 @@
 max_iterations = 20
 default_llm_backend = "ollama"
 
+[auth]
+# Set enabled = true and provide username/password to protect all API endpoints
+# with HTTP Basic authentication.
+enabled = false
+username = ""
+password = ""
+
 [llm.ollama]
 base_url = "http://localhost:11434"
 model = "llama3"

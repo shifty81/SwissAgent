@@ -43,6 +43,29 @@ class Agent:
         self.runner = task_runner
         self.config = config
         self._project_context = self._load_project_context(project_path)
+        self._session_memory = self._load_session_memory(project_path)
+
+    # ── Session memory injection (t10-6) ──────────────────────────────────────
+    @staticmethod
+    def _load_session_memory(project_path: str) -> str:
+        """Load persisted session memory as a compact string for the system prompt."""
+        try:
+            from pathlib import Path as _P
+            import json as _json
+            if project_path:
+                mem_file = _P(project_path) / ".swissagent" / "session_memory.json"
+            else:
+                mem_file = _P(".swissagent") / "session_memory.json"
+            if not mem_file.is_file():
+                return ""
+            mem: dict = _json.loads(mem_file.read_text(encoding="utf-8"))
+            if not mem:
+                return ""
+            lines = [f"- {k}: {v}" for k, v in list(mem.items())[:20]]
+            return "Session memory (facts from previous conversations):\n" + "\n".join(lines)
+        except Exception as exc:
+            logger.debug("Could not load session memory: %s", exc)
+            return ""
 
     # ── Project profile + rules injection ─────────────────────────────────────
     @staticmethod
@@ -147,6 +170,8 @@ class Agent:
         )
         if self._project_context:
             base += f"\n\n{self._project_context}"
+        if self._session_memory:
+            base += f"\n\n{self._session_memory}"
         if include_tools:
             lines = []
             for t in self.tools.list_tools():
