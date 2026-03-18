@@ -22,5 +22,12 @@ def create_llm(backend: str, config: "ConfigLoader") -> "BaseLLM":
             api_key=config.get("llm.api.key", ""),
             model=config.get("llm.api.model", "gpt-3.5-turbo"),
         )
+    if backend == "openwebui":
+        from llm.openwebui import OpenWebUILLM
+        return OpenWebUILLM(
+            base_url=config.get("llm.openwebui.base_url", "http://localhost:3000"),
+            api_key=config.get("llm.openwebui.key", ""),
+            model=config.get("llm.openwebui.model", ""),
+        )
     from llm.local import LocalLLM
     return LocalLLM(model_path=config.get("llm.local.model_path", ""))

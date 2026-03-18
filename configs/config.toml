@@ -11,6 +11,15 @@ base_url = "https://api.openai.com"
 key = ""
 model = "gpt-4o"
 
+[llm.openwebui]
+# URL of your running Open WebUI instance (default port is 3000).
+# Install Open WebUI: docker run -d -p 3000:8080 ghcr.io/open-webui/open-webui:main
+base_url = "http://localhost:3000"
+# API key from Open WebUI → Settings → Account → API Keys (leave blank to use no auth)
+key = ""
+# Leave blank to auto-select the first available model
+model = ""
+
 [llm.local]
 model_path = "models/model.gguf"
 

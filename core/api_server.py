@@ -83,6 +83,12 @@ class RoadmapTaskUpdate(BaseModel):
     notes: str = ""
 
 
+class IdePushRequest(BaseModel):
+    path: str
+    content: str
+    open_in_editor: bool = True
+
+
 def _safe_path(base_dir: Path, rel: str) -> Path:
     """Resolve *rel* under *base_dir* and reject path-traversal attempts."""
     resolved = (base_dir / rel).resolve()
