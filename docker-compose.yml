@@ -1,11 +1,19 @@
 # SwissAgent — full open-source AI development stack
 #
+# ⚠  DOCKER IS OPTIONAL AND MUST BE MANUALLY BUILT.
+#    The SwissAgent image is NOT built automatically by this file.
+#    Build it once before running docker compose:
+#
+#      bash scripts/docker-build.sh
+#      # or manually:
+#      docker build -t swissagent:latest .
+#
 # Services:
 #   swissagent  — the IDE + agent backend  (http://localhost:8000)
 #   localai     — OpenAI-compatible local LLM runtime (http://localhost:8080)
 #   open-webui  — Copilot Chat-style UI on top of LocalAI (http://localhost:3000)
 #
-# Quick start:
+# Start (after manual build above):
 #   docker compose up -d
 #   open http://localhost:8000   ← SwissAgent IDE
 #   open http://localhost:3000   ← Open WebUI chat
@@ -24,7 +32,8 @@ services:
 
   # ── SwissAgent IDE + REST API ────────────────────────────────────────────────
   swissagent:
-    build: .
+    # ⚠  Image must be built manually before running docker compose:
+    #      bash scripts/docker-build.sh   (or: docker build -t swissagent:latest .)
     image: swissagent:latest
     container_name: swissagent
     restart: unless-stopped

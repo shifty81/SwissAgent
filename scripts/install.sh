@@ -8,8 +8,10 @@
 #   3. Installs SwissAgent and all Python dependencies (pip install -e .)
 #   4. Creates all required project directories
 #   5. Checks whether Ollama is installed (and prints install instructions if not)
-#   6. Optionally checks for Open WebUI (Docker-based chat UI)
-#   7. Starts the web IDE and opens it in the default browser (default behaviour)
+#   6. Starts the web IDE and opens it in the default browser (default behaviour)
+#
+# Docker is OPTIONAL and must be built manually — see scripts/docker-build.sh.
+# Nothing in this script involves Docker.
 #
 # Examples:
 #   bash scripts/install.sh                          # install + open web IDE
@@ -165,24 +167,6 @@ else
   warn "Alternatively, set llm_backend = \"api\" or \"openwebui\" in configs/config.toml."
 fi
 
-# ── Open WebUI check (optional) ─────────────────────────────────────────────
-info "Checking Open WebUI (optional chat UI)…"
-if command -v docker &>/dev/null; then
-  if docker ps 2>/dev/null | grep -q "open-webui"; then
-    ok "Open WebUI container is already running."
-  else
-    warn "Open WebUI is not running."
-    warn "To get a GitHub Copilot Chat-style brainstorming UI, start it with:"
-    warn "   docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway \\"
-    warn "     -v open-webui:/app/backend/data ghcr.io/open-webui/open-webui:main"
-    warn "Then set llm_backend = \"openwebui\" in configs/config.toml."
-    warn "Install the SwissAgent plugin from plugins/open_webui_tool/ for IDE push support."
-  fi
-else
-  warn "Docker not found — Open WebUI requires Docker."
-  warn "See plugins/open_webui_tool/README.md for setup instructions."
-fi
-
 # ── Done ────────────────────────────────────────────────────────────────────
 echo ""
 ok "Setup complete! 🎉"
@@ -212,6 +196,10 @@ else
   echo ""
   echo "  LLM backends:  ollama (default) | api | openwebui | local"
   echo "  See configs/config.toml to configure backends."
+  echo ""
+  echo "  Docker (optional — manual only):"
+  echo "    bash scripts/docker-build.sh     # build image manually"
+  echo "    docker compose up -d             # start full stack after build"
   echo ""
   echo "  Run setup + launch together:"
   echo "    bash scripts/install.sh"

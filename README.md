@@ -310,12 +310,18 @@ The built-in AI Agent chat panel works without any external services:
 ## Docker — Optional Full Stack
 
 > **Docker is not required to run SwissAgent.** See [Installation](#installation) for the no-Docker path.
+>
+> ⚠ **The SwissAgent Docker image must be built manually.** It is not built automatically by `docker compose up` or any install script. Run the build script once before using Compose.
 
 The Docker Compose setup gives you the complete open-source AI stack
-(**SwissAgent IDE + LocalAI + Open WebUI**) with one command:
+(**SwissAgent IDE + LocalAI + Open WebUI**):
 
 ```bash
-# Start SwissAgent IDE + LocalAI + Open WebUI
+# Step 1 — Build the SwissAgent image manually (one-time)
+bash scripts/docker-build.sh
+# or: docker build -t swissagent:latest .
+
+# Step 2 — Start the full stack
 docker compose up -d
 
 # Open the IDE

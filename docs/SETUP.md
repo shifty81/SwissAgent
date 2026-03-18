@@ -176,7 +176,17 @@ git clone https://github.com/shifty81/SwissAgent.git
 cd SwissAgent
 ```
 
-### Step 3 — Start the full stack
+### Step 3 — Build the SwissAgent image manually (one-time)
+
+> ⚠ **The SwissAgent image is NOT built automatically by `docker compose up`.** You must build it once before starting the stack.
+
+```bash
+bash scripts/docker-build.sh
+# or manually:
+docker build -t swissagent:latest .
+```
+
+### Step 4 — Start the full stack
 
 ```bash
 docker compose up -d
@@ -189,7 +199,7 @@ This starts three services:
 | `localai` | http://localhost:8080 | Local LLM runtime (OpenAI-compatible) |
 | `open-webui` | http://localhost:3000 | Copilot Chat-style brainstorming UI |
 
-### Step 4 — Download a model into LocalAI (first time only)
+### Step 5 — Download a model into LocalAI (first time only)
 
 ```bash
 docker compose exec localai \
@@ -200,7 +210,7 @@ docker compose exec localai \
 > **Note:** Models are stored in the `./models/` directory on your host machine
 > and survive container restarts.
 
-### Step 5 — Point SwissAgent at LocalAI
+### Step 6 — Point SwissAgent at LocalAI
 
 Edit `configs/config.toml`:
 ```toml
@@ -208,7 +218,7 @@ Edit `configs/config.toml`:
 default_llm_backend = "localai"
 ```
 
-### Step 6 — Open the IDE
+### Step 7 — Open the IDE
 
 - SwissAgent IDE → http://localhost:8000
 - Open WebUI chat → http://localhost:3000
