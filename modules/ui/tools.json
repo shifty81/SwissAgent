@@ -1,63 +1,54 @@
 [
   {
     "name": "ui_generate_component",
-    "description": "Generate a UI component",
+    "description": "Generate UI component code (ImGui, HTML, Win32)",
     "module": "ui",
     "function": "modules.ui.src.ui.ui_generate_component",
     "arguments": {
       "type": "object",
       "properties": {
-        "name": {
-          "type": "string"
-        },
-        "type": {
-          "type": "string"
-        },
-        "framework": {
-          "type": "string"
-        }
+        "component_type": { "type": "string" },
+        "name": { "type": "string" },
+        "framework": { "type": "string" },
+        "options": { "type": "object" }
       },
-      "required": [
-        "name",
-        "type"
-      ]
+      "required": ["component_type", "name"]
     }
   },
   {
     "name": "ui_screenshot",
-    "description": "Screenshot a UI element",
+    "description": "Placeholder for UI element screenshots",
     "module": "ui",
     "function": "modules.ui.src.ui.ui_screenshot",
     "arguments": {
       "type": "object",
       "properties": {
-        "url": {
-          "type": "string"
-        },
-        "output": {
-          "type": "string"
-        },
-        "width": {
-          "type": "integer"
-        },
-        "height": {
-          "type": "integer"
-        }
+        "element_id": { "type": "string" },
+        "output_path": { "type": "string" }
       },
-      "required": [
-        "url"
-      ]
+      "required": ["element_id"]
     }
   },
   {
     "name": "ui_list_components",
-    "description": "List available UI components",
+    "description": "List available UI component types per framework",
     "module": "ui",
     "function": "modules.ui.src.ui.ui_list_components",
+    "arguments": { "type": "object", "properties": {}, "required": [] }
+  },
+  {
+    "name": "ui_generate_layout",
+    "description": "Generate a source file containing multiple UI components",
+    "module": "ui",
+    "function": "modules.ui.src.ui.ui_generate_layout",
     "arguments": {
       "type": "object",
-      "properties": {},
-      "required": []
+      "properties": {
+        "components": { "type": "array", "items": { "type": "object" } },
+        "output_path": { "type": "string" },
+        "framework": { "type": "string" }
+      },
+      "required": ["components", "output_path"]
     }
   }
 ]

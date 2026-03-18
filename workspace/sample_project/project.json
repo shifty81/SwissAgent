@@ -1,0 +1,8 @@
+{
+  "name": "sample_project",
+  "version": "0.1.0",
+  "description": "SwissAgent sample project — multi-language starter",
+  "languages": ["python", "cpp", "csharp", "lua", "java", "rust", "go", "js", "ts", "kotlin"],
+  "build_system": "cmake",
+  "entry_point": "src/python/main.py"
+}
