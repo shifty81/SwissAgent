@@ -109,6 +109,12 @@ class Agent:
     def _execute_tool(self, tool_call: dict[str, Any], state: AgentState) -> Any:
         name = tool_call.get("name", "")
         args = tool_call.get("arguments", {})
+        if not isinstance(args, dict):
+            logger.warning(
+                "Tool %r 'arguments' is %s, not a dict — coercing to {}.",
+                name, type(args).__name__,
+            )
+            args = {}
         if not self.permissions.is_allowed(name, args):
             logger.warning("Tool %r blocked by permission system.", name)
             return {"error": f"Permission denied for tool '{name}'"}
@@ -142,8 +148,17 @@ class Agent:
         if self._project_context:
             base += f"\n\n{self._project_context}"
         if include_tools:
-            tool_names = [t["name"] for t in self.tools.list_tools()]
-            base += f"\n\nAvailable tools: {', '.join(tool_names)}"
+            lines = []
+            for t in self.tools.list_tools():
+                props = t.get("arguments", {}).get("properties", {})
+                required = set(t.get("arguments", {}).get("required", []))
+                params = ", ".join(
+                    f"{k}: {v.get('type', 'any')}{'*' if k in required else ''}"
+                    for k, v in props.items()
+                )
+                desc = t.get("description", "")
+                lines.append(f"- {t['name']}({params}): {desc}")
+            base += "\n\nAvailable tools (* = required arg):\n" + "\n".join(lines)
         return base
 
     @staticmethod

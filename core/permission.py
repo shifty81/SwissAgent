@@ -35,6 +35,11 @@ class PermissionSystem:
         if self._allowed_tools is not None and tool_name not in self._allowed_tools:
             logger.warning("Tool not in allowlist: %s", tool_name)
             return False
+        if not isinstance(args, dict):
+            # Non-dict arguments (e.g. a list returned by a misbehaving LLM)
+            # cannot be path-checked; allow the call through and let the tool
+            # itself reject bad arguments.
+            return True
         for v in args.values():
             if not self._check_arg_value(v):
                 return False
