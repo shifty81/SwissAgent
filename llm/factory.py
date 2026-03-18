@@ -29,5 +29,12 @@ def create_llm(backend: str, config: "ConfigLoader") -> "BaseLLM":
             api_key=config.get("llm.openwebui.key", ""),
             model=config.get("llm.openwebui.model", ""),
         )
+    if backend == "localai":
+        from llm.localai import LocalAILlm
+        return LocalAILlm(
+            base_url=config.get("llm.localai.base_url", "http://localhost:8080"),
+            model=config.get("llm.localai.model", "codestral"),
+            api_key=config.get("llm.localai.key", ""),
+        )
     from llm.local import LocalLLM
     return LocalLLM(model_path=config.get("llm.local.model_path", ""))
