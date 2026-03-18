@@ -352,6 +352,10 @@
         }
         break;
       }
+      case "open-split": {
+        await openSplitFile(path);
+        break;
+      }
       case "delete": {
         if (confirm(`Delete "${path}"? This cannot be undone.`)) {
           try {
@@ -1614,6 +1618,586 @@
       else openPalette("files");
     }
   });
+
+  // ── Activity bar panel switching ──────────────────────────────────────────
+  document.querySelectorAll(".ab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const panel = btn.dataset.panel;
+      // Update active button
+      document.querySelectorAll(".ab-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      // Show matching panel
+      document.querySelectorAll(".sb-panel").forEach((p) => p.classList.remove("active"));
+      const targetPanel = document.getElementById(
+        panel === "roadmap" ? "panel-roadmap-sidebar" : `panel-${panel}`
+      );
+      if (targetPanel) targetPanel.classList.add("active");
+      // Lazy-load panel content when first shown
+      if (panel === "git")       loadGitPanel();
+      if (panel === "knowledge") { loadKnowledgePanel(); loadProfilePanel(); loadRulesPanel(); }
+      if (panel === "roadmap")   loadRoadmapSidebar();
+      // Focus search input when search panel is shown
+      if (panel === "search") setTimeout(() => $("sb-search-input")?.focus(), 50);
+    });
+  });
+
+  // ── Search panel in sidebar ───────────────────────────────────────────────
+  async function runSidebarSearch() {
+    const query = $("sb-search-input").value.trim();
+    if (!query) return;
+    const resultsDiv = $("sb-search-results");
+    resultsDiv.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:4px">Searching…</div>';
+    try {
+      const res = await fetch(`/search?q=${encodeURIComponent(query)}&path=workspace&max_results=30`);
+      const data = await res.json();
+      const results = data.results || [];
+      if (!results.length) {
+        resultsDiv.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:4px">No results.</div>';
+        return;
+      }
+      resultsDiv.innerHTML = results.map((r) => `
+        <div class="search-result-item" data-path="${escHtmlSimple(r.path)}" data-line="${r.line || 1}" style="padding:3px 4px;cursor:pointer;border-radius:3px;margin-bottom:2px;">
+          <div style="font-size:11px;font-family:var(--font-mono);color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtmlSimple(r.path)}</div>
+          <div style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.line ? `L${r.line}: ` : ""}${escHtmlSimple(r.match || "")}</div>
+        </div>
+      `).join("");
+      resultsDiv.querySelectorAll(".search-result-item").forEach((el) => {
+        el.addEventListener("mouseenter", () => { el.style.background = "var(--surface2)"; });
+        el.addEventListener("mouseleave", () => { el.style.background = ""; });
+        el.addEventListener("click", () => {
+          openFile(el.dataset.path);
+          // Switch to explorer panel to show context
+          document.querySelector('.ab-btn[data-panel="explorer"]')?.click();
+        });
+      });
+    } catch (e) {
+      resultsDiv.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  $("btn-sb-search").addEventListener("click", runSidebarSearch);
+  $("sb-search-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") runSidebarSearch();
+  });
+
+  // ── Git panel ─────────────────────────────────────────────────────────────
+  let _gitCurrentPath = "workspace";
+
+  async function _gitPath() {
+    // Use the current project switcher value or "workspace"
+    const sw = $("project-switcher");
+    const val = sw ? sw.value : "";
+    if (val && val !== "") return val;
+    const cwd = $("build-cwd-select");
+    return cwd ? (cwd.value || "workspace") : "workspace";
+  }
+
+  async function loadGitPanel() {
+    const path = await _gitPath();
+    _gitCurrentPath = path;
+    $("git-branch-info").textContent = "Loading…";
+    try {
+      const res = await fetch(`/git/status?path=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      if (data.error) {
+        $("git-branch-info").textContent = "⚠ Not a git repo";
+        $("git-staged-list").innerHTML = "";
+        $("git-unstaged-list").innerHTML = "";
+        $("git-untracked-list").innerHTML = "";
+        $("git-log-list").innerHTML = "";
+        return;
+      }
+      renderGitPanel(data);
+    } catch (e) {
+      $("git-branch-info").textContent = `Error: ${e.message}`;
+    }
+  }
+
+  function renderGitPanel(data) {
+    $("git-branch-info").textContent = `⎇ ${data.branch || "HEAD"}`;
+
+    function makeFileItem(item, isStaged, isUntracked) {
+      const div = document.createElement("div");
+      div.className = "git-file-item";
+      const status = isUntracked ? "?" : (item.status || " ");
+      const colorClass = `git-status-${status}`;
+      div.innerHTML = `
+        <span class="git-status-badge ${colorClass}">${status}</span>
+        <span class="git-file-name" title="${escHtmlSimple(isUntracked ? item : item.file)}">${escHtmlSimple(isUntracked ? item : item.file)}</span>
+        <button class="git-file-action" title="${isStaged ? "Unstage" : "Stage"}">${isStaged ? "−" : "＋"}</button>
+        <button class="git-file-action" title="View diff" data-diff="1">⊿</button>
+      `;
+      const fileName = isUntracked ? item : item.file;
+      div.querySelectorAll(".git-file-action").forEach((btn) => {
+        if (btn.dataset.diff) {
+          btn.addEventListener("click", () => showGitDiff(_gitCurrentPath, fileName));
+        } else {
+          btn.addEventListener("click", () => {
+            const files = [fileName];
+            fetch("/git/stage", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: _gitCurrentPath, files, unstage: isStaged }),
+            }).then(() => loadGitPanel());
+          });
+        }
+      });
+      return div;
+    }
+
+    const staged = $("git-staged-list");
+    staged.innerHTML = "";
+    (data.staged || []).forEach((f) => staged.appendChild(makeFileItem(f, true, false)));
+    if (!data.staged?.length) staged.innerHTML = '<div style="font-size:11px;color:var(--text-dim);padding:2px 4px">Nothing staged</div>';
+
+    const unstaged = $("git-unstaged-list");
+    unstaged.innerHTML = "";
+    (data.unstaged || []).forEach((f) => unstaged.appendChild(makeFileItem(f, false, false)));
+    if (!data.unstaged?.length) unstaged.innerHTML = '<div style="font-size:11px;color:var(--text-dim);padding:2px 4px">Nothing modified</div>';
+
+    const untracked = $("git-untracked-list");
+    untracked.innerHTML = "";
+    (data.untracked || []).forEach((f) => untracked.appendChild(makeFileItem(f, false, true)));
+    if (!data.untracked?.length) untracked.innerHTML = '<div style="font-size:11px;color:var(--text-dim);padding:2px 4px">No untracked files</div>';
+
+    const log = $("git-log-list");
+    log.innerHTML = (data.commits || []).map((c) =>
+      `<div class="git-log-item"><span class="git-sha">${escHtmlSimple(c.sha)}</span>${escHtmlSimple(c.message)}</div>`
+    ).join("") || '<div style="font-size:11px;color:var(--text-dim);padding:2px 4px">No commits</div>';
+  }
+
+  async function showGitDiff(path, file) {
+    try {
+      const res = await fetch(`/git/diff?path=${encodeURIComponent(path)}&file=${encodeURIComponent(file)}`);
+      const data = await res.json();
+      const diffText = (data.staged_diff || "") + (data.diff || "");
+      $("git-diff-title").textContent = file || "Diff";
+      $("git-diff-content").textContent = diffText || "(no diff)";
+      $("git-diff-area").classList.remove("hidden");
+    } catch (e) {
+      appendOutput(`Git diff error: ${e.message}\n`);
+    }
+  }
+
+  $("btn-git-refresh").addEventListener("click", () => loadGitPanel());
+
+  $("btn-git-stage-all").addEventListener("click", async () => {
+    const path = await _gitPath();
+    try {
+      await fetch("/git/stage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, files: [], unstage: false }),
+      });
+      loadGitPanel();
+    } catch (e) {
+      appendOutput(`Stage all error: ${e.message}\n`);
+    }
+  });
+
+  $("btn-git-commit").addEventListener("click", async () => {
+    const msg = $("git-commit-msg").value.trim();
+    if (!msg) { appendOutput("⚠ Please enter a commit message.\n"); return; }
+    const path = await _gitPath();
+    try {
+      const res = await fetch("/git/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, message: msg, files: [] }),
+      });
+      const data = await res.json();
+      if (data.detail) throw new Error(data.detail);
+      appendOutput(`✅ Committed: ${msg}\n`);
+      $("git-commit-msg").value = "";
+      loadGitPanel();
+    } catch (e) {
+      appendOutput(`Commit error: ${e.message}\n`);
+    }
+  });
+
+  $("btn-git-diff-close").addEventListener("click", () => {
+    $("git-diff-area").classList.add("hidden");
+  });
+
+  // ── Knowledge panel ────────────────────────────────────────────────────────
+  function _kbProjectPath() {
+    const sw = $("project-switcher");
+    return (sw && sw.value) ? sw.value : "";
+  }
+
+  async function loadKnowledgePanel() {
+    const path = _kbProjectPath();
+    $("kb-source-list").innerHTML = '<div style="color:var(--text-dim);font-size:11px">Loading…</div>';
+    try {
+      const res = await fetch(`/knowledge/list?project_path=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      renderKbSources(data.sources || []);
+    } catch (e) {
+      $("kb-source-list").innerHTML = `<div style="color:var(--danger);font-size:11px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderKbSources(sources) {
+    const list = $("kb-source-list");
+    if (!sources.length) {
+      list.innerHTML = '<div style="color:var(--text-dim);font-size:11px;font-style:italic">No knowledge sources yet.</div>';
+      return;
+    }
+    list.innerHTML = sources.map((s) => `
+      <div class="kb-source-item">
+        <span class="kb-label" title="${escHtmlSimple(s.url || s.source_id)}">${escHtmlSimple(s.label || s.url || s.source_id)}</span>
+        <span style="color:var(--text-dim);font-size:10px;margin-left:auto;">${s.chunks || 0} chunks</span>
+        <button data-source-id="${escHtmlSimple(s.source_id)}" title="Remove source">✕</button>
+      </div>
+    `).join("");
+    list.querySelectorAll("button[data-source-id]").forEach((btn) => {
+      btn.addEventListener("click", () => removeKbSource(btn.dataset.sourceId));
+    });
+  }
+
+  async function removeKbSource(sourceId) {
+    const path = _kbProjectPath();
+    try {
+      await fetch("/knowledge/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_id: sourceId, project_path: path }),
+      });
+      loadKnowledgePanel();
+    } catch (e) {
+      appendOutput(`Remove KB source error: ${e.message}\n`);
+    }
+  }
+
+  $("btn-kb-add").addEventListener("click", async () => {
+    const url = $("kb-add-url").value.trim();
+    if (!url) return;
+    const path = _kbProjectPath();
+    $("btn-kb-add").textContent = "⟳";
+    $("btn-kb-add").disabled = true;
+    try {
+      const res = await fetch("/knowledge/fetch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, project_path: path }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      $("kb-add-url").value = "";
+      appendOutput(`📚 Indexed: ${data.label || url} (${data.chunks || 0} chunks)\n`);
+      loadKnowledgePanel();
+    } catch (e) {
+      appendOutput(`KB fetch error: ${e.message}\n`);
+    } finally {
+      $("btn-kb-add").textContent = "＋";
+      $("btn-kb-add").disabled = false;
+    }
+  });
+
+  $("kb-add-url").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("btn-kb-add").click();
+  });
+
+  $("btn-kb-search").addEventListener("click", async () => {
+    const query = $("kb-search-query").value.trim();
+    if (!query) return;
+    const path = _kbProjectPath();
+    try {
+      const res = await fetch(`/knowledge/search?query=${encodeURIComponent(query)}&project_path=${encodeURIComponent(path)}&top_k=3`);
+      const data = await res.json();
+      const results = data.results || [];
+      const div = $("kb-search-results");
+      if (!results.length) {
+        div.innerHTML = '<div style="color:var(--text-dim);font-size:11px">No results found.</div>';
+      } else {
+        div.innerHTML = results.map((r) => `
+          <div class="kb-chunk">
+            <div class="kb-chunk-label">${escHtmlSimple(r.source_label || "")}</div>
+            <div>${escHtmlSimple((r.text || "").slice(0, 200))}${(r.text || "").length > 200 ? "…" : ""}</div>
+          </div>
+        `).join("");
+      }
+    } catch (e) {
+      $("kb-search-results").innerHTML = `<div style="color:var(--danger);font-size:11px">Error: ${e.message}</div>`;
+    }
+  });
+
+  $("kb-search-query").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("btn-kb-search").click();
+  });
+
+  $("btn-kp-refresh-kb").addEventListener("click", () => loadKnowledgePanel());
+
+  // ── Profile panel ──────────────────────────────────────────────────────────
+  async function loadProfilePanel() {
+    const path = _kbProjectPath();
+    try {
+      const res = await fetch(`/profile?project_path=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      renderProfileDisplay(data);
+    } catch (_) {
+      // No profile yet
+    }
+  }
+
+  function renderProfileDisplay(profile) {
+    const div = $("profile-display");
+    if (!profile || (!profile.project_name && !profile.tech_stack?.length)) {
+      div.innerHTML = '<div class="profile-empty">No profile set. Click Detect or fill in fields.</div>';
+      return;
+    }
+    const rows = [];
+    if (profile.project_name) rows.push(`<div class="pf-row"><span class="pf-key">Name:</span> ${escHtmlSimple(profile.project_name)}</div>`);
+    if (profile.tech_stack?.length) rows.push(`<div class="pf-row"><span class="pf-key">Stack:</span> ${escHtmlSimple(profile.tech_stack.join(", "))}</div>`);
+    if (profile.llm_backend) rows.push(`<div class="pf-row"><span class="pf-key">LLM:</span> ${escHtmlSimple(profile.llm_backend)}</div>`);
+    if (profile.coding_standards) rows.push(`<div class="pf-row"><span class="pf-key">Standards:</span> ${escHtmlSimple(profile.coding_standards)}</div>`);
+    div.innerHTML = rows.join("");
+    // Populate edit fields
+    if (profile.project_name) $("profile-name").value = profile.project_name;
+    if (profile.description) $("profile-desc").value = profile.description;
+    if (profile.tech_stack?.length) $("profile-stack").value = profile.tech_stack.join(", ");
+    if (profile.ai_persona) $("profile-persona").value = profile.ai_persona;
+    if (profile.coding_standards) $("profile-standards").value = profile.coding_standards;
+  }
+
+  $("btn-profile-detect").addEventListener("click", async () => {
+    const path = _kbProjectPath() || "workspace";
+    $("btn-profile-detect").textContent = "⟳ Detecting…";
+    try {
+      const res = await fetch(`/profile/detect?project_path=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      if (data.detected) {
+        $("profile-stack").value = (data.tech_stack || []).join(", ");
+        if (data.ai_persona) $("profile-persona").value = data.ai_persona;
+        appendOutput(`✅ Detected: ${(data.tech_stack || []).join(", ")}\n`);
+      } else {
+        appendOutput("ℹ Could not auto-detect tech stack for this path.\n");
+      }
+    } catch (e) {
+      appendOutput(`Profile detect error: ${e.message}\n`);
+    } finally {
+      $("btn-profile-detect").textContent = "⚙ Detect";
+    }
+  });
+
+  $("btn-profile-save").addEventListener("click", async () => {
+    const path = _kbProjectPath();
+    const stack = $("profile-stack").value.split(",").map((s) => s.trim()).filter(Boolean);
+    try {
+      const res = await fetch("/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_path: path,
+          project_name: $("profile-name").value.trim(),
+          description: $("profile-desc").value.trim(),
+          tech_stack: stack,
+          ai_persona: $("profile-persona").value.trim(),
+          coding_standards: $("profile-standards").value.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      appendOutput("✅ Profile saved.\n");
+      loadProfilePanel();
+    } catch (e) {
+      appendOutput(`Profile save error: ${e.message}\n`);
+    }
+  });
+
+  // ── Rules panel ────────────────────────────────────────────────────────────
+  async function loadRulesPanel() {
+    const path = _kbProjectPath();
+    try {
+      const res = await fetch(`/rules?project_path=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      renderRulesList(data.rules || []);
+    } catch (_) {
+      $("rules-list").innerHTML = "";
+    }
+  }
+
+  function renderRulesList(rules) {
+    const list = $("rules-list");
+    if (!rules.length) {
+      list.innerHTML = '<div style="color:var(--text-dim);font-size:11px;font-style:italic">No rules yet.</div>';
+      return;
+    }
+    list.innerHTML = rules.map((r) => `
+      <div class="rule-item">
+        <span class="rule-type rule-type-${r.rule_type}">${r.rule_type.replace("_", " ")}</span>
+        <span class="rule-text">${escHtmlSimple(r.rule)}</span>
+        <button data-rule-id="${escHtmlSimple(r.id)}" title="Remove rule">✕</button>
+      </div>
+    `).join("");
+    list.querySelectorAll("button[data-rule-id]").forEach((btn) => {
+      btn.addEventListener("click", () => removeRule(btn.dataset.ruleId));
+    });
+  }
+
+  $("btn-rules-add").addEventListener("click", async () => {
+    const text = $("rules-add-text").value.trim();
+    const type = $("rules-type-select").value;
+    if (!text) return;
+    const path = _kbProjectPath();
+    try {
+      await fetch("/rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rule: text, rule_type: type, project_path: path }),
+      });
+      $("rules-add-text").value = "";
+      loadRulesPanel();
+    } catch (e) {
+      appendOutput(`Add rule error: ${e.message}\n`);
+    }
+  });
+
+  $("rules-add-text").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("btn-rules-add").click();
+  });
+
+  async function removeRule(ruleId) {
+    const path = _kbProjectPath();
+    try {
+      await fetch(`/rules/${encodeURIComponent(ruleId)}?project_path=${encodeURIComponent(path)}`, { method: "DELETE" });
+      loadRulesPanel();
+    } catch (e) {
+      appendOutput(`Remove rule error: ${e.message}\n`);
+    }
+  }
+
+  // ── Roadmap sidebar panel ─────────────────────────────────────────────────
+  async function loadRoadmapSidebar() {
+    const container = $("roadmap-sidebar-content");
+    container.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:4px">Loading…</div>';
+    try {
+      const res = await fetch("/roadmap");
+      const data = await res.json();
+      const statusIcon = { done: "✅", in_progress: "🔄", pending: "⬜", blocked: "🚫" };
+      let html = "";
+      for (const m of (data.milestones || [])) {
+        if (m.status === "done") continue; // hide completed milestones from sidebar
+        const tasks = (m.tasks || []).filter((t) => t.status !== "done");
+        if (!tasks.length) continue;
+        html += `<div class="rsb-milestone">
+          <div class="rsb-ms-title">${escHtmlSimple(m.title)}</div>
+          ${tasks.map((t) => `
+            <div class="rsb-task" data-task-id="${t.id}" data-task-title="${encodeURIComponent(t.title)}" data-task-desc="${encodeURIComponent(t.description || "")}">
+              <span class="rsb-status">${statusIcon[t.status] || "⬜"}</span>
+              <span class="rsb-title">${escHtmlSimple(t.title)}</span>
+            </div>
+          `).join("")}
+        </div>`;
+      }
+      container.innerHTML = html || '<div style="color:var(--accent2);font-size:11px;padding:4px">🎉 All tasks complete!</div>';
+      container.querySelectorAll(".rsb-task").forEach((el) => {
+        el.addEventListener("click", () => {
+          const title = decodeURIComponent(el.dataset.taskTitle || "");
+          const desc = decodeURIComponent(el.dataset.taskDesc || "");
+          _workOnTask(el.dataset.taskId, title, desc);
+          switchOutputTab("output");
+        });
+      });
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  $("btn-roadmap-refresh-sb").addEventListener("click", () => loadRoadmapSidebar());
+
+  $("btn-roadmap-work-next-sb").addEventListener("click", async () => {
+    try {
+      const res = await fetch("/roadmap/next");
+      const data = await res.json();
+      if (!data.task) { appendOutput("🎉 All roadmap tasks are complete!\n"); return; }
+      _workOnTask(data.task.id, data.task.title, data.task.description || "");
+      switchOutputTab("output");
+    } catch (e) {
+      appendOutput(`Error fetching next task: ${e.message}\n`);
+    }
+  });
+
+  // ── Split editor ───────────────────────────────────────────────────────────
+  let _splitEditor = null;
+  let _splitFile = null;
+  const _splitFiles = {}; // path → {content, language, model}
+
+  function toggleSplitEditor() {
+    const splitEl = $("editor-container-split");
+    const btn = $("btn-split-editor");
+    const active = !splitEl.classList.contains("hidden");
+    if (active) {
+      splitEl.classList.add("hidden");
+      btn.classList.remove("active");
+      if (_splitEditor) { _splitEditor.dispose(); _splitEditor = null; }
+    } else {
+      splitEl.classList.remove("hidden");
+      btn.classList.add("active");
+      if (state.editorMode === "monaco" && typeof monaco !== "undefined") {
+        _splitEditor = monaco.editor.create($("editor-split-inner"), {
+          theme: "swissagent-dark",
+          fontSize: 14,
+          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+          lineNumbers: "on",
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          readOnly: false,
+        });
+      }
+      renderSplitTabs();
+    }
+  }
+
+  function renderSplitTabs() {
+    const list = $("split-tabs-list");
+    list.innerHTML = Object.keys(_splitFiles).map((path) => `
+      <div class="split-tab ${_splitFile === path ? "active" : ""}" data-path="${escHtmlSimple(path)}">
+        <span>${escHtmlSimple(path.split("/").pop())}</span>
+        <span style="font-size:10px;opacity:.5;cursor:pointer;" data-close="${escHtmlSimple(path)}">✕</span>
+      </div>
+    `).join("");
+    list.querySelectorAll(".split-tab").forEach((tab) => {
+      tab.addEventListener("click", (e) => {
+        if (e.target.dataset.close) {
+          const p = e.target.dataset.close;
+          delete _splitFiles[p];
+          if (_splitFile === p) { _splitFile = Object.keys(_splitFiles)[0] || null; }
+          renderSplitTabs();
+          if (_splitFile) openSplitFile(_splitFile);
+          return;
+        }
+        openSplitFile(tab.dataset.path);
+      });
+    });
+  }
+
+  async function openSplitFile(path) {
+    const splitEl = $("editor-container-split");
+    if (splitEl.classList.contains("hidden")) toggleSplitEditor();
+    if (!_splitFiles[path]) {
+      try {
+        const res = await fetch(`/files/read?path=${encodeURIComponent(path)}`);
+        const data = await res.json();
+        _splitFiles[path] = { content: data.content || "", language: data.language || "plaintext" };
+      } catch (e) {
+        appendOutput(`Split editor error: ${e.message}\n`);
+        return;
+      }
+    }
+    _splitFile = path;
+    if (_splitEditor) {
+      const lang = _splitFiles[path].language;
+      _splitEditor.setValue(_splitFiles[path].content || "");
+      if (typeof monaco !== "undefined") {
+        monaco.editor.setModelLanguage(_splitEditor.getModel(), lang);
+      }
+    }
+    renderSplitTabs();
+  }
+
+  $("btn-split-editor").addEventListener("click", () => toggleSplitEditor());
 
   // ── Boot ───────────────────────────────────────────────────────────────────
   initMonaco();

@@ -1053,3 +1053,78 @@ def test_binary_patch_out_of_range(tmp_path):
     f.write_bytes(b"\x00" * 4)
     result = binary_patch(path=str(f), offset=10, data="ff")
     assert result["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Scaffold module
+# ---------------------------------------------------------------------------
+
+def test_scaffold_module_creates_files(tmp_path, monkeypatch):
+    import sys
+    # Point _repo_root at tmp_path so we don't pollute the real modules/ dir
+    monkeypatch.syspath_prepend(str(tmp_path))
+    (tmp_path / "modules").mkdir(exist_ok=True)
+    (tmp_path / "plugins").mkdir(exist_ok=True)
+    (tmp_path / "tests").mkdir(exist_ok=True)
+
+    from modules.scaffold.src import scaffold_tools
+    monkeypatch.setattr(scaffold_tools, "_repo_root", lambda: tmp_path)
+
+    result = scaffold_tools.scaffold_module("test_mod", "A test module")
+    assert result["status"] == "created"
+    assert result["module"] == "test_mod"
+    assert (tmp_path / "modules" / "test_mod" / "module.json").exists()
+    assert (tmp_path / "modules" / "test_mod" / "tools.json").exists()
+    assert (tmp_path / "modules" / "test_mod" / "src" / "test_mod_tools.py").exists()
+
+
+def test_scaffold_module_duplicate_fails(tmp_path, monkeypatch):
+    from modules.scaffold.src import scaffold_tools
+    monkeypatch.setattr(scaffold_tools, "_repo_root", lambda: tmp_path)
+    (tmp_path / "modules" / "dupe").mkdir(parents=True, exist_ok=True)
+
+    result = scaffold_tools.scaffold_module("dupe", "Already exists")
+    assert "error" in result
+
+
+def test_scaffold_plugin_creates_files(tmp_path, monkeypatch):
+    from modules.scaffold.src import scaffold_tools
+    monkeypatch.setattr(scaffold_tools, "_repo_root", lambda: tmp_path)
+    (tmp_path / "plugins").mkdir(exist_ok=True)
+
+    result = scaffold_tools.scaffold_plugin("my_plugin", "A plugin")
+    assert result["status"] == "created"
+    assert (tmp_path / "plugins" / "my_plugin" / "plugin.json").exists()
+
+
+def test_scaffold_tests_creates_file(tmp_path, monkeypatch):
+    import json
+    from modules.scaffold.src import scaffold_tools
+    monkeypatch.setattr(scaffold_tools, "_repo_root", lambda: tmp_path)
+
+    # Create a fake module with tools.json
+    mod_dir = tmp_path / "modules" / "fake_mod"
+    mod_dir.mkdir(parents=True, exist_ok=True)
+    (mod_dir / "tools.json").write_text(json.dumps([
+        {"name": "fake_run", "description": "runs", "function": "modules.fake_mod.src.fake_mod_tools.fake_run",
+         "arguments": {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}}
+    ]))
+    (tmp_path / "tests").mkdir(exist_ok=True)
+
+    result = scaffold_tools.scaffold_tests("fake_mod")
+    assert result["status"] == "created"
+    assert result["tests_count"] == 1
+    test_file = tmp_path / result["test_file"]
+    assert test_file.exists()
+    content = test_file.read_text()
+    assert "def test_fake_run" in content
+
+
+def test_scaffold_tests_module_not_found(tmp_path, monkeypatch):
+    from modules.scaffold.src import scaffold_tools
+    monkeypatch.setattr(scaffold_tools, "_repo_root", lambda: tmp_path)
+    (tmp_path / "modules").mkdir(exist_ok=True)
+    (tmp_path / "plugins").mkdir(exist_ok=True)
+
+    result = scaffold_tools.scaffold_tests("nonexistent_mod")
+    assert "error" in result

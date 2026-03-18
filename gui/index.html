@@ -33,35 +33,164 @@
   <!-- ── Main layout ──────────────────────────────────────────── -->
   <div id="layout">
 
-    <!-- File tree sidebar -->
+    <!-- ── Activity bar ──────────────────────────────────────────── -->
+    <div id="activity-bar">
+      <button class="ab-btn active" data-panel="explorer" title="Explorer (files)">📁</button>
+      <button class="ab-btn" data-panel="search"   title="Search">🔍</button>
+      <button class="ab-btn" data-panel="git"      title="Git">⎇</button>
+      <button class="ab-btn" data-panel="knowledge" title="Knowledge & Profile">📚</button>
+      <button class="ab-btn" data-panel="roadmap"  title="Roadmap">🗺</button>
+    </div>
+
+    <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
     <aside id="sidebar">
-      <div class="sidebar-header">
-        <span>Files</span>
-        <div class="sidebar-buttons">
-          <button id="btn-new-file" title="New file">+</button>
-          <button id="btn-clone-repo" title="Clone a git repository">⬇ Clone</button>
-          <button id="btn-import-project" title="Import a local folder into workspace">📥</button>
-          <button id="btn-refresh-tree" title="Refresh">↺</button>
+
+      <!-- ── Panel: Explorer ──────────────────────────────────── -->
+      <div class="sb-panel active" id="panel-explorer">
+        <div class="sidebar-header">
+          <span>Files</span>
+          <div class="sidebar-buttons">
+            <button id="btn-new-file" title="New file">+</button>
+            <button id="btn-clone-repo" title="Clone a git repository">⬇ Clone</button>
+            <button id="btn-import-project" title="Import a local folder into workspace">📥</button>
+            <button id="btn-refresh-tree" title="Refresh">↺</button>
+          </div>
+        </div>
+        <!-- Project/CWD selector for build -->
+        <div class="sidebar-cwd">
+          <label class="cwd-label">Build root</label>
+          <select id="build-cwd-select">
+            <option value="workspace">workspace/</option>
+            <option value="projects">projects/</option>
+          </select>
+          <select id="build-subdir-select">
+            <option value="">(root)</option>
+          </select>
+        </div>
+        <!-- Project switcher -->
+        <div class="sidebar-projects">
+          <select id="project-switcher" title="Switch active project">
+            <option value="">— open project —</option>
+          </select>
+        </div>
+        <div id="file-tree"></div>
+      </div>
+
+      <!-- ── Panel: Search ────────────────────────────────────── -->
+      <div class="sb-panel" id="panel-search">
+        <div class="sidebar-header"><span>Search</span></div>
+        <div class="sb-panel-body">
+          <div class="search-row">
+            <input id="sb-search-input" type="text" placeholder="Search in files…" />
+            <button id="btn-sb-search" title="Search">🔍</button>
+          </div>
+          <div id="sb-search-results"></div>
         </div>
       </div>
-      <!-- Project/CWD selector for build -->
-      <div class="sidebar-cwd">
-        <label class="cwd-label">Build root</label>
-        <select id="build-cwd-select">
-          <option value="workspace">workspace/</option>
-          <option value="projects">projects/</option>
-        </select>
-        <select id="build-subdir-select">
-          <option value="">(root)</option>
-        </select>
+
+      <!-- ── Panel: Git ────────────────────────────────────────── -->
+      <div class="sb-panel" id="panel-git">
+        <div class="sidebar-header">
+          <span>Git</span>
+          <div class="sidebar-buttons">
+            <button id="btn-git-refresh" title="Refresh git status">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body">
+          <div id="git-branch-info" class="git-branch-info">No repo</div>
+          <div class="git-section-title">Staged Changes</div>
+          <div id="git-staged-list" class="git-file-list"></div>
+          <div class="git-section-title">Unstaged Changes</div>
+          <div id="git-unstaged-list" class="git-file-list"></div>
+          <div class="git-section-title">Untracked Files</div>
+          <div id="git-untracked-list" class="git-file-list"></div>
+          <div class="git-commit-area">
+            <input id="git-commit-msg" type="text" placeholder="Commit message…" />
+            <div class="git-commit-buttons">
+              <button id="btn-git-stage-all" title="Stage all changes">＋ Stage All</button>
+              <button id="btn-git-commit"    title="Commit staged changes">✓ Commit</button>
+            </div>
+          </div>
+          <div class="git-section-title">Recent Commits</div>
+          <div id="git-log-list" class="git-log-list"></div>
+          <div class="git-diff-area hidden" id="git-diff-area">
+            <div class="git-diff-header">
+              <span id="git-diff-title">Diff</span>
+              <button id="btn-git-diff-close">✕</button>
+            </div>
+            <pre id="git-diff-content"></pre>
+          </div>
+        </div>
       </div>
-      <!-- Project switcher -->
-      <div class="sidebar-projects">
-        <select id="project-switcher" title="Switch active project">
-          <option value="">— open project —</option>
-        </select>
+
+      <!-- ── Panel: Knowledge & Profile ───────────────────────── -->
+      <div class="sb-panel" id="panel-knowledge">
+        <div class="sidebar-header"><span>Knowledge & Profile</span></div>
+        <div class="sb-panel-body">
+          <!-- Knowledge sub-section -->
+          <div class="kp-section-title">
+            📚 Knowledge Base
+            <button id="btn-kp-refresh-kb" title="Refresh">↺</button>
+          </div>
+          <div class="search-row">
+            <input id="kb-add-url" type="text" placeholder="Doc URL to add…" />
+            <button id="btn-kb-add" title="Fetch and index this URL">＋</button>
+          </div>
+          <div id="kb-source-list" class="kb-source-list"></div>
+          <div class="search-row" style="margin-top:6px;">
+            <input id="kb-search-query" type="text" placeholder="Search knowledge…" />
+            <button id="btn-kb-search" title="Search knowledge base">🔍</button>
+          </div>
+          <div id="kb-search-results" class="kb-search-results"></div>
+
+          <!-- Profile sub-section -->
+          <div class="kp-section-title" style="margin-top:10px;">
+            🧠 Project Profile
+            <button id="btn-profile-detect" title="Auto-detect tech stack">⚙ Detect</button>
+          </div>
+          <div id="profile-display" class="profile-display">
+            <div class="profile-empty">No profile set. Click Detect or fill in fields.</div>
+          </div>
+          <div class="profile-edit-fields">
+            <input id="profile-name" type="text" placeholder="Project name" />
+            <textarea id="profile-desc" rows="2" placeholder="Description…"></textarea>
+            <input id="profile-stack" type="text" placeholder="Tech stack (comma-separated)" />
+            <textarea id="profile-persona" rows="2" placeholder="AI persona / system prompt addition…"></textarea>
+            <input id="profile-standards" type="text" placeholder="Coding standards…" />
+            <button id="btn-profile-save" style="width:100%;margin-top:4px;">💾 Save Profile</button>
+          </div>
+
+          <!-- Rules sub-section -->
+          <div class="kp-section-title" style="margin-top:10px;">⚖ Project Rules</div>
+          <div class="rules-add-row">
+            <select id="rules-type-select">
+              <option value="must">must</option>
+              <option value="must_not">must_not</option>
+              <option value="prefer">prefer</option>
+            </select>
+            <input id="rules-add-text" type="text" placeholder="Add a rule…" />
+            <button id="btn-rules-add" title="Add rule">＋</button>
+          </div>
+          <div id="rules-list" class="rules-list"></div>
+        </div>
       </div>
-      <div id="file-tree"></div>
+
+      <!-- ── Panel: Roadmap ────────────────────────────────────── -->
+      <div class="sb-panel" id="panel-roadmap-sidebar">
+        <div class="sidebar-header">
+          <span>Roadmap</span>
+          <div class="sidebar-buttons">
+            <button id="btn-roadmap-refresh-sb" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body">
+          <div id="roadmap-sidebar-content" class="roadmap-sb-list"></div>
+          <div class="roadmap-sb-actions">
+            <button id="btn-roadmap-work-next-sb" title="Work on next task">▶ Work on Next</button>
+          </div>
+        </div>
+      </div>
+
     </aside>
 
     <!-- Editor + output column -->
@@ -69,25 +198,38 @@
       <!-- Editor tabs -->
       <div id="tabs-bar">
         <div id="tabs-list"></div>
+        <div class="tabs-bar-actions">
+          <button id="btn-split-editor" title="Toggle split editor">⫿</button>
+        </div>
       </div>
-      <!-- Monaco editor -->
-      <div id="editor-container">
-        <!-- Loading overlay shown while Monaco initialises -->
-        <div id="editor-loading">
-          <div class="editor-spinner"></div>
-          <span>Loading editor…</span>
-        </div>
-        <!-- Welcome screen shown when no file is open -->
-        <div id="editor-welcome" class="hidden">
-          <div class="welcome-content">
-            <div class="welcome-icon">🛠</div>
-            <h2>SwissAgent IDE</h2>
-            <p>Open a file from the sidebar, or create a new one with <kbd>+</kbd></p>
-            <p class="welcome-hint">Use the AI Agent panel on the right to generate or improve code.</p>
+      <!-- Editor area (supports split) -->
+      <div id="editors-row">
+        <!-- Primary Monaco editor -->
+        <div id="editor-container">
+          <!-- Loading overlay shown while Monaco initialises -->
+          <div id="editor-loading">
+            <div class="editor-spinner"></div>
+            <span>Loading editor…</span>
           </div>
+          <!-- Welcome screen shown when no file is open -->
+          <div id="editor-welcome" class="hidden">
+            <div class="welcome-content">
+              <div class="welcome-icon">🛠</div>
+              <h2>SwissAgent IDE</h2>
+              <p>Open a file from the sidebar, or create a new one with <kbd>+</kbd></p>
+              <p class="welcome-hint">Use the AI Agent panel on the right to generate or improve code.</p>
+            </div>
+          </div>
+          <!-- Fallback plain-text editor when Monaco CDN is unreachable -->
+          <textarea id="fallback-editor" class="hidden" spellcheck="false"></textarea>
         </div>
-        <!-- Fallback plain-text editor when Monaco CDN is unreachable -->
-        <textarea id="fallback-editor" class="hidden" spellcheck="false"></textarea>
+        <!-- Split editor (secondary, hidden by default) -->
+        <div id="editor-container-split" class="hidden">
+          <div class="split-tabs-bar">
+            <div id="split-tabs-list" class="split-tabs-list"></div>
+          </div>
+          <div id="editor-split-inner"></div>
+        </div>
       </div>
       <!-- Output panel (tabbed) -->
       <div id="output-panel">
@@ -182,6 +324,7 @@
     <div class="ctx-sep"></div>
     <div class="ctx-item" data-action="rename">✏️ Rename</div>
     <div class="ctx-item" data-action="copy-path">📋 Copy Path</div>
+    <div class="ctx-item" data-action="open-split">⫿ Open in Split</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item ctx-danger" data-action="delete">🗑 Delete</div>
   </div>

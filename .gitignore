@@ -37,3 +37,7 @@ workspace/sample_project/assets/video/*.avi
 workspace/sample_project/build/
 # Go module cache
 root/
+# Test-generated scaffold artifacts (prefixed with _test_)
+modules/_test_*/
+plugins/_test_*/
+tests/test_filesystem.py

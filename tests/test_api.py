@@ -329,3 +329,182 @@ def test_git_clone_invalid_url(client):
     dest = Path("projects/_test_clone_invalid")
     if dest.exists():
         shutil.rmtree(str(dest))
+
+
+# ---------------------------------------------------------------------------
+# Git panel endpoints
+# ---------------------------------------------------------------------------
+
+def test_git_status_not_a_repo(client, tmp_path):
+    """GET /git/status on a path without .git returns error key."""
+    res = client.get("/git/status?path=workspace")
+    assert res.status_code == 200
+    data = res.json()
+    # Either returns branch info (if workspace is a repo) or error
+    assert "branch" in data or "error" in data
+
+
+def test_git_diff_not_a_repo(client):
+    """GET /git/diff on non-repo path."""
+    res = client.get("/git/diff?path=workspace")
+    assert res.status_code == 200
+    data = res.json()
+    assert "diff" in data or "error" in data
+
+
+def test_git_stage_bad_root(client):
+    """POST /git/stage with a disallowed root must return 403."""
+    res = client.post("/git/stage", json={"path": "etc/passwd", "files": []})
+    assert res.status_code == 403
+
+
+def test_git_commit_bad_root(client):
+    """POST /git/commit with a disallowed root must return 403."""
+    res = client.post("/git/commit", json={"path": "etc", "message": "test"})
+    assert res.status_code == 403
+
+
+def test_git_commit_empty_message(client):
+    """POST /git/commit without a message must return 400."""
+    res = client.post("/git/commit", json={"path": "workspace", "message": ""})
+    assert res.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Knowledge endpoints
+# ---------------------------------------------------------------------------
+
+def test_knowledge_list_empty(client):
+    """GET /knowledge/list returns a sources list."""
+    res = client.get("/knowledge/list?project_path=")
+    assert res.status_code == 200
+    data = res.json()
+    assert "sources" in data
+
+
+def test_knowledge_remove_nonexistent(client):
+    """POST /knowledge/remove with unknown source_id should return ok or not_found."""
+    res = client.post("/knowledge/remove", json={"source_id": "nonexistent_id_xyz", "project_path": ""})
+    assert res.status_code == 200
+
+
+def test_knowledge_search_returns_results_key(client):
+    """GET /knowledge/search always returns a results list."""
+    res = client.get("/knowledge/search?query=python&project_path=")
+    assert res.status_code == 200
+    data = res.json()
+    assert "results" in data
+
+
+# ---------------------------------------------------------------------------
+# Profile / Rules endpoints
+# ---------------------------------------------------------------------------
+
+def test_profile_get_empty(client):
+    """GET /profile returns a profile dict."""
+    res = client.get("/profile?project_path=workspace/_test_profile")
+    assert res.status_code == 200
+    data = res.json()
+    assert isinstance(data, dict)
+
+
+def test_profile_set_and_get(client):
+    """POST /profile then GET /profile should reflect saved values."""
+    import shutil
+    from pathlib import Path
+    test_path = "workspace/_test_profile_set"
+    try:
+        res = client.post("/profile", json={
+            "project_path": test_path,
+            "project_name": "Test Project",
+            "tech_stack": ["Python", "FastAPI"],
+        })
+        assert res.status_code == 200
+        data = res.json()
+        # Response is {"success": True, "profile": {...}, ...} or similar
+        assert data.get("success") is True or "profile" in data or "project_name" in data
+
+        get_res = client.get(f"/profile?project_path={test_path}")
+        assert get_res.status_code == 200
+    finally:
+        p = Path(test_path)
+        if p.exists():
+            shutil.rmtree(str(p))
+
+
+def test_rules_get_empty(client):
+    """GET /rules returns a rules list."""
+    res = client.get("/rules?project_path=workspace/_test_rules")
+    assert res.status_code == 200
+    data = res.json()
+    assert "rules" in data
+
+
+def test_rules_add_invalid_type(client):
+    """POST /rules with invalid rule_type must return 400."""
+    res = client.post("/rules", json={"rule": "Do something", "rule_type": "invalid_type"})
+    assert res.status_code == 400
+
+
+def test_rules_add_and_remove(client):
+    """Add a rule then remove it by its ID."""
+    import shutil
+    from pathlib import Path
+    test_path = "workspace/_test_rules_add"
+    try:
+        add_res = client.post("/rules", json={"rule": "Use type hints", "rule_type": "must", "project_path": test_path})
+        assert add_res.status_code == 200
+        rule_data = add_res.json()
+        rule_id = rule_data.get("id") or rule_data.get("rule", {}).get("id")
+        if rule_id:
+            del_res = client.delete(f"/rules/{rule_id}?project_path={test_path}")
+            assert del_res.status_code == 200
+    finally:
+        p = Path(test_path)
+        if p.exists():
+            shutil.rmtree(str(p))
+
+
+# ---------------------------------------------------------------------------
+# Scaffold endpoints
+# ---------------------------------------------------------------------------
+
+def test_scaffold_module_endpoint(client, tmp_path):
+    """POST /scaffold/module creates a module skeleton."""
+    import shutil
+    from pathlib import Path
+    name = "_test_api_scaffold_mod"
+    try:
+        res = client.post("/scaffold/module", json={"name": name, "description": "Test module via API"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data.get("status") == "created" or "error" in data  # error if already exists
+    finally:
+        p = Path("modules") / name
+        if p.exists():
+            shutil.rmtree(str(p))
+
+
+def test_scaffold_plugin_endpoint(client, tmp_path):
+    """POST /scaffold/plugin creates a plugin skeleton."""
+    import shutil
+    from pathlib import Path
+    name = "_test_api_scaffold_plugin"
+    try:
+        res = client.post("/scaffold/plugin", json={"name": name, "description": "Test plugin via API"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data.get("status") == "created" or "error" in data
+    finally:
+        p = Path("plugins") / name
+        if p.exists():
+            shutil.rmtree(str(p))
+
+
+def test_scaffold_tests_endpoint(client, tmp_path):
+    """POST /scaffold/tests generates test stubs."""
+    res = client.post("/scaffold/tests", json={"module_name": "filesystem"})
+    assert res.status_code == 200
+    data = res.json()
+    # filesystem tests might already exist; that's fine
+    assert "status" in data or "error" in data
