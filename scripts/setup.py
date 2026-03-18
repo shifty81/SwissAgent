@@ -25,7 +25,7 @@ def _check_python() -> None:
 
 
 def _install_deps(root: Path) -> None:
-    print("\n[1/4] Installing Python dependencies…")
+    print("\n[1/3] Installing Python dependencies…")
     subprocess.run(
         [sys.executable, "-m", "pip", "install", "-e", str(root)],
         check=True,
@@ -34,7 +34,7 @@ def _install_deps(root: Path) -> None:
 
 
 def _create_dirs(root: Path) -> None:
-    print("\n[2/4] Creating required directories…")
+    print("\n[2/3] Creating required directories…")
     dirs = [
         "logs",
         "cache",
@@ -59,7 +59,7 @@ def _create_dirs(root: Path) -> None:
 
 
 def _check_ollama() -> None:
-    print("\n[3/4] Checking Ollama (local LLM backend)…")
+    print("\n[3/3] Checking Ollama (local LLM backend)…")
     if shutil.which("ollama"):
         print("      ✓ Ollama found.")
     else:
@@ -76,34 +76,8 @@ def _check_ollama() -> None:
         )
 
 
-def _check_open_webui() -> None:
-    print("\n[3b/4] Checking Open WebUI (optional chat UI)…")
-    if shutil.which("docker"):
-        result = subprocess.run(
-            ["docker", "ps", "--filter", "name=open-webui", "--format", "{{.Names}}"],
-            capture_output=True, text=True,
-        )
-        if result.stdout.strip():
-            print("      ✓ Open WebUI container is running.")
-        else:
-            print(
-                textwrap.dedent("""\
-                ℹ  Open WebUI is not running (optional).
-                   To get a GitHub Copilot Chat-style brainstorming UI, run:
-                       docker run -d -p 3000:8080 \\
-                         --add-host=host.docker.internal:host-gateway \\
-                         -v open-webui:/app/backend/data \\
-                         ghcr.io/open-webui/open-webui:main
-                   Then set llm_backend = "openwebui" in configs/config.toml.
-                   Install the plugin from plugins/open_webui_tool/ for IDE push support.
-                """)
-            )
-    else:
-        print("      ℹ  Docker not found — Open WebUI requires Docker (optional).")
-
-
 def _print_summary(root: Path, launch: bool) -> None:
-    print("\n[4/4] Setup complete! 🎉")
+    print("\n[3/3] Setup complete! 🎉")
     print()
     print("      Logs will be written to: logs/swissagent.log")
     print()
@@ -133,6 +107,10 @@ def _print_summary(root: Path, launch: bool) -> None:
 
             LLM backends:  ollama (default) | api | openwebui | local
             See configs/config.toml to configure.
+
+            Docker (optional — manual only):
+              bash scripts/docker-build.sh   # build image manually first
+              docker compose up -d           # then start the full stack
             """)
         )
 
@@ -159,7 +137,6 @@ def main() -> None:
     _install_deps(root)
     _create_dirs(root)
     _check_ollama()
-    _check_open_webui()
     _print_summary(root, args.launch)
 
     if args.launch:
