@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -274,7 +275,9 @@ def create_app(config_dir: str = "configs") -> FastAPI:
 
     # ── Plugin hot-reload watcher ──────────────────────────────────────────
     _plugins_dir = base_dir / "plugins"
-    _watcher_state: dict[str, Any] = {"mtime": 0.0, "active": True}
+    _watcher_state: dict[str, Any] = {"active": True}
+    # Set initial mtime BEFORE starting the thread to avoid a false-trigger on first tick
+    _watcher_state["mtime"] = _plugins_dir.stat().st_mtime if _plugins_dir.exists() else 0.0
 
     def _watch_plugins() -> None:
         """Background thread: reload plugins when plugins/ directory changes."""
@@ -283,7 +286,7 @@ def create_app(config_dir: str = "configs") -> FastAPI:
                 mtime = _plugins_dir.stat().st_mtime if _plugins_dir.exists() else 0.0
                 if mtime != _watcher_state["mtime"]:
                     _watcher_state["mtime"] = mtime
-                    if _watcher_state["mtime"]:
+                    if mtime:
                         logger.info("Plugins directory changed — reloading plugins.")
                         plugin_loader.load_all()
             except Exception as exc:  # noqa: BLE001
@@ -292,7 +295,6 @@ def create_app(config_dir: str = "configs") -> FastAPI:
 
     _watcher_thread = threading.Thread(target=_watch_plugins, daemon=True, name="plugin-watcher")
     _watcher_thread.start()
-    _watcher_state["mtime"] = _plugins_dir.stat().st_mtime if _plugins_dir.exists() else 0.0
 
     # ── Serve GUI static assets ────────────────────────────────────────────
     if gui_dir.is_dir():
@@ -1182,8 +1184,8 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             )
             if result.returncode != 0:
                 raise HTTPException(status_code=500, detail=result.stderr or "git clone failed")
-            # Auto-register the newly installed plugin
-            plugin_loader._load_plugin(dest)  # noqa: SLF001
+            # Auto-register the newly installed plugin using the public API
+            plugin_loader.load_plugin(dest)
             _watcher_state["mtime"] = _plugins_dir.stat().st_mtime if _plugins_dir.exists() else 0.0
             return {
                 "status": "installed",
@@ -1205,7 +1207,7 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Plugin '{name}' not found")
         try:
             shutil.rmtree(dest)
-            plugin_loader._loaded.pop(name, None)  # noqa: SLF001
+            plugin_loader.unload_plugin(name)
             return {"status": "removed", "plugin": name}
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
@@ -1224,7 +1226,6 @@ def create_app(config_dir: str = "configs") -> FastAPI:
                 try:
                     from llm.factory import create_llm
                     llm = create_llm(backend, config)
-                    import re as _re
                     prompt = (
                         f"Generate a JSON array of tool definitions for a SwissAgent plugin called '{req.name}'. "
                         f"Description: {req.description}\n"
@@ -1233,7 +1234,7 @@ def create_app(config_dir: str = "configs") -> FastAPI:
                     )
                     raw = llm.complete(prompt)
                     # Extract JSON array from response
-                    match = _re.search(r"\[.*\]", raw, _re.DOTALL)
+                    match = re.search(r"\[.*\]", raw, re.DOTALL)
                     if match:
                         tools = json.loads(match.group(0))
                 except Exception:  # noqa: BLE001
@@ -1255,14 +1256,12 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         allowed_roots = {"workspace", "projects"}
         work_path = (base_dir / req.working_dir).resolve()
         base_resolved = base_dir.resolve()
-        if not str(work_path).startswith(str(base_resolved) + os.sep) and work_path != base_resolved:
+        # Use is_relative_to for robust cross-platform path containment check (Python 3.9+)
+        if not work_path.is_relative_to(base_resolved):
             raise HTTPException(status_code=403, detail="Path traversal denied")
         # Check that the resolved path is under an allowed root
-        try:
-            rel = work_path.relative_to(base_resolved)
-            top = str(rel).split(os.sep)[0]
-        except ValueError:
-            top = ""
+        rel_parts = work_path.relative_to(base_resolved).parts
+        top = rel_parts[0] if rel_parts else ""
         if top not in allowed_roots:
             raise HTTPException(status_code=403, detail=f"working_dir must be under: {allowed_roots}")
         if not work_path.exists():

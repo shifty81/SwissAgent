@@ -642,15 +642,19 @@ def test_generate_plugin_creates_skeleton(client):
     import shutil
     from pathlib import Path
     name = "_test_api_gen_plugin"
+    created_plugin = None
     try:
         res = client.post("/plugins/generate", json={"name": name, "description": "Auto-generated test plugin"})
         assert res.status_code == 200
         data = res.json()
         assert data.get("status") == "created" or "error" in data
+        # Use the actual slug returned by the API for cleanup
+        created_plugin = data.get("plugin")
     finally:
-        p = Path("plugins") / name
-        if p.exists():
-            shutil.rmtree(str(p))
+        if created_plugin:
+            p = Path("plugins") / created_plugin
+            if p.exists():
+                shutil.rmtree(str(p))
 
 
 # ---------------------------------------------------------------------------
