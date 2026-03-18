@@ -1,10 +1,12 @@
 """Job module — background job management with threading."""
 from __future__ import annotations
+import shlex
+import subprocess
 import threading
 import time
 import traceback
 import uuid
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from core.logger import get_logger
@@ -18,8 +20,6 @@ _lock = threading.Lock()
 
 def _run_job(job_id: str, task: str, args: dict) -> None:
     """Execute a shell command or module function as a background task."""
-    import subprocess, shlex
-
     with _lock:
         _jobs[job_id]["status"] = "running"
         _jobs[job_id]["started_at"] = time.time()

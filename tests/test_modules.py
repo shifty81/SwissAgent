@@ -864,9 +864,9 @@ def test_doc_generate_html(tmp_path):
     assert "<html>" in Path(out).read_text()
 
 
-def test_doc_generate_missing_src():
+def test_doc_generate_missing_src(tmp_path):
     from modules.doc.src.doc import doc_generate
-    result = doc_generate(src="/nonexistent/src", output="/tmp/out.md")
+    result = doc_generate(src="/nonexistent/src", output=str(tmp_path / "out.md"))
     assert result["status"] == "error"
 
 

@@ -85,7 +85,7 @@ def install_deps(path: str, **kwargs) -> dict:
             installed.append("go")
 
     if not results:
-        return {"status": "nothing_to_install", "path": path, "message": "No recognised dependency manifest found."}
+        return {"status": "nothing_to_install", "path": path, "message": "No recognized dependency manifest found."}
 
     all_ok = all(r["returncode"] == 0 for r in results)
     return {
@@ -184,7 +184,7 @@ def verify_install(path: str, **kwargs) -> dict:
         checks.append({"manager": "go", "ok": vendor.is_dir()})
 
     if not checks:
-        return {"status": "ok", "path": path, "checks": [], "message": "No recognised dependency manifest found."}
+        return {"status": "ok", "path": path, "checks": [], "message": "No recognized dependency manifest found."}
 
     all_ok = all(c["ok"] for c in checks)
     return {"status": "ok" if all_ok else "incomplete", "path": path, "checks": checks}

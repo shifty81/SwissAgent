@@ -23,11 +23,7 @@ def _read_manifest(bundle: str) -> dict:
 
 def _write_manifest(bundle: str, manifest: dict) -> None:
     """Update the manifest stored inside an existing bundle ZIP."""
-    with zipfile.ZipFile(bundle, "a", compression=zipfile.ZIP_DEFLATED) as zf:
-        # Remove old manifest if present (zipfile doesn't support deletion, so
-        # we rewrite the whole archive via a temp file approach)
-        pass
-    # Rewrite whole archive to update manifest
+    # Rewrite whole archive to update manifest (zipfile doesn't support deletion)
     tmp_path = Path(bundle).with_suffix(".tmp.zip")
     with zipfile.ZipFile(bundle, "r") as src_zf:
         with zipfile.ZipFile(str(tmp_path), "w", compression=zipfile.ZIP_DEFLATED) as dst_zf:

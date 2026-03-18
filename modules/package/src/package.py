@@ -162,7 +162,8 @@ def pkg_search(query: str, manager: str | None = None, **kwargs) -> dict:
 
     if mgr == "pip":
         # pip removed its search command; fall back to pypi JSON API using urllib
-        import urllib.request, urllib.error
+        import urllib.request
+        import urllib.error
         url = f"https://pypi.org/pypi/{query}/json"
         try:
             with urllib.request.urlopen(url, timeout=10) as resp:
