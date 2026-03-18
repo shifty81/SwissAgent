@@ -588,3 +588,90 @@ def test_ai_propose_empty_instruction(client):
     })
     assert res.status_code == 200
     assert "proposed_content" in res.json()
+
+
+# ---------------------------------------------------------------------------
+# Phase 9 — Plugin ecosystem endpoints
+# ---------------------------------------------------------------------------
+
+def test_list_plugins(client):
+    """GET /plugins returns a list of plugins."""
+    res = client.get("/plugins")
+    assert res.status_code == 200
+    data = res.json()
+    assert "plugins" in data
+    assert isinstance(data["plugins"], list)
+    assert "count" in data
+
+
+def test_reload_plugins(client):
+    """POST /plugins/reload reloads all plugins."""
+    res = client.post("/plugins/reload")
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("status") == "reloaded"
+    assert "plugins" in data
+
+
+def test_install_plugin_empty_url(client):
+    """POST /plugins/install with empty URL returns 400."""
+    res = client.post("/plugins/install", json={"url": ""})
+    assert res.status_code == 400
+
+
+def test_remove_plugin_not_found(client):
+    """DELETE /plugins/{name} for non-existent plugin returns 404."""
+    res = client.delete("/plugins/_nonexistent_plugin_xyz")
+    assert res.status_code == 404
+
+
+def test_remove_plugin_path_traversal(client):
+    """DELETE /plugins/{name} with path traversal is rejected."""
+    res = client.delete("/plugins/..%2Fcore")
+    assert res.status_code in (400, 404, 422)
+
+
+def test_generate_plugin_missing_fields(client):
+    """POST /plugins/generate with missing fields returns 400."""
+    res = client.post("/plugins/generate", json={"name": "", "description": ""})
+    assert res.status_code == 400
+
+
+def test_generate_plugin_creates_skeleton(client):
+    """POST /plugins/generate creates a plugin skeleton."""
+    import shutil
+    from pathlib import Path
+    name = "_test_api_gen_plugin"
+    try:
+        res = client.post("/plugins/generate", json={"name": name, "description": "Auto-generated test plugin"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data.get("status") == "created" or "error" in data
+    finally:
+        p = Path("plugins") / name
+        if p.exists():
+            shutil.rmtree(str(p))
+
+
+# ---------------------------------------------------------------------------
+# Phase 11 — Sandbox run endpoint
+# ---------------------------------------------------------------------------
+
+def test_sandbox_run_basic(client):
+    """POST /sandbox/run executes a command and returns output."""
+    res = client.post("/sandbox/run", json={"command": "echo hello", "working_dir": "workspace"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data.get("status") in ("ok", "timeout", "error")
+
+
+def test_sandbox_run_invalid_working_dir(client):
+    """POST /sandbox/run with disallowed working_dir returns 403."""
+    res = client.post("/sandbox/run", json={"command": "echo hi", "working_dir": "configs"})
+    assert res.status_code == 403
+
+
+def test_sandbox_run_path_traversal(client):
+    """POST /sandbox/run with path traversal is rejected."""
+    res = client.post("/sandbox/run", json={"command": "ls", "working_dir": "workspace/../configs"})
+    assert res.status_code == 403

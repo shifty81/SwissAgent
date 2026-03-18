@@ -1851,6 +1851,7 @@
       if (panel === "git")       loadGitPanel();
       if (panel === "knowledge") { loadKnowledgePanel(); loadProfilePanel(); loadRulesPanel(); }
       if (panel === "roadmap")   loadRoadmapSidebar();
+      if (panel === "plugins")   loadPluginsPanel();
       // Focus search input when search panel is shown
       if (panel === "search") setTimeout(() => $("sb-search-input")?.focus(), 50);
     });
@@ -2330,6 +2331,211 @@
       switchOutputTab("output");
     } catch (e) {
       appendOutput(`Error fetching next task: ${e.message}\n`);
+    }
+  });
+
+  // ── Plugin browser panel ──────────────────────────────────────────────────
+  async function loadPluginsPanel() {
+    const list = $("plugins-list");
+    list.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:4px">Loading…</div>';
+    try {
+      const res = await fetch("/plugins");
+      const data = await res.json();
+      const plugins = data.plugins || [];
+      if (!plugins.length) {
+        list.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:4px">No plugins installed.</div>';
+        return;
+      }
+      list.innerHTML = plugins.map((p) => `
+        <div class="plugin-item" data-name="${escHtmlSimple(p.name)}">
+          <div class="plugin-item-header">
+            <span class="plugin-name">${escHtmlSimple(p.name)}</span>
+            <span class="plugin-version">v${escHtmlSimple(p.version)}</span>
+            <button class="plugin-remove-btn" data-name="${escHtmlSimple(p.name)}" title="Remove plugin">🗑</button>
+          </div>
+          <div class="plugin-desc">${escHtmlSimple(p.description || "")}</div>
+          ${p.author ? `<div class="plugin-author">by ${escHtmlSimple(p.author)}</div>` : ""}
+        </div>
+      `).join("");
+      list.querySelectorAll(".plugin-remove-btn").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          const name = e.currentTarget.dataset.name;
+          if (!confirm(`Remove plugin '${name}'?`)) return;
+          try {
+            const r = await fetch(`/plugins/${encodeURIComponent(name)}`, { method: "DELETE" });
+            const d = await r.json();
+            if (d.status === "removed") {
+              appendOutput(`Plugin '${name}' removed.\n`);
+              loadPluginsPanel();
+            } else {
+              appendOutput(`Error removing plugin: ${JSON.stringify(d)}\n`);
+            }
+          } catch (err) {
+            appendOutput(`Remove plugin error: ${err.message}\n`);
+          }
+        });
+      });
+    } catch (e) {
+      list.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  $("btn-plugins-reload").addEventListener("click", async () => {
+    try {
+      await fetch("/plugins/reload", { method: "POST" });
+      loadPluginsPanel();
+    } catch (e) {
+      appendOutput(`Plugin reload error: ${e.message}\n`);
+    }
+  });
+
+  $("btn-plugin-install").addEventListener("click", async () => {
+    const url = $("plugin-install-url").value.trim();
+    const status = $("plugin-install-status");
+    if (!url) { status.textContent = "Please enter a URL."; return; }
+    status.textContent = "Installing…";
+    try {
+      const res = await fetch("/plugins/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (data.status === "installed" || data.status === "already_installed") {
+        status.style.color = "var(--accent2)";
+        status.textContent = `✓ ${data.status === "already_installed" ? "Already installed" : "Installed"}: ${data.plugin}`;
+        $("plugin-install-url").value = "";
+        loadPluginsPanel();
+      } else {
+        status.style.color = "var(--danger)";
+        status.textContent = `Error: ${data.detail || JSON.stringify(data)}`;
+      }
+    } catch (e) {
+      status.style.color = "var(--danger)";
+      status.textContent = `Error: ${e.message}`;
+    }
+  });
+
+  $("btn-plugin-gen").addEventListener("click", async () => {
+    const name = $("plugin-gen-name").value.trim();
+    const desc = $("plugin-gen-desc").value.trim();
+    const status = $("plugin-gen-status");
+    if (!name || !desc) { status.textContent = "Name and description are required."; return; }
+    status.style.color = "var(--text-dim)";
+    status.textContent = "Generating…";
+    try {
+      const res = await fetch("/plugins/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description: desc, llm_backend: state.llmBackend || "" }),
+      });
+      const data = await res.json();
+      if (data.status === "created") {
+        status.style.color = "var(--accent2)";
+        status.textContent = `✓ Created plugin '${data.plugin}' (${data.tools_count} tool(s))`;
+        $("plugin-gen-name").value = "";
+        $("plugin-gen-desc").value = "";
+        loadPluginsPanel();
+        appendOutput(`Plugin '${data.plugin}' generated at ${data.path}\nFiles: ${(data.files || []).join(", ")}\n`);
+      } else {
+        status.style.color = "var(--danger)";
+        status.textContent = `Error: ${data.error || data.detail || JSON.stringify(data)}`;
+      }
+    } catch (e) {
+      status.style.color = "var(--danger)";
+      status.textContent = `Error: ${e.message}`;
+    }
+  });
+
+  // ── Scaffold panel ────────────────────────────────────────────────────────
+  $("btn-scaffold-mod").addEventListener("click", async () => {
+    const name = $("scaffold-mod-name").value.trim();
+    const desc = $("scaffold-mod-desc").value.trim();
+    const result = $("scaffold-mod-result");
+    if (!name || !desc) { result.textContent = "Name and description are required."; result.style.color = "var(--danger)"; return; }
+    result.style.color = "var(--text-dim)";
+    result.textContent = "Generating…";
+    try {
+      const res = await fetch("/scaffold/module", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description: desc }),
+      });
+      const data = await res.json();
+      if (data.status === "created") {
+        result.style.color = "var(--accent2)";
+        result.textContent = `✓ Module '${data.module}' created (${data.tools_count} tool(s))`;
+        $("scaffold-mod-name").value = "";
+        $("scaffold-mod-desc").value = "";
+        appendOutput(`Module '${data.module}' generated at ${data.path}\nFiles: ${(data.files || []).join(", ")}\n`);
+        loadFileTree();
+      } else {
+        result.style.color = "var(--danger)";
+        result.textContent = `Error: ${data.error || data.detail || JSON.stringify(data)}`;
+      }
+    } catch (e) {
+      result.style.color = "var(--danger)";
+      result.textContent = `Error: ${e.message}`;
+    }
+  });
+
+  $("btn-scaffold-plugin").addEventListener("click", async () => {
+    const name = $("scaffold-plugin-name").value.trim();
+    const desc = $("scaffold-plugin-desc").value.trim();
+    const result = $("scaffold-plugin-result");
+    if (!name || !desc) { result.textContent = "Name and description are required."; result.style.color = "var(--danger)"; return; }
+    result.style.color = "var(--text-dim)";
+    result.textContent = "Generating…";
+    try {
+      const res = await fetch("/scaffold/plugin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description: desc }),
+      });
+      const data = await res.json();
+      if (data.status === "created") {
+        result.style.color = "var(--accent2)";
+        result.textContent = `✓ Plugin '${data.plugin}' created (${data.tools_count} tool(s))`;
+        $("scaffold-plugin-name").value = "";
+        $("scaffold-plugin-desc").value = "";
+        appendOutput(`Plugin '${data.plugin}' generated at ${data.path}\nFiles: ${(data.files || []).join(", ")}\n`);
+        loadPluginsPanel();
+      } else {
+        result.style.color = "var(--danger)";
+        result.textContent = `Error: ${data.error || data.detail || JSON.stringify(data)}`;
+      }
+    } catch (e) {
+      result.style.color = "var(--danger)";
+      result.textContent = `Error: ${e.message}`;
+    }
+  });
+
+  $("btn-scaffold-tests").addEventListener("click", async () => {
+    const name = $("scaffold-test-name").value.trim();
+    const result = $("scaffold-test-result");
+    if (!name) { result.textContent = "Module/plugin name is required."; result.style.color = "var(--danger)"; return; }
+    result.style.color = "var(--text-dim)";
+    result.textContent = "Generating…";
+    try {
+      const res = await fetch("/scaffold/tests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ module_name: name }),
+      });
+      const data = await res.json();
+      if (data.status === "created") {
+        result.style.color = "var(--accent2)";
+        result.textContent = `✓ Tests created: ${data.test_file} (${data.tests_count} stub(s))`;
+        $("scaffold-test-name").value = "";
+        appendOutput(`Tests generated: ${data.test_file}\n`);
+        loadFileTree();
+      } else {
+        result.style.color = "var(--danger)";
+        result.textContent = `Error: ${data.error || data.detail || JSON.stringify(data)}`;
+      }
+    } catch (e) {
+      result.style.color = "var(--danger)";
+      result.textContent = `Error: ${e.message}`;
     }
   });
 

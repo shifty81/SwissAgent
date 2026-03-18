@@ -1184,3 +1184,41 @@ body {
   color: var(--bg);
   border-color: var(--accent);
 }
+
+/* ── Phase 9: Plugin browser panel ──────────────────────────────────────── */
+.plugins-list { display: flex; flex-direction: column; gap: 4px; }
+.plugin-item {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+.plugin-item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.plugin-name { font-weight: 600; color: var(--accent); }
+.plugin-version { color: var(--text-dim); font-size: 10px; }
+.plugin-remove-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 0 2px;
+}
+.plugin-remove-btn:hover { color: var(--danger); }
+.plugin-desc { color: var(--fg); font-size: 11px; }
+.plugin-author { color: var(--text-dim); font-size: 10px; margin-top: 2px; }
+
+/* ── Phase 12: Scaffold panel ────────────────────────────────────────────── */
+.scaffold-result {
+  font-size: 11px;
+  margin-top: 4px;
+  color: var(--text-dim);
+  min-height: 14px;
+}
