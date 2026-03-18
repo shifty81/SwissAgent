@@ -41,18 +41,34 @@ SwissAgent is a self-hosted, fully offline coding assistant. Give it a prompt an
 git clone https://github.com/shifty81/SwissAgent.git
 cd SwissAgent
 
-# 2. Install Python dependencies and create required directories
-python scripts/setup.py
+# 2. Install everything and open the web IDE in one step
+bash scripts/install.sh
 ```
 
-`setup.py` runs `pip install -e .` and creates the `workspace/`, `projects/`, `cache/`, `models/`, `plugins/`, and `logs/` directories.
+`install.sh` will:
+- Upgrade pip and install all Python dependencies (`pip install -e .`)
+- Create the `workspace/`, `projects/`, `cache/`, `models/`, `plugins/`, and `logs/` directories
+- Capture **all output to `logs/install.log`** so nothing is lost
+- Start the SwissAgent web IDE and open it in your default browser automatically
+
+To install without launching the browser:
+
+```bash
+bash scripts/install.sh --no-launch
+```
+
+To bind to all interfaces or use a custom port:
+
+```bash
+bash scripts/install.sh --host 0.0.0.0 --port 9000
+```
 
 ### Virtual environment (recommended)
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-python scripts/setup.py
+bash scripts/install.sh
 ```
 
 ### Install from PyPI (alternative)
@@ -248,7 +264,7 @@ SwissAgent/
 ├── dev_mode/       # Agent self-upgrade and module patching
 ├── tools/          # Build runner, feedback parser, media pipeline
 ├── templates/      # Project scaffolding templates
-├── scripts/        # setup.py environment bootstrap
+├── scripts/        # install.sh — one-step install + web IDE launch, run_tests.py
 ├── tests/          # Pytest test suite
 └── docs/           # Extended documentation
 ```

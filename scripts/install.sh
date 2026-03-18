@@ -1,41 +1,69 @@
 #!/usr/bin/env bash
 # SwissAgent — one-liner bootstrap
-# Usage:  bash scripts/install.sh [--launch] [--port PORT]
+# Usage:  bash scripts/install.sh [--no-launch] [--host HOST] [--port PORT]
 #
 # What it does:
-#   1. Verifies Python 3.10+
-#   2. Installs SwissAgent and all Python dependencies (pip install -e .)
-#   3. Creates all required project directories
-#   4. Checks whether Ollama is installed (and prints install instructions if not)
-#   5. Optionally starts the web IDE and opens it in the default browser
+#   1. Creates logs/ directory and starts capturing all output to logs/install.log
+#   2. Verifies Python 3.10+
+#   3. Installs SwissAgent and all Python dependencies (pip install -e .)
+#   4. Creates all required project directories
+#   5. Checks whether Ollama is installed (and prints install instructions if not)
+#   6. Starts the web IDE and opens it in the default browser (default behaviour)
 #
 # Examples:
-#   bash scripts/install.sh              # setup only
-#   bash scripts/install.sh --launch     # setup + open browser IDE
-
-set -euo pipefail
+#   bash scripts/install.sh                          # install + open web IDE
+#   bash scripts/install.sh --no-launch              # install only, no browser
+#   bash scripts/install.sh --host 0.0.0.0 --port 9000
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-LAUNCH=0
+LAUNCH=1
 PORT=8000
 HOST="127.0.0.1"
 
 # ── Parse flags ────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --no-launch)   LAUNCH=0 ;;
     --launch)      LAUNCH=1 ;;
     --port)        PORT="$2"; shift ;;
     --host)        HOST="$2"; shift ;;
     -h|--help)
-      echo "Usage: bash scripts/install.sh [--launch] [--host HOST] [--port PORT]"
+      echo "Usage: bash scripts/install.sh [--no-launch] [--host HOST] [--port PORT]"
       exit 0
       ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
   shift
 done
+
+# ── Create logs dir early so we can start logging immediately ──────────────
+mkdir -p "$ROOT_DIR/logs"
+LOG_FILE="$ROOT_DIR/logs/install.log"
+
+# Redirect all stdout + stderr to both the terminal and the log file.
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo "============================================================"
+echo "  SwissAgent Installer — $(date '+%Y-%m-%d %H:%M:%S')"
+echo "  Log file: $LOG_FILE"
+echo "============================================================"
+echo ""
+
+# ── Error trap ─────────────────────────────────────────────────────────────
+# On any unexpected exit, print a clear message and the log path.
+_on_error() {
+  local exit_code=$?
+  local line_no=$1
+  echo ""
+  echo "============================================================"
+  echo "  [ERR ] Installation failed at line $line_no (exit code $exit_code)."
+  echo "  Full log saved to: $LOG_FILE"
+  echo "============================================================"
+}
+trap '_on_error $LINENO' ERR
+set -euo pipefail
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 info()  { printf "\033[0;34m[INFO]\033[0m  %s\n" "$*"; }
@@ -65,10 +93,16 @@ if [[ -z "$PYTHON_CMD" ]]; then
   exit 1
 fi
 
+# ── Upgrade pip ─────────────────────────────────────────────────────────────
+info "Upgrading pip…"
+"$PYTHON_CMD" -m pip install --upgrade pip
+ok "pip is up to date."
+
 # ── Install deps ────────────────────────────────────────────────────────────
 info "Installing SwissAgent and Python dependencies…"
+info "(this may take a minute — all output is captured to $LOG_FILE)"
 cd "$ROOT_DIR"
-"$PYTHON_CMD" -m pip install -e .
+"$PYTHON_CMD" -m pip install -e . --no-warn-script-location
 ok "Python dependencies installed."
 
 # ── Create directories ──────────────────────────────────────────────────────
@@ -102,19 +136,26 @@ fi
 # ── Done ────────────────────────────────────────────────────────────────────
 echo ""
 ok "Setup complete! 🎉"
+echo ""
+echo "  Full install log: $LOG_FILE"
+echo ""
 
 if [[ "$LAUNCH" -eq 1 ]]; then
   info "Starting SwissAgent IDE at http://$HOST:$PORT …"
+  info "Press Ctrl+C to stop the server."
+  echo ""
+  # Server logs go to both the terminal and the same install log via the tee
+  # already set up above.  The 'ui' command also writes to logs/swissagent.log.
   exec "$PYTHON_CMD" -m core.cli ui --host "$HOST" --port "$PORT"
 else
-  echo ""
   echo "  Quick-start commands:"
   echo "    swissagent ui                    # Open web IDE in browser"
   echo "    swissagent serve                 # Start API server only"
   echo "    swissagent run \"your prompt\"     # Run agent from CLI"
   echo "    swissagent list-tools            # List all tools"
   echo ""
-  echo "  Or run setup + launch together:"
-  echo "    bash scripts/install.sh --launch"
+  echo "  Run setup + launch together:"
+  echo "    bash scripts/install.sh"
+  echo "    (or: bash scripts/install.sh --no-launch  to skip browser launch)"
   echo ""
 fi
