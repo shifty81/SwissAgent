@@ -218,6 +218,25 @@ class SelfBuildRequest(BaseModel):
     llm_backend: str = ""
 
 
+# ── Phase 14: Code quality request models ─────────────────────────────────────
+
+class FormatRequest(BaseModel):
+    content: str
+    language: str = "python"  # python | javascript | json
+    path: str = ""
+
+
+class LintRequest(BaseModel):
+    content: str
+    language: str = "python"
+    path: str = ""
+
+
+class DiffApplyRequest(BaseModel):
+    path: str        # relative path under workspace/
+    patch: str       # unified diff text
+
+
 # ── Phase 7: AI editor request models ─────────────────────────────────────────
 
 class AiCompleteRequest(BaseModel):
@@ -2000,6 +2019,266 @@ def create_app(config_dir: str = "configs") -> FastAPI:
                 "avg_attempts": round(avg_attempts, 2),
             },
         }
+
+    # ── Phase 14: Code quality endpoints ─────────────────────────────────────
+
+    @app.post("/format", dependencies=[Depends(_require_auth)])
+    async def format_code(req: FormatRequest) -> dict[str, Any]:
+        """Format code using black (Python) or prettier-style (JS/JSON)."""
+        lang = req.language.lower()
+        content = req.content
+
+        if lang == "python":
+            # Try black via subprocess
+            try:
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        [sys.executable, "-m", "black", "-", "--quiet"],
+                        input=content.encode(),
+                        capture_output=True,
+                        timeout=15,
+                    ),
+                )
+                if result.returncode == 0:
+                    formatted_output = result.stdout.decode()
+                    return {"formatted": formatted_output, "tool": "black", "changed": formatted_output != content}
+            except Exception:
+                pass
+            # Fallback: validate syntax only
+            try:
+                import ast
+                ast.parse(content)
+                return {"formatted": content, "tool": "none", "changed": False}
+            except SyntaxError as exc:
+                raise HTTPException(status_code=422, detail=f"Syntax error: {exc}")
+
+        elif lang == "json":
+            try:
+                parsed = json.loads(content)
+                formatted = json.dumps(parsed, indent=2, ensure_ascii=False) + "\n"
+                return {"formatted": formatted, "tool": "json", "changed": formatted != content}
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=422, detail=f"Invalid JSON: {exc}")
+
+        else:
+            # For other languages just return as-is
+            return {"formatted": content, "tool": "none", "changed": False}
+
+    @app.post("/lint", dependencies=[Depends(_require_auth)])
+    async def lint_code(req: LintRequest) -> dict[str, Any]:
+        """Run static analysis on code. Returns list of diagnostics."""
+        lang = req.language.lower()
+        if lang != "python":
+            return {"diagnostics": [], "tool": "none"}
+
+        # Write content to a temp file and run ruff or pyflakes
+        with tempfile.NamedTemporaryFile(
+            suffix=".py", mode="w", encoding="utf-8", delete=False
+        ) as tmp:
+            tmp.write(req.content)
+            tmp_path = tmp.name
+
+        diagnostics: list[dict[str, Any]] = []
+        tool_used = "none"
+        try:
+            # Try ruff first
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    [sys.executable, "-m", "ruff", "check", "--output-format=json", tmp_path],
+                    capture_output=True,
+                    timeout=15,
+                ),
+            )
+            if result.returncode in (0, 1):  # 0=clean, 1=findings
+                try:
+                    raw = json.loads(result.stdout.decode() or "[]")
+                    tool_used = "ruff"
+                    for item in raw:
+                        diagnostics.append({
+                            "line": item.get("location", {}).get("row", 1),
+                            "col": item.get("location", {}).get("column", 1),
+                            "code": item.get("code", ""),
+                            "message": item.get("message", ""),
+                            "severity": "warning",
+                        })
+                except Exception:
+                    pass
+            if tool_used == "none":
+                # Fallback: ast parse
+                import ast
+                try:
+                    ast.parse(req.content)
+                except SyntaxError as exc:
+                    diagnostics.append({
+                        "line": exc.lineno or 1,
+                        "col": exc.offset or 1,
+                        "code": "E999",
+                        "message": str(exc.msg),
+                        "severity": "error",
+                    })
+                tool_used = "ast"
+        finally:
+            try:
+                Path(tmp_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        return {"diagnostics": diagnostics, "tool": tool_used}
+
+    @app.get("/stats", dependencies=[Depends(_require_auth)])
+    async def workspace_stats(project_path: str = Query(default="")) -> dict[str, Any]:
+        """Return code statistics for the workspace or a specific project."""
+        target = _safe_path(base_dir / "workspace", project_path) if project_path else base_dir / "workspace"
+        if not target.exists():
+            raise HTTPException(status_code=404, detail="Path not found")
+
+        _EXT_LANG: dict[str, str] = {
+            ".py": "Python", ".js": "JavaScript", ".ts": "TypeScript",
+            ".html": "HTML", ".css": "CSS", ".json": "JSON",
+            ".md": "Markdown", ".toml": "TOML", ".yaml": "YAML", ".yml": "YAML",
+            ".sh": "Shell", ".cpp": "C++", ".c": "C", ".h": "C/C++ Header",
+            ".java": "Java", ".rs": "Rust", ".go": "Go",
+        }
+        _SKIP = {".git", "__pycache__", "node_modules", ".swissagent", "dist", "build"}
+
+        lang_stats: dict[str, dict[str, int]] = {}
+        total_files = 0
+        total_lines = 0
+
+        for path in target.rglob("*"):
+            if path.is_dir():
+                continue
+            if any(part in _SKIP for part in path.parts):
+                continue
+            ext = path.suffix.lower()
+            lang = _EXT_LANG.get(ext, "Other")
+            try:
+                lines = path.read_text(encoding="utf-8", errors="ignore").count("\n")
+            except Exception:
+                continue
+            total_files += 1
+            total_lines += lines
+            if lang not in lang_stats:
+                lang_stats[lang] = {"files": 0, "lines": 0}
+            lang_stats[lang]["files"] += 1
+            lang_stats[lang]["lines"] += lines
+
+        breakdown = [
+            {"language": k, "files": v["files"], "lines": v["lines"]}
+            for k, v in sorted(lang_stats.items(), key=lambda x: x[1]["lines"], reverse=True)
+        ]
+        return {
+            "total_files": total_files,
+            "total_lines": total_lines,
+            "breakdown": breakdown,
+        }
+
+    @app.get("/search/symbol", dependencies=[Depends(_require_auth)])
+    async def search_symbol(
+        query: str = Query(..., min_length=1),
+        language: str = Query(default="python"),
+        project_path: str = Query(default=""),
+    ) -> dict[str, Any]:
+        """Search for function/class/variable definitions matching query."""
+        target = _safe_path(base_dir / "workspace", project_path) if project_path else base_dir / "workspace"
+        if not target.exists():
+            raise HTTPException(status_code=404, detail="Path not found")
+
+        lang = language.lower()
+        if lang == "python":
+            patterns = [
+                re.compile(rf"^\s*(def|class|async def)\s+({re.escape(query)}\w*)\s*", re.MULTILINE),
+            ]
+            ext_filter = {".py"}
+        elif lang in ("javascript", "typescript"):
+            patterns = [
+                re.compile(rf"^\s*(function|class|const|let|var)\s+({re.escape(query)}\w*)\s*", re.MULTILINE),
+            ]
+            ext_filter = {".js", ".ts", ".jsx", ".tsx"}
+        else:
+            patterns = [re.compile(rf"\b({re.escape(query)}\w*)\b")]
+            ext_filter = None
+
+        _SKIP = {".git", "__pycache__", "node_modules", ".swissagent"}
+        results: list[dict[str, Any]] = []
+
+        for path in target.rglob("*"):
+            if path.is_dir():
+                continue
+            if any(part in _SKIP for part in path.parts):
+                continue
+            if ext_filter and path.suffix.lower() not in ext_filter:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for pattern in patterns:
+                for m in pattern.finditer(text):
+                    line_no = text[: m.start()].count("\n") + 1
+                    results.append({
+                        "file": str(path.relative_to(base_dir)),
+                        "line": line_no,
+                        "match": m.group(0).strip(),
+                    })
+            if len(results) >= 100:
+                break
+
+        return {"results": results[:100], "query": query}
+
+    @app.post("/diff/apply", dependencies=[Depends(_require_auth)])
+    async def diff_apply(req: DiffApplyRequest) -> dict[str, Any]:
+        """Apply a unified diff patch to a file."""
+        if not req.path:
+            raise HTTPException(status_code=400, detail="path is required")
+        target = _safe_path(base_dir / "workspace", req.path)
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="File not found")
+
+        original = target.read_text(encoding="utf-8")
+
+        # Use subprocess patch command if available
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", suffix=".patch", delete=False
+        ) as tmp_patch:
+            tmp_patch.write(req.patch)
+            patch_file = tmp_patch.name
+
+        try:
+            result = subprocess.run(
+                ["patch", "--dry-run", str(target), patch_file],
+                capture_output=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Patch validation failed: {result.stderr.decode()[:500]}",
+                )
+            # Apply for real
+            result = subprocess.run(
+                ["patch", str(target), patch_file],
+                capture_output=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Patch apply failed: {result.stderr.decode()[:500]}",
+                )
+            new_content = target.read_text(encoding="utf-8")
+            return {"applied": True, "path": req.path, "lines_changed": abs(len(new_content.splitlines()) - len(original.splitlines()))}
+        except HTTPException:
+            raise
+        except FileNotFoundError:
+            raise HTTPException(status_code=501, detail="patch command not available on this system")
+        finally:
+            try:
+                Path(patch_file).unlink(missing_ok=True)
+            except Exception:
+                pass
 
     return app
 

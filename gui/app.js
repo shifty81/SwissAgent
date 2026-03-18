@@ -2782,4 +2782,76 @@
   // Wire models-refresh button
   const _modelsRefreshBtn = $("btn-models-refresh");
   if (_modelsRefreshBtn) _modelsRefreshBtn.addEventListener("click", () => loadModelsPanel());
+
+  // ── Code Quality panel (t14-1, t14-2, t14-3) ─────────────────────────────
+  function _qualityOutput(msg) {
+    const el = $("quality-output");
+    if (el) el.textContent = msg;
+  }
+
+  const btnFmt = $("btn-format-file");
+  if (btnFmt) btnFmt.onclick = async () => {
+    if (!_currentFile) { _qualityOutput("No file open."); return; }
+    const content = _editor ? _editor.getValue() : "";
+    const lang = _currentFile.endsWith(".py") ? "python"
+               : _currentFile.endsWith(".json") ? "json"
+               : _currentFile.endsWith(".js") || _currentFile.endsWith(".ts") ? "javascript"
+               : "other";
+    _qualityOutput("Formatting…");
+    try {
+      const r = await fetch("/format", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, language: lang, path: _currentFile }),
+      });
+      const d = await r.json();
+      if (!r.ok) { _qualityOutput("Error: " + (d.detail || r.status)); return; }
+      if (d.changed && _editor) {
+        _editor.setValue(d.formatted);
+        _qualityOutput(`✅ Formatted with ${d.tool}. File updated.`);
+      } else {
+        _qualityOutput(`✅ Already formatted (${d.tool}). No changes.`);
+      }
+    } catch(e) { _qualityOutput("Error: " + e); }
+  };
+
+  const btnLint = $("btn-lint-file");
+  if (btnLint) btnLint.onclick = async () => {
+    if (!_currentFile) { _qualityOutput("No file open."); return; }
+    const content = _editor ? _editor.getValue() : "";
+    const lang = _currentFile.endsWith(".py") ? "python" : "other";
+    _qualityOutput("Linting…");
+    try {
+      const r = await fetch("/lint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, language: lang, path: _currentFile }),
+      });
+      const d = await r.json();
+      if (!r.ok) { _qualityOutput("Error: " + (d.detail || r.status)); return; }
+      if (d.diagnostics.length === 0) {
+        _qualityOutput(`✅ No issues found (${d.tool}).`);
+      } else {
+        _qualityOutput(d.diagnostics.map(x => `L${x.line}:${x.col} [${x.code}] ${x.message}`).join("\n"));
+      }
+    } catch(e) { _qualityOutput("Error: " + e); }
+  };
+
+  const btnStats = $("btn-workspace-stats");
+  if (btnStats) btnStats.onclick = async () => {
+    _qualityOutput("Loading stats…");
+    try {
+      const r = await fetch("/stats");
+      const d = await r.json();
+      if (!r.ok) { _qualityOutput("Error: " + (d.detail || r.status)); return; }
+      const lines = [
+        `Total files : ${d.total_files}`,
+        `Total lines : ${d.total_lines.toLocaleString()}`,
+        "",
+        "Language breakdown:",
+        ...d.breakdown.map(b => `  ${b.language.padEnd(16)} ${b.files} files  ${b.lines.toLocaleString()} lines`),
+      ];
+      _qualityOutput(lines.join("\n"));
+    } catch(e) { _qualityOutput("Error: " + e); }
+  };
 })();

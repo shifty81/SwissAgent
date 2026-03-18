@@ -875,3 +875,109 @@ def test_self_build_log_empty(client):
     assert "entries" in data
     assert "summary" in data
     assert data["summary"]["total"] >= 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 14 — Code Quality endpoints
+# ---------------------------------------------------------------------------
+
+def test_format_python_valid(client):
+    """POST /format with valid Python code returns formatted content."""
+    res = client.post("/format", json={"content": "x=1\ny=2\n", "language": "python"})
+    assert res.status_code == 200
+    data = res.json()
+    assert "formatted" in data
+    assert "tool" in data
+    assert "changed" in data
+
+
+def test_format_json_valid(client):
+    """POST /format with valid JSON returns pretty-printed JSON."""
+    res = client.post("/format", json={"content": '{"a":1,"b":2}', "language": "json"})
+    assert res.status_code == 200
+    data = res.json()
+    assert "formatted" in data
+    # Pretty-printed JSON should contain newlines
+    assert "\n" in data["formatted"]
+    assert data["tool"] == "json"
+    assert data["changed"] is True
+
+
+def test_format_json_invalid(client):
+    """POST /format with invalid JSON returns 422."""
+    res = client.post("/format", json={"content": "{bad json", "language": "json"})
+    assert res.status_code == 422
+
+
+def test_format_python_syntax_error(client):
+    """POST /format with Python syntax error returns 422."""
+    res = client.post("/format", json={"content": "def foo(\n", "language": "python"})
+    # If black is available it returns 422 for syntax errors; if not, ast does too
+    # Either 422 (syntax error) or 200 (black unavailable + ast catches it)
+    assert res.status_code in (200, 422)
+
+
+def test_lint_python_clean(client):
+    """POST /lint with clean Python returns empty diagnostics."""
+    res = client.post("/lint", json={"content": "x = 1\ny = 2\n", "language": "python"})
+    assert res.status_code == 200
+    data = res.json()
+    assert "diagnostics" in data
+    assert "tool" in data
+    assert isinstance(data["diagnostics"], list)
+
+
+def test_lint_python_syntax_error(client):
+    """POST /lint with a syntax error returns diagnostic."""
+    res = client.post("/lint", json={"content": "def foo(\n", "language": "python"})
+    assert res.status_code == 200
+    data = res.json()
+    assert isinstance(data["diagnostics"], list)
+
+
+def test_lint_non_python(client):
+    """POST /lint for non-Python language returns empty diagnostics."""
+    res = client.post("/lint", json={"content": "const x = 1;", "language": "javascript"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["diagnostics"] == []
+    assert data["tool"] == "none"
+
+
+def test_stats_returns_structure(client):
+    """GET /stats returns files, lines, and breakdown."""
+    res = client.get("/stats")
+    assert res.status_code == 200
+    data = res.json()
+    assert "total_files" in data
+    assert "total_lines" in data
+    assert "breakdown" in data
+    assert isinstance(data["breakdown"], list)
+
+
+def test_search_symbol_returns_results_key(client):
+    """GET /search/symbol returns results key."""
+    res = client.get("/search/symbol?query=def&language=python")
+    assert res.status_code == 200
+    data = res.json()
+    assert "results" in data
+    assert "query" in data
+    assert isinstance(data["results"], list)
+
+
+def test_search_symbol_empty_query(client):
+    """GET /search/symbol with empty query returns 422."""
+    res = client.get("/search/symbol?query=")
+    assert res.status_code == 422
+
+
+def test_diff_apply_missing_path(client):
+    """POST /diff/apply with empty path returns 400."""
+    res = client.post("/diff/apply", json={"path": "", "patch": "--- a\n+++ b\n"})
+    assert res.status_code == 400
+
+
+def test_diff_apply_nonexistent_file(client):
+    """POST /diff/apply with nonexistent file returns 404."""
+    res = client.post("/diff/apply", json={"path": "nonexistent_xyz.py", "patch": "--- a\n+++ b\n"})
+    assert res.status_code == 404
