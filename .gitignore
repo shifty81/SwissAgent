@@ -34,3 +34,5 @@ workspace/sample_project/assets/audio/*.ogg
 workspace/sample_project/assets/video/*.mp4
 workspace/sample_project/assets/video/*.avi
 workspace/sample_project/build/
+# Go module cache
+root/
