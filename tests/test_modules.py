@@ -391,3 +391,665 @@ def test_audio_pipeline_music_placeholder(tmp_path):
     result = pipeline.generate_music_placeholder(out, duration=0.5)
     assert Path(out).exists()
 
+
+
+# ---------------------------------------------------------------------------
+# Blender module (no Blender installed — expect graceful "not found" errors)
+# ---------------------------------------------------------------------------
+
+def test_blender_open_no_blender(tmp_path):
+    from modules.blender.src.blender import blender_open
+    result = blender_open(path=str(tmp_path / "nonexistent.blend"))
+    # Either "not found" error (no blender exe) or "file not found" error
+    assert result.get("status") == "error"
+    assert "error" in result
+
+
+def test_blender_render_no_blender(tmp_path):
+    from modules.blender.src.blender import blender_render
+    result = blender_render(blend_file=str(tmp_path / "scene.blend"))
+    assert result.get("status") == "error"
+
+
+def test_blender_export_unsupported_format(tmp_path):
+    from modules.blender.src.blender import blender_export
+    blend = tmp_path / "scene.blend"
+    blend.write_bytes(b"")
+    result = blender_export(blend_file=str(blend), format="UNKNOWN", dst=str(tmp_path / "out.xyz"))
+    # Blender not found OR unsupported format — both are errors
+    assert result.get("status") == "error"
+
+
+def test_blender_script_no_blender(tmp_path):
+    from modules.blender.src.blender import blender_script
+    blend = tmp_path / "scene.blend"
+    blend.write_bytes(b"")
+    result = blender_script(blend_file=str(blend), script="print('hello')")
+    assert result.get("status") == "error"
+
+
+def test_blender_bake_no_blender(tmp_path):
+    from modules.blender.src.blender import blender_bake
+    blend = tmp_path / "scene.blend"
+    blend.write_bytes(b"")
+    result = blender_bake(blend_file=str(blend), output_dir=str(tmp_path / "bake"))
+    assert result.get("status") == "error"
+
+
+# ---------------------------------------------------------------------------
+# Installer module
+# ---------------------------------------------------------------------------
+
+def test_installer_install_deps_no_manifest(tmp_path):
+    from modules.installer.src.installer import install_deps
+    result = install_deps(path=str(tmp_path))
+    assert result["status"] == "nothing_to_install"
+
+
+def test_installer_install_deps_requirements(tmp_path):
+    from modules.installer.src.installer import install_deps
+    (tmp_path / "requirements.txt").write_text("# empty requirements\n")
+    result = install_deps(path=str(tmp_path))
+    # pip run with empty requirements — should succeed
+    assert result["status"] in ("ok", "partial")
+    assert "pip" in result.get("installed", []) or any(r["manager"] == "pip" for r in result.get("results", []))
+
+
+def test_installer_create_installer_zip(tmp_path):
+    from modules.installer.src.installer import create_installer
+    src = tmp_path / "project"
+    src.mkdir()
+    (src / "main.py").write_text("print('hello')")
+    out = str(tmp_path / "release.zip")
+    result = create_installer(path=str(src), output=out, platform="zip")
+    assert result["status"] == "ok"
+    assert Path(result["installer"]).exists()
+    assert result["size_bytes"] > 0
+    assert "sha256" in result
+
+
+def test_installer_create_installer_tar(tmp_path):
+    from modules.installer.src.installer import create_installer
+    src = tmp_path / "project"
+    src.mkdir()
+    (src / "main.py").write_text("# code")
+    out = str(tmp_path / "release.tar.gz")
+    result = create_installer(path=str(src), output=out, platform="tar")
+    assert result["status"] == "ok"
+    assert Path(result["installer"]).exists()
+
+
+def test_installer_create_installer_bad_platform(tmp_path):
+    from modules.installer.src.installer import create_installer
+    src = tmp_path / "project"
+    src.mkdir()
+    result = create_installer(path=str(src), output=str(tmp_path / "out"), platform="nsis")
+    assert result["status"] == "error"
+
+
+def test_installer_verify_install_empty(tmp_path):
+    from modules.installer.src.installer import verify_install
+    result = verify_install(path=str(tmp_path))
+    assert result["status"] in ("ok", "incomplete", "nothing_to_install")
+
+
+def test_installer_verify_install_bad_path():
+    from modules.installer.src.installer import verify_install
+    result = verify_install(path="/nonexistent/path")
+    assert result["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Job module
+# ---------------------------------------------------------------------------
+
+def test_job_submit_and_status():
+    from modules.job.src.job import job_submit, job_status
+    result = job_submit(task="echo hello")
+    assert result["status"] == "submitted"
+    jid = result["job_id"]
+    status = job_status(job_id=jid)
+    assert status["job_id"] == jid
+    assert status["status"] in ("queued", "running", "done", "failed")
+
+
+def test_job_list():
+    from modules.job.src.job import job_submit, job_list
+    job_submit(task="echo list_test")
+    result = job_list()
+    assert "jobs" in result
+    assert result["count"] >= 1
+
+
+def test_job_list_filtered():
+    from modules.job.src.job import job_list
+    result = job_list(status="nonexistent_status")
+    assert result["count"] == 0
+
+
+def test_job_result_unknown():
+    from modules.job.src.job import job_result
+    result = job_result(job_id="doesnotexist")
+    assert result["status"] == "error"
+
+
+def test_job_cancel_unknown():
+    from modules.job.src.job import job_cancel
+    result = job_cancel(job_id="doesnotexist")
+    assert result["status"] == "error"
+
+
+def test_job_submit_and_wait(tmp_path):
+    import time
+    from modules.job.src.job import job_submit, job_status, job_result
+    result = job_submit(task="python -c \"print('job_done')\"")
+    jid = result["job_id"]
+    # Poll briefly
+    for _ in range(20):
+        s = job_status(job_id=jid)
+        if s["status"] in ("done", "failed"):
+            break
+        time.sleep(0.2)
+    final = job_result(job_id=jid)
+    assert final["status"] in ("done", "failed")
+
+
+# ---------------------------------------------------------------------------
+# Debug module
+# ---------------------------------------------------------------------------
+
+def test_debug_attach_current_process():
+    import os
+    from modules.debug.src.debug import debug_attach
+    result = debug_attach(pid=os.getpid())
+    assert result["status"] == "ok"
+    assert result["info"]["pid"] == os.getpid()
+
+
+def test_debug_attach_nonexistent():
+    from modules.debug.src.debug import debug_attach
+    result = debug_attach(pid=9999999)
+    assert result["status"] == "error"
+
+
+def test_debug_breakpoint_valid(tmp_path):
+    from modules.debug.src.debug import debug_breakpoint
+    src = tmp_path / "script.py"
+    src.write_text("x = 1\ny = 2\n")
+    result = debug_breakpoint(file=str(src), line=1)
+    assert result["status"] == "ok"
+    assert result["line"] == 1
+    assert "x = 1" in result["code"]
+
+
+def test_debug_breakpoint_out_of_range(tmp_path):
+    from modules.debug.src.debug import debug_breakpoint
+    src = tmp_path / "script.py"
+    src.write_text("x = 1\n")
+    result = debug_breakpoint(file=str(src), line=999)
+    assert result["status"] == "error"
+
+
+def test_debug_trace_current_process():
+    import os
+    from modules.debug.src.debug import debug_trace
+    result = debug_trace(pid=os.getpid())
+    assert result["status"] == "ok"
+    assert "frames" in result
+
+
+def test_debug_memory_current_process():
+    import os
+    from modules.debug.src.debug import debug_memory
+    result = debug_memory(pid=os.getpid())
+    assert result["status"] == "ok"
+    assert "memory" in result
+
+
+# ---------------------------------------------------------------------------
+# Profile module
+# ---------------------------------------------------------------------------
+
+def test_profile_cpu_expression():
+    from modules.profile.src.profile import profile_cpu
+    result = profile_cpu(command="x = sum(range(100))")
+    assert result["status"] == "ok"
+    assert "top_functions" in result
+
+
+def test_profile_cpu_file(tmp_path):
+    from modules.profile.src.profile import profile_cpu
+    script = tmp_path / "compute.py"
+    script.write_text("result = [i*i for i in range(1000)]\n")
+    result = profile_cpu(command=str(script))
+    assert result["status"] == "ok"
+
+
+def test_profile_cpu_output(tmp_path):
+    from modules.profile.src.profile import profile_cpu
+    out = str(tmp_path / "cpu_profile.json")
+    result = profile_cpu(command="pass", output=out)
+    assert result["status"] == "ok"
+    assert Path(out).exists()
+
+
+def test_profile_memory_expression():
+    from modules.profile.src.profile import profile_memory
+    result = profile_memory(command="data = list(range(1000))")
+    assert result["status"] == "ok"
+    assert "top_allocations" in result
+
+
+def test_profile_memory_output(tmp_path):
+    from modules.profile.src.profile import profile_memory
+    out = str(tmp_path / "mem_profile.json")
+    result = profile_memory(command="x = 1", output=out)
+    assert result["status"] == "ok"
+    assert Path(out).exists()
+
+
+def test_profile_report_json(tmp_path):
+    from modules.profile.src.profile import profile_cpu, profile_report
+    out_json = str(tmp_path / "cpu.json")
+    profile_cpu(command="pass", output=out_json)
+    result = profile_report(profile_data=out_json)
+    assert result["status"] == "ok"
+    assert "report" in result
+
+
+def test_profile_report_missing():
+    from modules.profile.src.profile import profile_report
+    result = profile_report(profile_data="/nonexistent/profile.json")
+    assert result["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Editor module
+# ---------------------------------------------------------------------------
+
+def test_editor_format_json(tmp_path):
+    from modules.editor.src.editor import editor_format
+    f = tmp_path / "data.json"
+    f.write_text('{"b":2,"a":1}')
+    result = editor_format(path=str(f))
+    assert result["status"] == "ok"
+    import json
+    loaded = json.loads(f.read_text())
+    assert loaded["a"] == 1
+
+
+def test_editor_format_missing_file():
+    from modules.editor.src.editor import editor_format
+    result = editor_format(path="/nonexistent/file.py")
+    assert result["status"] == "error"
+
+
+def test_editor_lint_missing_file():
+    from modules.editor.src.editor import editor_lint
+    result = editor_lint(path="/nonexistent/file.py")
+    assert result["status"] == "error"
+
+
+def test_editor_search_pattern(tmp_path):
+    from modules.editor.src.editor import editor_search
+    (tmp_path / "a.py").write_text("def foo():\n    return 1\n")
+    (tmp_path / "b.py").write_text("class Bar:\n    pass\n")
+    result = editor_search(pattern="def ", directory=str(tmp_path))
+    assert result["status"] == "ok"
+    assert result["count"] >= 1
+    assert any("foo" in m["text"] for m in result["matches"])
+
+
+def test_editor_search_no_matches(tmp_path):
+    from modules.editor.src.editor import editor_search
+    (tmp_path / "x.py").write_text("pass\n")
+    result = editor_search(pattern="UNLIKELY_PATTERN_XYZ", directory=str(tmp_path))
+    assert result["status"] == "ok"
+    assert result["count"] == 0
+
+
+def test_editor_search_bad_dir():
+    from modules.editor.src.editor import editor_search
+    result = editor_search(pattern="foo", directory="/nonexistent")
+    assert result["status"] == "error"
+
+
+def test_editor_replace(tmp_path):
+    from modules.editor.src.editor import editor_replace
+    f = tmp_path / "code.py"
+    f.write_text("old_name = 1\nold_name += 2\n")
+    result = editor_replace(pattern="old_name", replacement="new_name", directory=str(tmp_path))
+    assert result["status"] == "ok"
+    assert result["total_replacements"] == 2
+    assert "new_name" in f.read_text()
+
+
+def test_editor_replace_no_matches(tmp_path):
+    from modules.editor.src.editor import editor_replace
+    f = tmp_path / "code.py"
+    f.write_text("x = 1\n")
+    result = editor_replace(pattern="NOTFOUND", replacement="x", directory=str(tmp_path))
+    assert result["status"] == "ok"
+    assert result["total_replacements"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Server module
+# ---------------------------------------------------------------------------
+
+def test_server_list_empty():
+    # New process may have servers from other tests; at minimum the call succeeds
+    from modules.server.src.server import server_list
+    result = server_list()
+    assert "servers" in result
+    assert "count" in result
+
+
+def test_server_start_stop(tmp_path):
+    from modules.server.src.server import server_start, server_stop, server_status
+    result = server_start(path=str(tmp_path), port=18080)
+    assert result["status"] == "ok"
+    sid = result["server_id"]
+    status = server_status(server_id=sid)
+    assert status["status"] == "running"
+    stop = server_stop(server_id=sid)
+    assert stop["status"] == "stopped"
+
+
+def test_server_status_missing():
+    from modules.server.src.server import server_status
+    result = server_status(server_id="doesnotexist")
+    assert result["status"] == "error"
+
+
+def test_server_logs_missing():
+    from modules.server.src.server import server_logs
+    result = server_logs(server_id="doesnotexist")
+    assert result["status"] == "error"
+
+
+def test_server_stop_missing():
+    from modules.server.src.server import server_stop
+    result = server_stop(server_id="doesnotexist")
+    assert result["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Asset module
+# ---------------------------------------------------------------------------
+
+def test_asset_import_export(tmp_path):
+    from modules.asset.src.asset import asset_import, asset_export, asset_list, asset_delete
+    src = tmp_path / "tex.png"
+    src.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)  # fake PNG header
+    result = asset_import(path=str(src), type="texture", name="test_tex")
+    assert result["status"] == "ok"
+    aid = result["asset_id"]
+
+    lst = asset_list()
+    assert any(a["id"] == aid for a in lst["assets"])
+
+    dst = str(tmp_path / "exported_tex.png")
+    exp = asset_export(asset_id=aid, dst=dst)
+    assert exp["status"] == "ok"
+    assert Path(dst).exists()
+
+    # Delete
+    del_result = asset_delete(asset_id=aid)
+    assert del_result["status"] == "ok"
+
+    # Confirm gone
+    lst2 = asset_list()
+    assert all(a["id"] != aid for a in lst2["assets"])
+
+
+def test_asset_metadata(tmp_path):
+    from modules.asset.src.asset import asset_import, asset_metadata
+    src = tmp_path / "sound.wav"
+    src.write_bytes(b"RIFF" + b"\x00" * 8)
+    result = asset_import(path=str(src), type="audio")
+    aid = result["asset_id"]
+    meta = asset_metadata(asset_id=aid)
+    assert meta["status"] == "ok"
+    assert meta["asset"]["type"] == "audio"
+
+
+def test_asset_missing():
+    from modules.asset.src.asset import asset_metadata
+    result = asset_metadata(asset_id="nonexistent_id")
+    assert result["status"] == "error"
+
+
+def test_asset_import_missing_file():
+    from modules.asset.src.asset import asset_import
+    result = asset_import(path="/nonexistent/file.png", type="texture")
+    assert result["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Doc module
+# ---------------------------------------------------------------------------
+
+def test_doc_generate_markdown(tmp_path):
+    from modules.doc.src.doc import doc_generate
+    src = tmp_path / "mymodule.py"
+    src.write_text('"""My module docstring."""\n\ndef hello():\n    """Say hello."""\n    pass\n')
+    out = str(tmp_path / "docs.md")
+    result = doc_generate(src=str(tmp_path), output=out)
+    assert result["status"] == "ok"
+    assert Path(out).exists()
+    content = Path(out).read_text()
+    assert "hello" in content
+
+
+def test_doc_generate_json(tmp_path):
+    from modules.doc.src.doc import doc_generate
+    src = tmp_path / "mod.py"
+    src.write_text('"""Mod."""\ndef func():\n    """Func doc."""\n    pass\n')
+    out = str(tmp_path / "docs.json")
+    result = doc_generate(src=str(tmp_path), output=out, format="json")
+    assert result["status"] == "ok"
+    import json
+    data = json.loads(Path(out).read_text())
+    assert "modules" in data
+
+
+def test_doc_generate_html(tmp_path):
+    from modules.doc.src.doc import doc_generate
+    src = tmp_path / "mod.py"
+    src.write_text('def foo():\n    """Foo doc."""\n    pass\n')
+    out = str(tmp_path / "docs.html")
+    result = doc_generate(src=str(tmp_path), output=out, format="html")
+    assert result["status"] == "ok"
+    assert "<html>" in Path(out).read_text()
+
+
+def test_doc_generate_missing_src(tmp_path):
+    from modules.doc.src.doc import doc_generate
+    result = doc_generate(src="/nonexistent/src", output=str(tmp_path / "out.md"))
+    assert result["status"] == "error"
+
+
+def test_doc_lint_no_warnings(tmp_path):
+    from modules.doc.src.doc import doc_lint
+    (tmp_path / "README.md").write_text("# Title\n\nSome content.\n")
+    result = doc_lint(docs_dir=str(tmp_path))
+    assert result["status"] == "ok"
+    assert result["files_checked"] == 1
+
+
+def test_doc_lint_missing_dir():
+    from modules.doc.src.doc import doc_lint
+    result = doc_lint(docs_dir="/nonexistent")
+    assert result["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Resource module
+# ---------------------------------------------------------------------------
+
+def test_resource_pack_unpack(tmp_path):
+    from modules.resource.src.resource import resource_pack, resource_unpack, resource_list
+    # Create source dir with a few files
+    src = tmp_path / "resources"
+    src.mkdir()
+    (src / "sprite.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (src / "level.json").write_text('{"level": 1}')
+    bundle = str(tmp_path / "game.rpk")
+    pack_result = resource_pack(input_dir=str(src), output=bundle)
+    assert pack_result["status"] == "ok"
+    assert pack_result["resource_count"] == 2
+
+    lst = resource_list(bundle=bundle)
+    assert lst["status"] == "ok"
+    assert lst["count"] == 2
+
+    out_dir = str(tmp_path / "unpacked")
+    unpack_result = resource_unpack(bundle=bundle, output_dir=out_dir)
+    assert unpack_result["status"] == "ok"
+    assert Path(out_dir, "sprite.png").exists()
+    assert Path(out_dir, "level.json").exists()
+
+
+def test_resource_add_remove(tmp_path):
+    from modules.resource.src.resource import resource_pack, resource_add, resource_remove, resource_list
+    src = tmp_path / "resources"
+    src.mkdir()
+    (src / "a.txt").write_text("a")
+    bundle = str(tmp_path / "res.rpk")
+    resource_pack(input_dir=str(src), output=bundle)
+
+    new_file = tmp_path / "b.txt"
+    new_file.write_text("b")
+    add_result = resource_add(bundle=bundle, path=str(new_file), alias="b.txt")
+    assert add_result["status"] == "ok"
+
+    lst = resource_list(bundle=bundle)
+    assert lst["count"] == 2
+
+    remove_result = resource_remove(bundle=bundle, name="b.txt")
+    assert remove_result["status"] == "ok"
+
+    lst2 = resource_list(bundle=bundle)
+    assert lst2["count"] == 1
+
+
+def test_resource_missing_bundle():
+    from modules.resource.src.resource import resource_list
+    result = resource_list(bundle="/nonexistent/bundle.rpk")
+    assert result["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Package module
+# ---------------------------------------------------------------------------
+
+def test_pkg_list_pip():
+    from modules.package.src.package import pkg_list
+    result = pkg_list(manager="pip")
+    assert result["status"] == "ok"
+    assert "packages" in result
+
+
+def test_pkg_install_real_package():
+    from modules.package.src.package import pkg_install
+    # Install a tiny, always-available package
+    result = pkg_install(name="pip", manager="pip")
+    # pip install pip should succeed (already installed)
+    assert result["status"] == "ok"
+
+
+def test_pkg_update_pip():
+    from modules.package.src.package import pkg_update
+    result = pkg_update(name="pip", manager="pip")
+    assert result["status"] == "ok"
+
+
+def test_pkg_install_unsupported_manager():
+    from modules.package.src.package import pkg_install
+    result = pkg_install(name="somepkg", manager="unknown_manager")
+    assert result["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Binary module
+# ---------------------------------------------------------------------------
+
+def test_binary_info_python_exe():
+    import sys
+    from modules.binary.src.binary import binary_info
+    result = binary_info(path=sys.executable)
+    assert result["status"] == "ok"
+    assert result["size_bytes"] > 0
+    assert "entropy" in result
+    assert "format" in result
+
+
+def test_binary_info_missing():
+    from modules.binary.src.binary import binary_info
+    result = binary_info(path="/nonexistent/binary")
+    assert result["status"] == "error"
+
+
+def test_binary_hex_dump(tmp_path):
+    from modules.binary.src.binary import binary_hex
+    f = tmp_path / "data.bin"
+    f.write_bytes(bytes(range(64)))
+    result = binary_hex(path=str(f), offset=0, length=32)
+    assert result["status"] == "ok"
+    assert "hex_dump" in result
+    assert "00" in result["hex_dump"]
+
+
+def test_binary_hex_offset_beyond_file(tmp_path):
+    from modules.binary.src.binary import binary_hex
+    f = tmp_path / "data.bin"
+    f.write_bytes(b"\x00" * 8)
+    result = binary_hex(path=str(f), offset=100)
+    assert result["status"] == "error"
+
+
+def test_binary_strings_extract(tmp_path):
+    from modules.binary.src.binary import binary_strings
+    f = tmp_path / "data.bin"
+    f.write_bytes(b"\x00\x01HelloWorld\x00\x00ShortX\x00LongStringHere\x00")
+    result = binary_strings(path=str(f), min_length=4)
+    assert result["status"] == "ok"
+    assert any("HelloWorld" in s for s in result["strings"])
+
+
+def test_binary_disasm(tmp_path):
+    from modules.binary.src.binary import binary_disasm
+    f = tmp_path / "data.bin"
+    f.write_bytes(bytes(range(32)))
+    result = binary_disasm(path=str(f), offset=0, length=16)
+    assert result["status"] == "ok"
+    assert "listing" in result
+
+
+def test_binary_patch_and_verify(tmp_path):
+    from modules.binary.src.binary import binary_patch, binary_hex
+    f = tmp_path / "data.bin"
+    f.write_bytes(b"\x00" * 16)
+    result = binary_patch(path=str(f), offset=4, data="deadbeef")
+    assert result["status"] == "ok"
+    assert Path(str(f) + ".bak").exists()
+    # Verify the patch
+    content = f.read_bytes()
+    assert content[4:8] == bytes.fromhex("deadbeef")
+
+
+def test_binary_patch_invalid_hex(tmp_path):
+    from modules.binary.src.binary import binary_patch
+    f = tmp_path / "data.bin"
+    f.write_bytes(b"\x00" * 8)
+    result = binary_patch(path=str(f), offset=0, data="ZZZZ")
+    assert result["status"] == "error"
+
+
+def test_binary_patch_out_of_range(tmp_path):
+    from modules.binary.src.binary import binary_patch
+    f = tmp_path / "data.bin"
+    f.write_bytes(b"\x00" * 4)
+    result = binary_patch(path=str(f), offset=10, data="ff")
+    assert result["status"] == "error"
