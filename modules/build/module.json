@@ -1,0 +1,6 @@
+{
+  "name": "build",
+  "version": "0.1.0",
+  "description": "CMake/Make/Ninja build system integration",
+  "dependencies": []
+}

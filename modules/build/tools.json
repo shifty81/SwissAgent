@@ -1,0 +1,61 @@
+[
+  {
+    "name": "build_cmake",
+    "description": "Configure and build a CMake project",
+    "module": "build",
+    "function": "modules.build.src.build_tools.build_cmake",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "source_dir": { "type": "string" },
+        "build_dir": { "type": "string" },
+        "generator": { "type": "string" },
+        "extra_args": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["source_dir", "build_dir"]
+    }
+  },
+  {
+    "name": "build_make",
+    "description": "Run make in a directory",
+    "module": "build",
+    "function": "modules.build.src.build_tools.build_make",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "build_dir": { "type": "string" },
+        "target": { "type": "string" },
+        "jobs": { "type": "integer" }
+      },
+      "required": ["build_dir"]
+    }
+  },
+  {
+    "name": "build_ninja",
+    "description": "Run ninja in a build directory",
+    "module": "build",
+    "function": "modules.build.src.build_tools.build_ninja",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "build_dir": { "type": "string" },
+        "target": { "type": "string" }
+      },
+      "required": ["build_dir"]
+    }
+  },
+  {
+    "name": "build_custom",
+    "description": "Run a custom build command in a workspace directory",
+    "module": "build",
+    "function": "modules.build.src.build_tools.build_custom",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "workspace": { "type": "string" },
+        "command": { "type": "string" }
+      },
+      "required": ["workspace", "command"]
+    }
+  }
+]
