@@ -76,6 +76,7 @@ def image_info(path: str) -> dict:
             "mode": img.mode,
             "width": img.width,
             "height": img.height,
+            "size": [img.width, img.height],
             "size_bytes": Path(path).stat().st_size,
         }
     except Exception as exc:
