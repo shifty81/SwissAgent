@@ -1,0 +1,20 @@
+[
+  {
+    "name": "test_api_scaffold_plugin_run",
+    "description": "Run the test_api_scaffold_plugin plugin.",
+    "module": "test_api_scaffold_plugin",
+    "function": "plugins.test_api_scaffold_plugin.test_api_scaffold_plugin_plugin.test_api_scaffold_plugin_run",
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "string",
+          "description": "Input for the plugin"
+        }
+      },
+      "required": [
+        "input"
+      ]
+    }
+  }
+]

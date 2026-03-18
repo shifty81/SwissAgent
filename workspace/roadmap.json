@@ -214,12 +214,12 @@
       "id": "m5",
       "title": "Phase 5 \u2014 Roadmap & Autonomous Self-Development",
       "description": "Living roadmap, autonomous task execution, progress tracking in IDE",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t5-1",
           "title": "workspace/roadmap.json living data file",
-          "status": "in_progress",
+          "status": "done",
           "priority": "high",
           "description": "10-phase roadmap the AI reads, works through, and updates"
         },
@@ -257,12 +257,12 @@
       "id": "m6",
       "title": "Phase 6 \u2014 Full VS Code-like Editor Suite",
       "description": "Activity bar, search, git panel, command palette, status bar, split editor",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t6-1",
           "title": "Activity bar with 5 panel modes",
-          "status": "in_progress",
+          "status": "done",
           "priority": "high",
           "description": "Icons: Explorer, Search, Git, Roadmap, Profile \u2014 switches left panel"
         },
@@ -276,7 +276,7 @@
         {
           "id": "t6-3",
           "title": "Git panel: status, diff viewer, stage/commit",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Shows changed files, inline diff, commit message box"
         },
@@ -304,7 +304,7 @@
         {
           "id": "t6-7",
           "title": "Split editor (two files side by side)",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Drag tab to right half; Monaco handles split model"
         }
@@ -314,7 +314,7 @@
       "id": "m7",
       "title": "Phase 7 \u2014 AI Features Baked Into Editor",
       "description": "Inline completions, selection actions, diff review, code actions",
-      "status": "pending",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "t7-1",
@@ -364,61 +364,61 @@
       "id": "m8",
       "title": "Phase 8 \u2014 Knowledge Base & Per-Project AI Profiles",
       "description": "Wiki aggregation, per-project AI personas, rule sets, RAG context injection",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t8-1",
           "title": "knowledge module: fetch_wiki, index_docs, search_knowledge",
-          "status": "in_progress",
+          "status": "done",
           "priority": "high",
           "description": "Fetch+chunk+store+search any URL; offline TF-IDF keyword search"
         },
         {
           "id": "t8-2",
           "title": "project_profile module: AI persona, tech stack, LLM preference",
-          "status": "in_progress",
+          "status": "done",
           "priority": "high",
           "description": ".swissagent/profile.json per project; auto-detected from marker files"
         },
         {
           "id": "t8-3",
           "title": "rules module: project rule sets (must/must_not/prefer)",
-          "status": "in_progress",
+          "status": "done",
           "priority": "high",
           "description": ".swissagent/rules.json; injected as constraints into every agent call"
         },
         {
           "id": "t8-4",
           "title": "Inject active project profile + rules into agent system prompt",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "core/agent.py reads profile + rules from active project at startup"
         },
         {
           "id": "t8-5",
           "title": "RAG: retrieve top-K relevant knowledge chunks per agent call",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Before each LLM call, search knowledge base and prepend chunks"
         },
         {
           "id": "t8-6",
           "title": "Knowledge panel in IDE: add/remove sources, search, status",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "List of doc URLs with fetch status; search box for knowledge base"
         },
         {
           "id": "t8-7",
           "title": "Profile wizard: auto-detect tech stack, suggest knowledge packs",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Scans project files and proposes profile + pre-built knowledge packs"
         },
         {
           "id": "t8-8",
           "title": "Pre-built knowledge packs for major tech stacks",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Python, JavaScript, C++, Rust, Go, React, FastAPI curated doc sets"
         }
@@ -571,33 +571,33 @@
       "id": "m12",
       "title": "Phase 12 \u2014 Self-Scaffolding Engine",
       "description": "Agent can generate new modules, plugins, tests, and roadmap tasks from a natural language description",
-      "status": "pending",
+      "status": "in_progress",
       "tasks": [
         {
           "id": "t12-1",
           "title": "scaffold_module tool: generate new module skeleton from description",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Agent prompts LLM to produce tools.json + src/*.py for a new module; writes to modules/"
         },
         {
           "id": "t12-2",
           "title": "scaffold_plugin tool: generate plugin from description",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "Produces plugins/<name>/plugin.py with register() and a README"
         },
         {
           "id": "t12-3",
           "title": "scaffold_tests tool: generate pytest tests for any module",
-          "status": "pending",
+          "status": "done",
           "priority": "high",
           "description": "LLM inspects module source and produces tests/test_<module>.py"
         },
         {
           "id": "t12-4",
           "title": "roadmap_add_task tool: agent can extend the roadmap",
-          "status": "pending",
+          "status": "done",
           "priority": "medium",
           "description": "Append a new task (or whole milestone) to workspace/roadmap.json"
         },

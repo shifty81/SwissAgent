@@ -89,6 +89,68 @@ class GitCloneRequest(BaseModel):
     branch: str = ""
 
 
+class GitCommitRequest(BaseModel):
+    path: str
+    message: str
+    files: list[str] = []  # empty = stage all
+
+
+class GitStageRequest(BaseModel):
+    path: str
+    files: list[str]
+    unstage: bool = False
+
+
+class KnowledgeFetchRequest(BaseModel):
+    url: str
+    project_path: str = ""
+    label: str = ""
+
+
+class KnowledgeRemoveRequest(BaseModel):
+    source_id: str
+    project_path: str = ""
+
+
+class ProfileSetRequest(BaseModel):
+    project_path: str = ""
+    project_name: str = ""
+    description: str = ""
+    tech_stack: list[str] = []
+    ai_persona: str = ""
+    coding_standards: str = ""
+    llm_backend: str = ""
+    knowledge_sources: list[str] = []
+
+
+class RulesAddRequest(BaseModel):
+    rule: str
+    rule_type: str
+    project_path: str = ""
+
+
+class RulesRemoveRequest(BaseModel):
+    rule_id: str
+    project_path: str = ""
+
+
+class ScaffoldModuleRequest(BaseModel):
+    name: str
+    description: str
+    tools: list[dict[str, Any]] = []
+
+
+class ScaffoldPluginRequest(BaseModel):
+    name: str
+    description: str
+    tools: list[dict[str, Any]] = []
+
+
+class ScaffoldTestsRequest(BaseModel):
+    module_name: str
+    output_path: str = ""
+
+
 class IdePushRequest(BaseModel):
     path: str
     content: str
@@ -656,6 +718,303 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             "files": n_files,
             "url": url,
         }
+
+    # ── Git panel endpoints ────────────────────────────────────────────────────
+
+    @app.get("/git/status")
+    async def git_panel_status(path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Return git status (branch, staged, unstaged, untracked files) for a project path."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            return {"error": "not_a_git_repo", "path": path}
+        try:
+            # porcelain v1 output: XY filename
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "status", "--porcelain=v1", "-u"],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=15,
+                ),
+            )
+            staged, unstaged, untracked = [], [], []
+            for line in proc.stdout.splitlines():
+                if len(line) < 4:
+                    continue
+                xy, fname = line[:2], line[3:]
+                x, y = xy[0], xy[1]
+                if x != " " and x != "?":
+                    staged.append({"file": fname.strip(), "status": x})
+                if y == "M" or y == "D":
+                    unstaged.append({"file": fname.strip(), "status": y})
+                if x == "?" and y == "?":
+                    untracked.append(fname.strip())
+
+            # current branch
+            branch_proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=5,
+                ),
+            )
+            branch = branch_proc.stdout.strip() or "HEAD"
+
+            # recent commits
+            log_proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "log", "--oneline", "-10"],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=10,
+                ),
+            )
+            commits = [{"sha": l[:7], "message": l[8:].strip()} for l in log_proc.stdout.splitlines() if len(l) > 8]
+
+            return {"branch": branch, "staged": staged, "unstaged": unstaged, "untracked": untracked, "commits": commits}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/git/diff")
+    async def git_panel_diff(path: str = Query(...), file: str = Query(default="")) -> dict[str, Any]:
+        """Return the git diff for the repo (or a specific file if provided)."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            return {"error": "not_a_git_repo"}
+        try:
+            cmd = ["git", "diff"]
+            if file:
+                cmd.append(file)
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, cwd=str(repo_dir), capture_output=True, text=True, timeout=15),
+            )
+            # Also get staged diff
+            staged_cmd = ["git", "diff", "--cached"]
+            if file:
+                staged_cmd.append(file)
+            staged_proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(staged_cmd, cwd=str(repo_dir), capture_output=True, text=True, timeout=15),
+            )
+            return {"diff": proc.stdout, "staged_diff": staged_proc.stdout}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/git/stage")
+    async def git_panel_stage(req: GitStageRequest) -> dict[str, Any]:
+        """Stage or unstage files in a git repo."""
+        import subprocess
+        top = Path(req.path).parts[0] if Path(req.path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, req.path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            if req.unstage:
+                cmd = ["git", "restore", "--staged"] + (req.files if req.files else ["."])
+            else:
+                cmd = ["git", "add"] + (req.files if req.files else ["."])
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, cwd=str(repo_dir), capture_output=True, text=True, timeout=15),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            return {"status": "ok", "action": "unstaged" if req.unstage else "staged", "files": req.files}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/git/commit")
+    async def git_panel_commit(req: GitCommitRequest) -> dict[str, Any]:
+        """Commit staged changes with a message."""
+        import subprocess
+        top = Path(req.path).parts[0] if Path(req.path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, req.path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        if not req.message.strip():
+            raise HTTPException(status_code=400, detail="Commit message is required")
+        try:
+            # Stage specified files (or all if none given)
+            if req.files:
+                stage_proc = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["git", "add"] + req.files,
+                        cwd=str(repo_dir), capture_output=True, text=True, timeout=15,
+                    ),
+                )
+                if stage_proc.returncode != 0:
+                    raise HTTPException(status_code=400, detail=stage_proc.stderr.strip())
+
+            commit_proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "commit", "-m", req.message],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=30,
+                ),
+            )
+            if commit_proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=commit_proc.stderr.strip() or commit_proc.stdout.strip())
+            return {"status": "ok", "message": req.message, "output": commit_proc.stdout.strip()}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # ── Knowledge base endpoints ───────────────────────────────────────────────
+
+    @app.get("/knowledge/list")
+    async def knowledge_list_sources(project_path: str = Query(default="")) -> dict[str, Any]:
+        """List all knowledge sources indexed for a project."""
+        try:
+            from modules.knowledge.src.knowledge_tools import knowledge_list
+            return knowledge_list(project_path=project_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/knowledge/fetch")
+    async def knowledge_fetch_source(req: KnowledgeFetchRequest) -> dict[str, Any]:
+        """Fetch a URL and add it to the project knowledge base."""
+        try:
+            from modules.knowledge.src.knowledge_tools import knowledge_fetch
+            return await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: knowledge_fetch(req.url, project_path=req.project_path, label=req.label),
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/knowledge/remove")
+    async def knowledge_remove_source(req: KnowledgeRemoveRequest) -> dict[str, Any]:
+        """Remove a knowledge source from the project knowledge base."""
+        try:
+            from modules.knowledge.src.knowledge_tools import knowledge_remove
+            return knowledge_remove(source_id=req.source_id, project_path=req.project_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/knowledge/search")
+    async def knowledge_search_endpoint(
+        query: str = Query(...),
+        project_path: str = Query(default=""),
+        top_k: int = Query(default=5),
+    ) -> dict[str, Any]:
+        """Search the project knowledge base."""
+        try:
+            from modules.knowledge.src.knowledge_tools import knowledge_search
+            return knowledge_search(query=query, project_path=project_path, top_k=top_k)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # ── Project profile + rules endpoints ─────────────────────────────────────
+
+    @app.get("/profile")
+    async def profile_get_endpoint(project_path: str = Query(default="")) -> dict[str, Any]:
+        """Get the AI profile for a project."""
+        try:
+            from modules.project_profile.src.profile_tools import profile_get
+            return profile_get(project_path=project_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/profile")
+    async def profile_set_endpoint(req: ProfileSetRequest) -> dict[str, Any]:
+        """Create or update the AI profile for a project."""
+        try:
+            from modules.project_profile.src.profile_tools import profile_set
+            return profile_set(
+                project_path=req.project_path,
+                project_name=req.project_name or None,
+                description=req.description or None,
+                tech_stack=req.tech_stack or None,
+                ai_persona=req.ai_persona or None,
+                coding_standards=req.coding_standards or None,
+                llm_backend=req.llm_backend or None,
+                knowledge_sources=req.knowledge_sources or None,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/profile/detect")
+    async def profile_detect_endpoint(project_path: str = Query(...)) -> dict[str, Any]:
+        """Auto-detect the tech stack and suggest a profile for a project."""
+        try:
+            from modules.project_profile.src.profile_tools import profile_detect
+            return profile_detect(project_path=project_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/rules")
+    async def rules_get_endpoint(project_path: str = Query(default="")) -> dict[str, Any]:
+        """Get all AI rules for a project."""
+        try:
+            from modules.project_profile.src.profile_tools import rules_get
+            return rules_get(project_path=project_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/rules")
+    async def rules_add_endpoint(req: RulesAddRequest) -> dict[str, Any]:
+        """Add a rule to the project AI rule set."""
+        valid_types = {"must", "must_not", "prefer"}
+        if req.rule_type not in valid_types:
+            raise HTTPException(status_code=400, detail=f"rule_type must be one of {sorted(valid_types)}")
+        try:
+            from modules.project_profile.src.profile_tools import rules_add
+            return rules_add(rule=req.rule, rule_type=req.rule_type, project_path=req.project_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.delete("/rules/{rule_id}")
+    async def rules_remove_endpoint(rule_id: str, project_path: str = Query(default="")) -> dict[str, Any]:
+        """Remove a rule from the project AI rule set."""
+        try:
+            from modules.project_profile.src.profile_tools import rules_remove
+            return rules_remove(rule_id=rule_id, project_path=project_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # ── Scaffold endpoints ─────────────────────────────────────────────────────
+
+    @app.post("/scaffold/module")
+    async def scaffold_module_endpoint(req: ScaffoldModuleRequest) -> dict[str, Any]:
+        """Generate a new module skeleton from a name and description."""
+        try:
+            from modules.scaffold.src.scaffold_tools import scaffold_module
+            return scaffold_module(name=req.name, description=req.description, tools=req.tools or None)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/scaffold/plugin")
+    async def scaffold_plugin_endpoint(req: ScaffoldPluginRequest) -> dict[str, Any]:
+        """Generate a new plugin skeleton from a name and description."""
+        try:
+            from modules.scaffold.src.scaffold_tools import scaffold_plugin
+            return scaffold_plugin(name=req.name, description=req.description, tools=req.tools or None)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/scaffold/tests")
+    async def scaffold_tests_endpoint(req: ScaffoldTestsRequest) -> dict[str, Any]:
+        """Generate pytest stubs for an existing module."""
+        try:
+            from modules.scaffold.src.scaffold_tools import scaffold_tests
+            return scaffold_tests(module_name=req.module_name, output_path=req.output_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
 
     # ── File rename ─────────────────────────────────────────────────────────
     @app.post("/files/rename")
