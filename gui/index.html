@@ -20,6 +20,7 @@
       </label>
       <select id="llm-backend-select" title="LLM backend">
         <option value="ollama">Ollama (local)</option>
+        <option value="openwebui">Open WebUI (local)</option>
         <option value="api">OpenAI API</option>
         <option value="local">Local GGUF</option>
       </select>
@@ -112,7 +113,7 @@
       <div id="chat-input-area">
         <textarea
           id="chat-input"
-          placeholder="Describe what you want to build or fix…"
+          placeholder="Ask anything… or try /fix  /explain  /test  /docs  /refactor"
           rows="3"
         ></textarea>
         <button id="btn-send-prompt">Send ↵</button>

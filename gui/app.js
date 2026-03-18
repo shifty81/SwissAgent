@@ -8,6 +8,10 @@
   // ── Constants ───────────────────────────────────────────────────────────────
   const MAX_BUILD_OUTPUT_FOR_AI = 2000;
 
+  // ── Code-block store — keyed by incrementing ID to avoid encoding issues ────
+  const _codeStore = new Map();
+  let   _codeStoreSeq = 0;
+
   // ── State ──────────────────────────────────────────────────────────────────
   const state = {
     openFiles: {},        // path → { content, language, modified, model }
@@ -68,6 +72,84 @@
     chatMessages.appendChild(msg);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return msg;
+  }
+
+  // ── Code-block rendering (Copilot-style Apply + Copy buttons) ────────────
+  /** Parse ```lang\ncode``` fences and return an HTML string with action buttons. */
+  function _renderCodeBlocks(rawText) {
+    // Safely escape text outside code fences
+    function escHtml(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    const parts = rawText.split(/(```[\w]*\n[\s\S]*?```)/g);
+    return parts.map((part) => {
+      const m = part.match(/^```([\w]*)\n([\s\S]*?)```$/);
+      if (!m) return `<span class="chat-text">${escHtml(part)}</span>`;
+      const lang = m[1] || "text";
+      const code = m[2].trimEnd();
+      const id = ++_codeStoreSeq;
+      _codeStore.set(id, code);
+      return (
+        `<div class="code-block">` +
+        `<div class="code-block-header">` +
+        `<span class="code-lang">${escHtml(lang)}</span>` +
+        `<div class="code-block-actions">` +
+        `<button class="code-copy-btn" data-cid="${id}" title="Copy to clipboard">📋 Copy</button>` +
+        `<button class="code-apply-btn" data-cid="${id}" title="Apply to active file">⬆ Apply to file</button>` +
+        `</div></div>` +
+        `<pre class="code-content"><code>${escHtml(code)}</code></pre>` +
+        `</div>`
+      );
+    }).join("");
+  }
+
+  /** Wire the Copy / Apply buttons inside a rendered chat message element. */
+  function _bindCodeButtons(msgEl) {
+    msgEl.querySelectorAll(".code-copy-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const code = _codeStore.get(Number(btn.dataset.cid));
+        if (code === undefined) return;
+        navigator.clipboard.writeText(code).catch(() => appendOutput(`Code:\n${code}\n`));
+        btn.textContent = "✓ Copied";
+        setTimeout(() => { btn.textContent = "📋 Copy"; }, 1500);
+      });
+    });
+    msgEl.querySelectorAll(".code-apply-btn").forEach((btn) => {
+      btn.addEventListener("click", () => _applyCodeToEditor(Number(btn.dataset.cid)));
+    });
+  }
+
+  /** Replace a streaming-complete agent message's textContent with rendered HTML. */
+  function _finaliseAgentMessage(msgEl) {
+    const raw = msgEl.textContent;
+    if (!raw.includes("```")) return; // nothing to render
+    msgEl.innerHTML = _renderCodeBlocks(raw);
+    _bindCodeButtons(msgEl);
+  }
+
+  /** Apply a stored code snippet to the active editor file. */
+  function _applyCodeToEditor(codeId) {
+    const code = _codeStore.get(codeId);
+    if (code === undefined) return;
+    if (!state.activeFile) {
+      // Prompt for a filename
+      const name = prompt("No file open. Enter a workspace path to create:", "workspace/snippet.txt");
+      if (!name) return;
+      createNewFile(name).then(() => {
+        setTimeout(() => _applyCodeToEditor(codeId), 400);
+      });
+      return;
+    }
+    if (state.editorMode === "monaco" && state.openFiles[state.activeFile]?.model) {
+      state.openFiles[state.activeFile].model.setValue(code);
+    } else if (state.editorMode === "fallback") {
+      $("fallback-editor").value = code;
+      if (state.openFiles[state.activeFile]) state.openFiles[state.activeFile].content = code;
+    }
+    markModified(state.activeFile);
+    appendOutput(`⬆ Applied code block to ${state.activeFile}\n`);
+    switchOutputTab("output");
   }
 
   function extToLang(path) {
@@ -604,11 +686,52 @@
     target.classList.add("active");
   }
 
+  // ── Slash commands ─────────────────────────────────────────────────────────
+  /** Expand /fix /explain /test /docs into a full context-aware prompt. */
+  function _expandSlashCommand(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith("/")) return raw;
+
+    const activeContent = (() => {
+      if (!state.activeFile) return "";
+      if (state.editorMode === "monaco" && state.openFiles[state.activeFile]?.model) {
+        return state.openFiles[state.activeFile].model.getValue();
+      }
+      if (state.editorMode === "fallback") {
+        return $("fallback-editor").value || state.openFiles[state.activeFile]?.content || "";
+      }
+      return state.openFiles[state.activeFile]?.content || "";
+    })();
+
+    const fileLine = state.activeFile ? `File: \`${state.activeFile}\`` : "";
+    const fence = (c) => (c ? `\n\`\`\`\n${c}\n\`\`\`` : "");
+
+    const [cmd, ...rest] = trimmed.split(/\s+([\s\S]*)/).filter(Boolean);
+    const extra = rest.join(" ").trim();
+
+    switch (cmd.toLowerCase()) {
+      case "/fix":
+        return `${fileLine}\nFix the bugs or issues in this code${extra ? `: ${extra}` : "."}${fence(activeContent)}`;
+      case "/explain":
+        return `${fileLine}\nExplain what this code does in clear, concise terms.${fence(activeContent)}`;
+      case "/test":
+        return `${fileLine}\nWrite unit tests for this code. Return only the test code in a code block.${fence(activeContent)}`;
+      case "/docs":
+        return `${fileLine}\nAdd docstrings/comments to every function and class in this code. Return the fully documented version.${fence(activeContent)}`;
+      case "/refactor":
+        return `${fileLine}\nRefactor this code to improve readability and maintainability${extra ? `: ${extra}` : "."}${fence(activeContent)}`;
+      default:
+        return raw;
+    }
+  }
+
   // ── Agent interaction ──────────────────────────────────────────────────────
   async function sendPrompt(promptText) {
     if (!promptText.trim()) return;
 
-    appendChat(promptText, "user");
+    const expandedPrompt = _expandSlashCommand(promptText);
+
+    appendChat(promptText, "user");   // show original text in chat
     chatInput.value = "";
     setStatus("running");
     $("btn-send-prompt").disabled = true;
@@ -624,11 +747,14 @@
     const wsUrl = `${wsProto}://${location.host}/ws/run`;
 
     try {
-      await streamViaWebSocket(wsUrl, promptText, backend, agentMsg);
+      await streamViaWebSocket(wsUrl, expandedPrompt, backend, agentMsg);
     } catch {
       // WebSocket unavailable — fallback to plain fetch
-      await runViaFetch(promptText, backend, agentMsg);
+      await runViaFetch(expandedPrompt, backend, agentMsg);
     }
+
+    // Render code blocks now that the full response is available
+    _finaliseAgentMessage(agentMsg);
 
     setStatus("idle");
     $("btn-send-prompt").disabled = false;
@@ -818,9 +944,10 @@
     loadFileTree();
     appendOutput(
       "⚠ Monaco Editor CDN unavailable — using plain-text fallback editor.\n" +
-      "All file and agent features still work. " +
+      "All file and agent features (slash commands, Apply buttons) still work.\n" +
       "Connect to the internet and reload the page to get the full Monaco IDE.\n"
     );
+    _startPendingPushPoller();
   }
 
   function initMonaco() {
@@ -888,9 +1015,68 @@
       // Track cursor position for status bar
       state.editor.onDidChangeCursorPosition(updateCursorPosition);
 
+      // ── Copilot-style inline completions ──────────────────────────────────
+      let _completionTimer = null;
+      monaco.languages.registerInlineCompletionsProvider({ pattern: "**" }, {
+        provideInlineCompletions(model, position) {
+          return new Promise((resolve) => {
+            clearTimeout(_completionTimer);
+            _completionTimer = setTimeout(async () => {
+              try {
+                const offset   = model.getOffsetAt(position);
+                const allText  = model.getValue();
+                const prefix   = allText.slice(0, offset);
+                const suffix   = allText.slice(offset);
+                const res = await fetch("/api/complete", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    prefix,
+                    suffix,
+                    language: model.getLanguageId(),
+                    path: state.activeFile || "",
+                    llm_backend: llmSelect.value,
+                  }),
+                });
+                if (!res.ok) { resolve({ items: [] }); return; }
+                const data = await res.json();
+                if (!data.completion) { resolve({ items: [] }); return; }
+                resolve({
+                  items: [{
+                    insertText: data.completion,
+                    range: new monaco.Range(
+                      position.lineNumber, position.column,
+                      position.lineNumber, position.column,
+                    ),
+                  }],
+                });
+              } catch { resolve({ items: [] }); }
+            }, 700);
+          });
+        },
+        freeInlineCompletions() {},
+      });
+
       // Load file tree after editor is ready
       loadFileTree();
+      _startPendingPushPoller();
     });
+  }
+
+  // ── Pending-push poller (files pushed via /api/ide/push open automatically) ─
+  function _startPendingPushPoller() {
+    setInterval(async () => {
+      try {
+        const res = await fetch("/api/ide/pending");
+        if (!res.ok) return;
+        const { paths } = await res.json();
+        for (const p of paths) {
+          await openFile(p);
+          appendOutput(`📥 File pushed to IDE: ${p}\n`);
+        }
+        if (paths.length) await loadFileTree();
+      } catch { /* server may not be ready yet */ }
+    }, 3000);
   }
 
   // ── Output tab wiring ─────────────────────────────────────────────────────
