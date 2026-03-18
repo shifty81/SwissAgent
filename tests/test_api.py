@@ -679,3 +679,26 @@ def test_sandbox_run_path_traversal(client):
     """POST /sandbox/run with path traversal is rejected."""
     res = client.post("/sandbox/run", json={"command": "ls", "working_dir": "workspace/../configs"})
     assert res.status_code == 403
+
+
+def test_sandbox_run_docker_fallback_when_unavailable(client, monkeypatch):
+    """POST /sandbox/run with use_docker=True falls back to subprocess when Docker is not available."""
+    import shutil as _shutil
+
+    # Capture the real which() before monkeypatching to avoid recursive lambda
+    _original_which = _shutil.which
+
+    # Simulate Docker not being on PATH
+    monkeypatch.setattr(_shutil, "which", lambda cmd: None if cmd == "docker" else _original_which(cmd))
+
+    res = client.post(
+        "/sandbox/run",
+        json={"command": "echo fallback", "working_dir": "workspace", "use_docker": True},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    # Must not return an error status — fallback should succeed
+    assert data.get("status") == "ok"
+    assert data.get("docker") is False
+    assert "warning" in data
+    assert "fallback" in data["warning"].lower()

@@ -1269,17 +1269,11 @@ def create_app(config_dir: str = "configs") -> FastAPI:
 
         timeout = max(5, min(req.timeout, 300))
 
-        if req.use_docker:
-            # Try Docker execution
-            docker_available = shutil.which("docker") is not None
-            if not docker_available:
-                return {
-                    "status": "error",
-                    "error": "Docker is not available on this system",
-                    "stdout": "",
-                    "stderr": "",
-                    "returncode": -1,
-                }
+        docker_available = shutil.which("docker") is not None
+        use_docker_actual = req.use_docker and docker_available
+        docker_fallback = req.use_docker and not docker_available
+
+        if use_docker_actual:
             cmd = [
                 "docker", "run", "--rm",
                 "--network=none",
@@ -1301,13 +1295,19 @@ def create_app(config_dir: str = "configs") -> FastAPI:
                 timeout=timeout,
                 cwd=str(work_path),
             )
-            return {
+            response: dict[str, Any] = {
                 "status": "ok",
                 "stdout": result.stdout,
                 "stderr": result.stderr,
                 "returncode": result.returncode,
-                "docker": req.use_docker,
+                "docker": use_docker_actual,
             }
+            if docker_fallback:
+                response["warning"] = (
+                    "Docker is not installed on this system. "
+                    "Command ran via subprocess fallback (no container isolation)."
+                )
+            return response
         except subprocess.TimeoutExpired:
             return {
                 "status": "timeout",
