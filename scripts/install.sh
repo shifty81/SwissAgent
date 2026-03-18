@@ -68,7 +68,7 @@ fi
 # ── Install deps ────────────────────────────────────────────────────────────
 info "Installing SwissAgent and Python dependencies…"
 cd "$ROOT_DIR"
-"$PYTHON_CMD" -m pip install -e . --quiet
+"$PYTHON_CMD" -m pip install -e .
 ok "Python dependencies installed."
 
 # ── Create directories ──────────────────────────────────────────────────────

@@ -88,6 +88,8 @@ def create_app(config_dir: str = "configs") -> FastAPI:
     permissions = PermissionSystem()
     runner = TaskRunner()
 
+    logger.info("SwissAgent API server initialized. %d tools loaded.", len(registry.list_tools()))
+
     # ── Serve GUI static assets ────────────────────────────────────────────
     if gui_dir.is_dir():
         app.mount("/gui", StaticFiles(directory=str(gui_dir)), name="gui")

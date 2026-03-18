@@ -58,6 +58,8 @@ def serve(ctx: click.Context, host: str, port: int, open_browser: bool) -> None:
     """Start the SwissAgent HTTP API server."""
     import uvicorn
     from core.api_server import create_app
+    click.echo(f"Starting SwissAgent API server at http://{host}:{port}")
+    click.echo("Logs: logs/swissagent.log")
     app = create_app(ctx.obj["config_dir"])
     if open_browser:
         _schedule_browser_open(host, port)
@@ -77,6 +79,7 @@ def ui(ctx: click.Context, host: str, port: int) -> None:
 
     url = f"http://{host}:{port}"
     click.echo(f"Starting SwissAgent IDE at {url} …")
+    click.echo("Logs: logs/swissagent.log")
     app = create_app(ctx.obj["config_dir"])
     _schedule_browser_open(host, port)
     uvicorn.run(app, host=host, port=port)
