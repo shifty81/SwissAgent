@@ -1678,6 +1678,7 @@
         _startSelfBuild("");
       });
     }
+  }
 
   function _workOnTask(taskId, title, description) {
     const prompt =
