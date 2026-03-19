@@ -17,6 +17,12 @@
   Give it a prompt and it plans, calls tools, writes code, runs builds, processes assets, and reports back — <em>all without sending anything to the cloud.</em>
 </p>
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/984d9731-5366-41ed-8058-fbf418953941"
+       alt="SwissAgent IDE running — Monaco editor, activity-bar panels, and AI Agent chat panel"
+       width="100%"/>
+</p>
+
 ---
 
 > 🐳 **Docker is completely optional.** SwissAgent runs perfectly with just **Python 3.10+** and **Ollama**.  
