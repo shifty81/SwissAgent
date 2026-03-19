@@ -430,6 +430,20 @@ class BackendSwitchRequest(BaseModel):
     backend: str
 
 
+class ProjectInitRequest(BaseModel):
+    project_path: str
+    steps: list[str] = []
+
+
+class ProjectInitDetectResult(BaseModel):
+    project_path: str
+    language: str
+    framework: str
+    package_manager: str
+    detected_files: list[str]
+    recommended_steps: list[str]
+
+
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
 # Context window sizes sent to the LLM.  Prefix is longer because the model
@@ -3605,6 +3619,312 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             raise HTTPException(status_code=400, detail=f"Unknown backend '{name}'")
         config.set("agent.default_llm_backend", name)
         return {"ok": True, "backend": name}
+
+    # ── Project Initialization Wizard (Phase 21) ──────────────────────────
+
+    _GITIGNORE_TEMPLATES: dict[str, str] = {
+        "python": "__pycache__/\n*.pyc\n.venv/\ndist/\nbuild/\n*.egg-info/\n.env\n",
+        "nodejs": "node_modules/\ndist/\n.env\n*.log\n.cache/\n",
+        "rust": "target/\nCargo.lock\n",
+        "go": "*.exe\nvendor/\n",
+        "java": "target/\n*.class\n.gradle/\n",
+        "php": "vendor/\n.env\n",
+        "ruby": ".bundle/\nvendor/bundle/\n.env\n",
+        "dart": ".dart_tool/\nbuild/\n.env\n",
+        "cpp": "build/\n*.o\n*.out\n",
+        "dotnet": "bin/\nobj/\n.env\n",
+    }
+
+    _EDITORCONFIG = """\
+root = true
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+[*.{js,ts,jsx,tsx,json,yaml,yml,html,css}]
+indent_size = 2
+[Makefile]
+indent_style = tab
+"""
+
+    def _detect_project(project_dir: Path) -> dict[str, Any]:
+        """Inspect *project_dir* and return detection results."""
+        files = {f.name for f in project_dir.iterdir() if f.is_file()} if project_dir.is_dir() else set()
+        # Also check for .csproj / .sln by extension
+        ext_files = {f.suffix for f in project_dir.iterdir() if f.is_file()} if project_dir.is_dir() else set()
+
+        language = "unknown"
+        framework = ""
+        package_manager = ""
+        detected: list[str] = []
+        steps: list[str] = ["create_gitignore", "create_editorconfig"]
+
+        if "package.json" in files:
+            language = "nodejs"
+            package_manager = "yarn" if "yarn.lock" in files else "npm"
+            detected.append("package.json")
+            # Detect JS framework from package.json
+            try:
+                pkg = json.loads((project_dir / "package.json").read_text(encoding="utf-8", errors="replace"))
+                deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+                for fw in ("next", "react", "vue", "angular", "svelte", "express", "fastify", "nuxt", "remix"):
+                    if fw in deps:
+                        framework = fw
+                        break
+            except Exception:
+                pass
+            steps.insert(0, "install_deps")
+            steps.append("create_env_example")
+        elif "requirements.txt" in files:
+            language = "python"
+            package_manager = "pip"
+            detected.append("requirements.txt")
+            steps.insert(0, "install_deps")
+            steps.append("create_env_example")
+        elif "pyproject.toml" in files:
+            language = "python"
+            package_manager = "pip_pyproject"
+            detected.append("pyproject.toml")
+            steps.insert(0, "install_deps")
+            steps.append("create_env_example")
+        elif "setup.py" in files:
+            language = "python"
+            package_manager = "pip_pyproject"
+            detected.append("setup.py")
+            steps.insert(0, "install_deps")
+        elif "Cargo.toml" in files:
+            language = "rust"
+            package_manager = "cargo"
+            detected.append("Cargo.toml")
+            steps.insert(0, "install_deps")
+        elif "go.mod" in files:
+            language = "go"
+            package_manager = "go"
+            detected.append("go.mod")
+            steps.insert(0, "install_deps")
+        elif "pom.xml" in files:
+            language = "java"
+            package_manager = "maven"
+            detected.append("pom.xml")
+        elif "build.gradle" in files:
+            language = "java"
+            package_manager = "gradle"
+            detected.append("build.gradle")
+        elif ".csproj" in ext_files or ".sln" in ext_files:
+            language = "dotnet"
+            package_manager = "dotnet"
+            for f in project_dir.iterdir():
+                if f.suffix in (".csproj", ".sln"):
+                    detected.append(f.name)
+        elif "composer.json" in files:
+            language = "php"
+            package_manager = "composer"
+            detected.append("composer.json")
+            steps.insert(0, "install_deps")
+        elif "Gemfile" in files:
+            language = "ruby"
+            package_manager = "bundle"
+            detected.append("Gemfile")
+            steps.insert(0, "install_deps")
+        elif "pubspec.yaml" in files:
+            language = "dart"
+            package_manager = "flutter"
+            detected.append("pubspec.yaml")
+        elif "CMakeLists.txt" in files:
+            language = "cpp"
+            package_manager = "cmake"
+            detected.append("CMakeLists.txt")
+
+        # Filter steps: only add create_env_example if .env exists but .env.example doesn't
+        if "create_env_example" in steps:
+            has_env = any(f in files for f in (".env", ".env.local", ".env.development"))
+            has_example = ".env.example" in files
+            if not has_env or has_example:
+                steps.remove("create_env_example")
+
+        # Remove create_gitignore if already exists
+        if ".gitignore" in files and "create_gitignore" in steps:
+            steps.remove("create_gitignore")
+
+        # Remove create_editorconfig if already exists
+        if ".editorconfig" in files and "create_editorconfig" in steps:
+            steps.remove("create_editorconfig")
+
+        return {
+            "language": language,
+            "framework": framework,
+            "package_manager": package_manager,
+            "detected_files": detected,
+            "recommended_steps": steps,
+        }
+
+    async def _run_install(project_dir: Path, pm: str) -> tuple[bool, str]:
+        """Run package manager install in the project directory."""
+        cmds: dict[str, list[str]] = {
+            "pip": [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+            "pip_pyproject": [sys.executable, "-m", "pip", "install", "-e", ".[dev]"],
+            "npm": ["npm", "install"],
+            "yarn": ["yarn", "install"],
+            "cargo": ["cargo", "build"],
+            "go": ["go", "mod", "download"],
+            "composer": ["composer", "install"],
+            "bundle": ["bundle", "install"],
+        }
+        cmd = cmds.get(pm)
+        if not cmd:
+            return False, f"Unknown package manager: {pm}"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, cwd=str(project_dir),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            return proc.returncode == 0, out.decode(errors="replace")
+        except asyncio.TimeoutError:
+            return False, "Install timed out after 120s"
+        except Exception as exc:
+            return False, str(exc)
+
+    async def _run_init_step(
+        step: str, project_dir: Path, language: str
+    ) -> tuple[bool, str]:
+        """Execute a single init step; return (ok, output)."""
+        if step == "install_deps":
+            info = _detect_project(project_dir)
+            pm = info["package_manager"]
+            ok, out = await _run_install(project_dir, pm)
+            return ok, out
+
+        if step == "create_gitignore":
+            dest = project_dir / ".gitignore"
+            if dest.exists():
+                return True, ".gitignore already exists — skipped"
+            template = _GITIGNORE_TEMPLATES.get(language, "")
+            dest.write_text(template, encoding="utf-8")
+            return True, f"Created .gitignore for {language}"
+
+        if step == "create_editorconfig":
+            dest = project_dir / ".editorconfig"
+            if dest.exists():
+                return True, ".editorconfig already exists — skipped"
+            dest.write_text(_EDITORCONFIG, encoding="utf-8")
+            return True, "Created .editorconfig"
+
+        if step == "create_env_example":
+            dest = project_dir / ".env.example"
+            if dest.exists():
+                return True, ".env.example already exists — skipped"
+            # Copy .env if present, stripping values; else create empty stub
+            env_src = next(
+                (project_dir / n for n in (".env", ".env.local") if (project_dir / n).exists()),
+                None,
+            )
+            if env_src:
+                lines = []
+                for line in env_src.read_text(encoding="utf-8", errors="replace").splitlines():
+                    if "=" in line and not line.startswith("#"):
+                        key = line.split("=", 1)[0]
+                        lines.append(f"{key}=")
+                    else:
+                        lines.append(line)
+                dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            else:
+                dest.write_text("# Add environment variables here\n", encoding="utf-8")
+            return True, "Created .env.example"
+
+        return False, f"Unknown step: {step}"
+
+    @app.get("/project/init/detect")
+    async def project_init_detect(path: str = Query(...)) -> dict[str, Any]:
+        """Detect language/framework/package-manager for a project directory."""
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BROWSER_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        project_dir = _safe_path(base_dir, path)
+        if not project_dir.is_dir():
+            raise HTTPException(status_code=404, detail="Project directory not found")
+        info = _detect_project(project_dir)
+        return {"project_path": path, **info}
+
+    @app.post("/project/init")
+    async def project_init(req: ProjectInitRequest) -> dict[str, Any]:
+        """Run project initialization steps synchronously."""
+        top = Path(req.project_path).parts[0] if Path(req.project_path).parts else ""
+        if top not in _BROWSER_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        project_dir = _safe_path(base_dir, req.project_path)
+        if not project_dir.is_dir():
+            raise HTTPException(status_code=404, detail="Project directory not found")
+
+        info = _detect_project(project_dir)
+        language = info["language"]
+        steps = req.steps if req.steps else info["recommended_steps"]
+
+        results = []
+        for step in steps:
+            ok, output = await _run_init_step(step, project_dir, language)
+            results.append({"step": step, "ok": ok, "output": output})
+
+        return {
+            "steps_run": steps,
+            "results": results,
+            "language": language,
+            "framework": info["framework"],
+        }
+
+    @app.websocket("/ws/project-init")
+    async def ws_project_init(websocket: WebSocket) -> None:
+        """Stream project initialization progress step by step."""
+        await websocket.accept()
+        try:
+            raw = await websocket.receive_text()
+            data = json.loads(raw)
+            project_path = data.get("project_path", "")
+            requested_steps: list[str] = data.get("steps", [])
+
+            top = Path(project_path).parts[0] if Path(project_path).parts else ""
+            if top not in _BROWSER_ROOTS:
+                await websocket.send_text(json.dumps({
+                    "step": "validate", "status": "error",
+                    "output": f"Root '{top}' not allowed",
+                }))
+                return
+
+            project_dir = _safe_path(base_dir, project_path)
+            if not project_dir.is_dir():
+                await websocket.send_text(json.dumps({
+                    "step": "validate", "status": "error",
+                    "output": "Project directory not found",
+                }))
+                return
+
+            info = _detect_project(project_dir)
+            language = info["language"]
+            steps = requested_steps if requested_steps else info["recommended_steps"]
+
+            for step in steps:
+                await websocket.send_text(json.dumps({
+                    "step": step, "status": "running", "output": "",
+                }))
+                ok, output = await _run_init_step(step, project_dir, language)
+                await websocket.send_text(json.dumps({
+                    "step": step,
+                    "status": "ok" if ok else "error",
+                    "output": output,
+                }))
+
+        except WebSocketDisconnect:
+            pass
+        except Exception as exc:
+            try:
+                await websocket.send_text(json.dumps({
+                    "step": "error", "status": "error", "output": str(exc),
+                }))
+            except Exception:
+                pass
 
     return app
 

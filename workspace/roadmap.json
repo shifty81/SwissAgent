@@ -1011,6 +1011,49 @@
           "description": "Panel showing all backends with status indicators, test and switch buttons"
         }
       ]
+    },
+    {
+      "id": "m21",
+      "title": "Phase 21 \u2014 Project Initialization Wizard",
+      "description": "AI-assisted project setup wizard that detects language/framework, installs deps, and scaffolds config files when a project is added via the GUI",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t21-1",
+          "title": "GET /project/init/detect \u2014 detect project type",
+          "status": "done",
+          "priority": "high",
+          "description": "Detect language, framework, package manager from project files"
+        },
+        {
+          "id": "t21-2",
+          "title": "POST /project/init \u2014 run initialization steps",
+          "status": "done",
+          "priority": "high",
+          "description": "Install deps, create .gitignore, .editorconfig, .env.example"
+        },
+        {
+          "id": "t21-3",
+          "title": "WebSocket /ws/project-init \u2014 streaming init progress",
+          "status": "done",
+          "priority": "medium",
+          "description": "Stream step-by-step initialization progress"
+        },
+        {
+          "id": "t21-4",
+          "title": "Project init wizard dialog in IDE GUI",
+          "status": "done",
+          "priority": "high",
+          "description": "Modal dialog with detect summary, step checkboxes, and streaming progress log"
+        },
+        {
+          "id": "t21-5",
+          "title": "Auto-trigger wizard after import and clone",
+          "status": "done",
+          "priority": "high",
+          "description": "showInitWizard() called automatically after successful doImport() and doClone()"
+        }
+      ]
     }
   ]
 }

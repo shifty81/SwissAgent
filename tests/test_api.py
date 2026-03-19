@@ -1606,3 +1606,79 @@ def test_tabby_instantiation():
     llm = TabbyLLM(base_url="http://localhost:8080", api_key="tok", model="StarCoder")
     assert llm.base_url == "http://localhost:8080"
     assert llm.model == "StarCoder"
+
+
+# ── Phase 21: Project Initialization Wizard ───────────────────────────────────
+
+def test_project_init_detect_python(client):
+    """GET /project/init/detect detects Python project."""
+    test_dir = Path("workspace/_test_init_python")
+    test_dir.mkdir(parents=True, exist_ok=True)
+    (test_dir / "requirements.txt").write_text("requests\n")
+    try:
+        res = client.get(f"/project/init/detect?path={test_dir}")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["language"] == "python"
+        assert data["package_manager"] == "pip"
+        assert "requirements.txt" in data["detected_files"]
+        assert "install_deps" in data["recommended_steps"]
+    finally:
+        import shutil
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
+def test_project_init_detect_nodejs(client):
+    """GET /project/init/detect detects Node.js project."""
+    test_dir = Path("workspace/_test_init_nodejs")
+    test_dir.mkdir(parents=True, exist_ok=True)
+    (test_dir / "package.json").write_text('{"name":"test","dependencies":{"react":"^18"}}')
+    try:
+        res = client.get(f"/project/init/detect?path={test_dir}")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["language"] == "nodejs"
+        assert data["framework"] == "react"
+        assert "package.json" in data["detected_files"]
+    finally:
+        import shutil
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
+def test_project_init_run_no_install(client):
+    """POST /project/init with only safe steps (no install_deps)."""
+    test_dir = Path("workspace/_test_init_run")
+    test_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        res = client.post("/project/init", json={
+            "project_path": str(test_dir),
+            "steps": ["create_gitignore", "create_editorconfig"],
+        })
+        assert res.status_code == 200
+        data = res.json()
+        assert "results" in data
+        steps_run = [r["step"] for r in data["results"]]
+        assert "create_gitignore" in steps_run
+        assert "create_editorconfig" in steps_run
+        for r in data["results"]:
+            assert r["ok"] is True
+        assert (test_dir / ".gitignore").exists()
+        assert (test_dir / ".editorconfig").exists()
+    finally:
+        import shutil
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
+def test_project_init_detect_unknown(client):
+    """GET /project/init/detect on empty dir returns unknown language."""
+    test_dir = Path("workspace/_test_init_unknown")
+    test_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        res = client.get(f"/project/init/detect?path={test_dir}")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["language"] == "unknown"
+        assert data["detected_files"] == []
+    finally:
+        import shutil
+        shutil.rmtree(test_dir, ignore_errors=True)

@@ -920,6 +920,7 @@
       $("import-dialog").classList.add("hidden");
       appendOutput(`✓ Imported project: ${data.destination || sourcePath}\n`);
       await loadFileTree();
+      showInitWizard(data.destination || `workspace/${destName || sourcePath.split('/').pop()}`);
     } catch (e) {
       appendOutput(`Error importing: ${e.message}\n`);
     }
@@ -1393,6 +1394,10 @@
     if (e.key === "Escape") $("clone-dialog").classList.add("hidden");
   });
 
+  // Init wizard
+  $("btn-init-skip").addEventListener("click", () => $("init-wizard").classList.add("hidden"));
+  $("btn-init-run").addEventListener("click", runInitWizard);
+
   // ── Git clone ──────────────────────────────────────────────────────────────
   function showCloneDialog() {
     $("clone-url").value = "";
@@ -1427,13 +1432,86 @@
       await loadFileTree();
       await _refreshProjectSwitcher();
       appendOutput(`✓ Cloned ${url} → ${data.destination}\n`);
-      setTimeout(() => $("clone-dialog").classList.add("hidden"), 1500);
+      setTimeout(() => {
+        $("clone-dialog").classList.add("hidden");
+        showInitWizard(`workspace/${data.destination}`);
+      }, 1500);
     } catch (e) {
       status.className = "clone-status error";
       status.textContent = `⚠ ${e.message}`;
     } finally {
       $("btn-clone-ok").disabled = false;
     }
+  }
+
+  // ── Project Init Wizard ────────────────────────────────────────────────────
+  async function showInitWizard(projectPath) {
+    $("init-wizard").classList.remove("hidden");
+    $("init-wizard-detect-summary").textContent = "Detecting project type…";
+    $("init-wizard-steps").innerHTML = "";
+    $("init-wizard-progress").classList.add("hidden");
+    $("btn-init-run").disabled = false;
+
+    try {
+      const res = await fetch(`/project/init/detect?path=${encodeURIComponent(projectPath)}`);
+      const data = await res.json();
+
+      const lang = data.language || "unknown";
+      const fw = data.framework ? ` / ${data.framework}` : "";
+      $("init-wizard-detect-summary").textContent =
+        `Detected: ${lang}${fw}. Choose setup steps:`;
+
+      const steps = data.recommended_steps || [];
+      const stepLabels = {
+        install_deps: "Install dependencies",
+        create_gitignore: "Create .gitignore",
+        create_editorconfig: "Create .editorconfig",
+        create_env_example: "Create .env.example",
+      };
+      $("init-wizard-steps").innerHTML = steps.map(s =>
+        `<label style="display:block;margin:4px 0">
+          <input type="checkbox" value="${s}" checked> ${stepLabels[s] || s}
+        </label>`
+      ).join("") || '<em style="color:var(--fg-muted)">No setup steps detected.</em>';
+
+      $("btn-init-run").dataset.path = projectPath;
+      if (!steps.length) $("btn-init-run").disabled = true;
+    } catch (e) {
+      $("init-wizard-detect-summary").textContent = `Could not detect project type: ${e.message}`;
+    }
+  }
+
+  async function runInitWizard() {
+    const projectPath = $("btn-init-run").dataset.path;
+    const checked = [...$("init-wizard-steps").querySelectorAll("input:checked")].map(c => c.value);
+    if (!checked.length) { $("init-wizard").classList.add("hidden"); return; }
+
+    $("btn-init-run").disabled = true;
+    $("btn-init-skip").disabled = true;
+    const progress = $("init-wizard-progress");
+    progress.classList.remove("hidden");
+    progress.textContent = "";
+
+    const wsProto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${wsProto}://${location.host}/ws/project-init`);
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ project_path: projectPath, steps: checked }));
+    };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        const icon = msg.status === "ok" ? "✓" : msg.status === "error" ? "✗" : "⟳";
+        progress.textContent += `${icon} [${msg.step}] ${msg.output || ""}\n`;
+        progress.scrollTop = progress.scrollHeight;
+      } catch { progress.textContent += e.data + "\n"; }
+    };
+    ws.onclose = () => {
+      progress.textContent += "\n✓ Done!\n";
+      $("btn-init-skip").textContent = "Close";
+      $("btn-init-skip").disabled = false;
+      $("btn-init-run").disabled = true;
+    };
   }
 
   // ── Project switcher ───────────────────────────────────────────────────────
