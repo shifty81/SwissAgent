@@ -975,19 +975,34 @@
   }
 
   function initMonaco() {
-    // If the CDN loader script itself failed (onerror set the flag), skip straight
-    // to the fallback rather than waiting for the 8-second timeout.
-    if (typeof require !== "function" || window.__monacoLoaderFailed) {
-      initFallbackEditor();
-      return;
-    }
-
     let monacoLoaded = false;
+
+    // Hard deadline: if Monaco isn't fully ready within 3 s, use the fallback.
     const fallbackTimer = setTimeout(() => {
       if (!monacoLoaded) initFallbackEditor();
-    }, 8000);
+    }, 3000);
 
-    require(["vs/editor/editor.main"], function () {
+    // The CDN scripts are loaded asynchronously, so the AMD require() function
+    // may not exist yet when this runs.  Poll briefly (every 100 ms) until the
+    // loader is ready, has failed, or the deadline fires.
+    function _tryLoad() {
+      if (monacoLoaded) return;
+
+      // Loader script reported a network error → fall back immediately.
+      if (window.__monacoLoaderFailed) {
+        clearTimeout(fallbackTimer);
+        initFallbackEditor();
+        return;
+      }
+
+      // Loader not ready yet — wait a tick and try again.
+      if (typeof require !== "function") {
+        setTimeout(_tryLoad, 100);
+        return;
+      }
+
+      // AMD require is available — ask for the full editor module.
+      require(["vs/editor/editor.main"], function () {
       if (monacoLoaded) return; // guard against double-fire
       monacoLoaded = true;
       clearTimeout(fallbackTimer);
@@ -1156,7 +1171,10 @@
       // Load file tree after editor is ready
       loadFileTree();
       _startPendingPushPoller();
-    });
+    }); // end require(["vs/editor/editor.main"])
+  } // end _tryLoad
+
+  _tryLoad(); // kick off the async-aware initialisation
   }
 
   // ── Pending-push poller (files pushed via /api/ide/push open automatically) ─

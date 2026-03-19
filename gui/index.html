@@ -626,17 +626,21 @@
     </div>
   </div>
 
-  <!-- Monaco Editor loader (CDN — used when online; app.js handles offline fallback) -->
+  <!-- Monaco Editor loader (CDN — async so the page never blocks on network; app.js handles offline fallback) -->
   <script>
     var require = { paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs" } };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs/loader.js"
+          async
+          onload="window.__monacoLoaderReady=true"
           onerror="window.__monacoLoaderFailed=true"></script>
-  <!-- xterm.js for the PTY terminal tab -->
+  <!-- xterm.js for the PTY terminal tab (async — non-blocking) -->
   <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"
+          async
           onerror="window.__xtermLoaderFailed=true"></script>
   <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"
+          async
           onerror="window.__xtermLoaderFailed=true"></script>
-  <script src="/gui/app.js"></script>
+  <script src="/gui/app.js" defer></script>
 </body>
 </html>
