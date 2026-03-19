@@ -580,7 +580,7 @@
       // TypeScript/ESLint: path(line,col): error TS...
       /^([^\s(]+)\((\d+),(\d+)\):\s*(error|warning)\s+(.*)$/gm,
       // Rust: error[E...]: msg\n --> path:line:col
-      /^\s*-->\s+([^\s:]+):(\d+):(\d+)/gm,
+      /^\s*-{2}>\s+([^\s:]+):(\d+):(\d+)/gm,
       // Generic: ERROR: msg
       /^(ERROR|error|Error):\s*(.*)$/gm,
     ];
@@ -606,7 +606,7 @@
         continue;
       }
       // Rust
-      m = line.match(/^\s*-->\s+([^\s:]+):(\d+):(\d+)/);
+      m = line.match(/^\s*-{2}>\s+([^\s:]+):(\d+):(\d+)/);
       if (m) {
         state.buildErrors.push({ file: m[1], line: parseInt(m[2]), col: parseInt(m[3]), severity: "error", message: line.trim() });
       }
@@ -1678,6 +1678,7 @@
         _startSelfBuild("");
       });
     }
+  }
 
   function _workOnTask(taskId, title, description) {
     const prompt =
