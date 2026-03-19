@@ -2025,6 +2025,7 @@
       // Focus search input when search panel is shown
       if (panel === "search") setTimeout(() => $("sb-search-input")?.focus(), 50);
       if (panel === "notes")   loadNotesPanel();
+      if (panel === "aibackends") loadAIBackendsPanel();
     });
   });
 
@@ -3299,4 +3300,100 @@
     }
   });
 
+  // ── AI Backends panel ────────────────────────────────────────────────────
+
+  async function loadAIBackendsPanel() {
+    const container = $("aibackends-panel-content");
+    if (!container) return;
+    container.innerHTML = '<div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>';
+    try {
+      const res = await fetch("/ai/backends");
+      const data = await res.json();
+      renderAIBackendsPanel(data);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderAIBackendsPanel(data) {
+    const container = $("aibackends-panel-content");
+    if (!container) return;
+    const active = data.active || "";
+    const backends = data.backends || [];
+
+    const statusDot = (s) => {
+      if (s === "ok") return '<span class="backend-dot backend-dot-ok"></span>';
+      if (s === "no_key") return '<span class="backend-dot backend-dot-warn"></span>';
+      return '<span class="backend-dot backend-dot-off"></span>';
+    };
+
+    const cards = backends.map((b) => `
+      <div class="backend-card${b.name === active ? " backend-card-active" : ""}">
+        <div class="backend-card-header">
+          ${statusDot(b.status)}
+          <span class="backend-card-name">${escHtmlSimple(b.display_name)}</span>
+          ${b.name === active ? '<span class="backend-active-badge">active</span>' : ""}
+        </div>
+        <div class="backend-card-meta">${escHtmlSimple(b.description)}</div>
+        ${b.model ? `<div class="backend-card-model">Model: ${escHtmlSimple(b.model)}</div>` : ""}
+        <div class="backend-card-actions">
+          <button class="backend-btn" data-action="test" data-backend="${escHtmlSimple(b.name)}">Test</button>
+          <button class="backend-btn backend-btn-switch" data-action="switch" data-backend="${escHtmlSimple(b.name)}"${b.name === active ? " disabled" : ""}>Switch</button>
+        </div>
+        <div class="backend-test-result" id="backend-result-${escHtmlSimple(b.name)}"></div>
+      </div>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:8px">AI BACKENDS</div>
+      <div style="font-size:11px;margin-bottom:10px;color:var(--text-dim,#999)">Active: <strong style="color:var(--accent)">${escHtmlSimple(active)}</strong></div>
+      ${cards}
+    `;
+
+    container.querySelectorAll(".backend-btn[data-action='test']").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.backend;
+        const resultEl = $(`backend-result-${name}`);
+        if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-muted);font-size:10px">Testing…</span>';
+        try {
+          const res = await fetch("/ai/backends/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ backend: name }),
+          });
+          const d = await res.json();
+          if (resultEl) {
+            const color = d.ok ? "var(--ok,#4caf50)" : "var(--danger,#f44)";
+            const models = d.models && d.models.length ? `<br>${d.models.slice(0, 5).map(escHtmlSimple).join(", ")}` : "";
+            resultEl.innerHTML = `<span style="color:${color};font-size:10px">${d.ok ? "✅" : "❌"} ${escHtmlSimple(d.message)}${models}</span>`;
+          }
+        } catch (e) {
+          if (resultEl) resultEl.innerHTML = `<span style="color:var(--danger);font-size:10px">Error: ${e.message}</span>`;
+        }
+      });
+    });
+
+    container.querySelectorAll(".backend-btn[data-action='switch']").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.backend;
+        try {
+          const res = await fetch("/ai/backends/switch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ backend: name }),
+          });
+          const d = await res.json();
+          if (d.ok) {
+            await loadAIBackendsPanel();
+            const llmSel = $("llm-select");
+            if (llmSel) llmSel.value = name;
+          }
+        } catch (e) {
+          alert(`Switch failed: ${e.message}`);
+        }
+      });
+    });
+  }
+
 })();
+

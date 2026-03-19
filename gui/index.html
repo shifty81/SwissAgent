@@ -48,6 +48,7 @@
       <button class="ab-btn" data-panel="utilities" title="Utilities (Phase 16)">⚙️</button>
       <button class="ab-btn" data-panel="notes"     title="Notes &amp; Tasks (Phase 17)">📝</button>
       <button class="ab-btn" data-panel="refactor"  title="Refactor (Phase 19)">🔧</button>
+      <button class="ab-btn" data-panel="aibackends" title="AI Backends (Phase 20)">🤖</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -498,6 +499,15 @@
           <input id="refactor-rename-glob" style="width:100%;box-sizing:border-box;margin-bottom:6px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Glob pattern (default: **/*)" />
           <button id="btn-refactor-rename" style="width:100%;margin-bottom:6px">Rename</button>
           <div id="refactor-rename-results" style="font-size:11px;font-family:var(--font-mono,monospace);max-height:120px;overflow-y:auto;background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px"></div>
+        </div>
+      </div>
+
+      <div class="sb-panel" id="panel-aibackends">
+        <div class="sidebar-header">
+          <span>🤖 AI Backends</span>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="aibackends-panel-content">
+          <div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>
         </div>
       </div>
 

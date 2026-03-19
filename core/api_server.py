@@ -6,6 +6,7 @@ import json
 import os
 import queue
 import re
+import requests
 import secrets
 import shutil
 import subprocess
@@ -416,6 +417,17 @@ class AiProposeRequest(BaseModel):
     language: str = ""
     path: str = ""
     llm_backend: str = ""
+
+
+class BackendTestRequest(BaseModel):
+    backend: str
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
+
+
+class BackendSwitchRequest(BaseModel):
+    backend: str
 
 
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
@@ -3429,7 +3441,173 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
 
+    # ── AI Backends ──────────────────────────────────────────────────────────
+
+    _KNOWN_BACKENDS = [
+        {
+            "name": "ollama",
+            "display_name": "Ollama",
+            "description": "Local Ollama server (llama3, mistral, etc.)",
+            "probe_type": "ollama",
+        },
+        {
+            "name": "api",
+            "display_name": "OpenAI API",
+            "description": "OpenAI-compatible API (GPT-4o, etc.)",
+            "probe_type": "openai_compat",
+        },
+        {
+            "name": "lmstudio",
+            "display_name": "LM Studio",
+            "description": "LM Studio local server (OpenAI-compatible, port 1234)",
+            "probe_type": "openai_compat",
+        },
+        {
+            "name": "openwebui",
+            "display_name": "Open WebUI",
+            "description": "Open WebUI frontend for local models",
+            "probe_type": "openai_compat",
+        },
+        {
+            "name": "localai",
+            "display_name": "LocalAI",
+            "description": "LocalAI OpenAI-compatible local inference server",
+            "probe_type": "openai_compat",
+        },
+        {
+            "name": "llamacpp",
+            "display_name": "llama.cpp server",
+            "description": "llama.cpp HTTP server (native /completion API)",
+            "probe_type": "llamacpp",
+        },
+        {
+            "name": "tabby",
+            "display_name": "Tabby",
+            "description": "TabbyML code-completion server",
+            "probe_type": "tabby",
+        },
+        {
+            "name": "anthropic",
+            "display_name": "Anthropic Claude",
+            "description": "Anthropic Claude API (requires API key)",
+            "probe_type": "key_only",
+        },
+        {
+            "name": "gemini",
+            "display_name": "Google Gemini",
+            "description": "Google Gemini API (requires API key)",
+            "probe_type": "key_only",
+        },
+        {
+            "name": "local",
+            "display_name": "Local (stub)",
+            "description": "Local stub backend (offline, no network)",
+            "probe_type": "local",
+        },
+    ]
+
+    def _probe_backend(name: str, probe_type: str, base_url: str, api_key: str) -> str:
+        """Return 'ok', 'unreachable', or 'no_key'."""
+        if probe_type == "key_only":
+            return "ok" if api_key else "no_key"
+        if probe_type == "local":
+            return "ok"
+        try:
+            if probe_type == "ollama":
+                url = f"{base_url.rstrip('/')}/api/tags"
+            elif probe_type == "tabby":
+                url = f"{base_url.rstrip('/')}/v1/health"
+            elif probe_type == "llamacpp":
+                url = f"{base_url.rstrip('/')}/health"
+            else:
+                url = f"{base_url.rstrip('/')}/v1/models"
+            resp = requests.get(url, timeout=2)
+            resp.raise_for_status()
+            return "ok"
+        except Exception:
+            return "unreachable"
+
+    @app.get("/ai/backends")
+    async def list_ai_backends() -> dict[str, Any]:
+        """List all configured AI backends with live connection status."""
+        active = config.get("agent.default_llm_backend", "ollama")
+        result = []
+        for b in _KNOWN_BACKENDS:
+            n = b["name"]
+            base_url = config.get(f"llm.{n}.base_url", "")
+            api_key = config.get(f"llm.{n}.key", "")
+            model = config.get(f"llm.{n}.model", "")
+            status = await asyncio.get_event_loop().run_in_executor(
+                None, _probe_backend, n, b["probe_type"], base_url, api_key
+            )
+            result.append({
+                "name": n,
+                "display_name": b["display_name"],
+                "description": b["description"],
+                "base_url": base_url,
+                "model": model,
+                "status": status,
+            })
+        return {"active": active, "backends": result}
+
+    @app.post("/ai/backends/test")
+    async def test_ai_backend(req: BackendTestRequest) -> dict[str, Any]:
+        """Test connection to a specific AI backend."""
+        name = req.backend.lower()
+        # Find probe type for this backend
+        probe_type = next(
+            (b["probe_type"] for b in _KNOWN_BACKENDS if b["name"] == name), "openai_compat"
+        )
+        base_url = req.base_url or config.get(f"llm.{name}.base_url", "")
+        api_key = req.api_key or config.get(f"llm.{name}.key", "")
+
+        if probe_type == "key_only":
+            if not api_key:
+                return {"ok": False, "message": "No API key configured", "models": []}
+            return {"ok": True, "message": "API key is set (connectivity not probed)", "models": []}
+
+        if probe_type == "local":
+            return {"ok": True, "message": "Local stub backend is always available", "models": []}
+
+        models: list[str] = []
+        try:
+            if probe_type == "ollama":
+                url = f"{base_url.rstrip('/')}/api/tags"
+                resp = requests.get(url, timeout=5)
+                resp.raise_for_status()
+                models = [m.get("name", "") for m in resp.json().get("models", [])]
+            elif probe_type == "tabby":
+                url = f"{base_url.rstrip('/')}/v1/health"
+                resp = requests.get(url, timeout=5)
+                resp.raise_for_status()
+            elif probe_type == "llamacpp":
+                url = f"{base_url.rstrip('/')}/health"
+                resp = requests.get(url, timeout=5)
+                if resp.status_code == 404:
+                    url = f"{base_url.rstrip('/')}/v1/models"
+                    resp = requests.get(url, timeout=5)
+                resp.raise_for_status()
+            else:
+                url = f"{base_url.rstrip('/')}/v1/models"
+                resp = requests.get(url, timeout=5)
+                resp.raise_for_status()
+                models = [m.get("id", "") for m in resp.json().get("data", [])]
+            return {"ok": True, "message": "Connected successfully", "models": models}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc), "models": []}
+
+    @app.post("/ai/backends/switch")
+    async def switch_ai_backend(req: BackendSwitchRequest) -> dict[str, Any]:
+        """Hot-swap the active LLM backend for this session."""
+        name = req.backend.lower()
+        known_names = {b["name"] for b in _KNOWN_BACKENDS}
+        if name not in known_names:
+            raise HTTPException(status_code=400, detail=f"Unknown backend '{name}'")
+        config.set("agent.default_llm_backend", name)
+        return {"ok": True, "backend": name}
+
     return app
+
 
 
 # ── Module-level helper functions for chat history + session memory ────────────

@@ -1519,3 +1519,90 @@ def test_refactor_extract(client):
     assert "diff" in data
     assert data["file"] == test_file
     client.post("/files/delete", json={"path": test_file})
+
+
+# ── Phase 20: AI Backend tests ────────────────────────────────────────────────
+
+def test_list_ai_backends(client):
+    """GET /ai/backends returns a dict with 'active' and 'backends' keys."""
+    res = client.get("/ai/backends")
+    assert res.status_code == 200
+    data = res.json()
+    assert "active" in data
+    assert "backends" in data
+    assert isinstance(data["backends"], list)
+    names = [b["name"] for b in data["backends"]]
+    assert "ollama" in names
+    assert "anthropic" in names
+    assert "gemini" in names
+    assert "lmstudio" in names
+    assert "llamacpp" in names
+    assert "tabby" in names
+
+
+def test_test_ai_backend(client):
+    """POST /ai/backends/test with a local backend returns a result."""
+    res = client.post("/ai/backends/test", json={"backend": "local"})
+    assert res.status_code == 200
+    data = res.json()
+    assert "ok" in data
+    assert data["ok"] is True
+    assert "message" in data
+    assert "models" in data
+
+
+def test_switch_ai_backend(client):
+    """POST /ai/backends/switch updates the active backend."""
+    res = client.post("/ai/backends/switch", json={"backend": "local"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["backend"] == "local"
+    # Verify it took effect
+    res2 = client.get("/ai/backends")
+    assert res2.json()["active"] == "local"
+
+
+def test_switch_ai_backend_invalid(client):
+    """POST /ai/backends/switch with an unknown backend returns 400."""
+    res = client.post("/ai/backends/switch", json={"backend": "nonexistent_backend_xyz"})
+    assert res.status_code == 400
+
+
+def test_lmstudio_instantiation():
+    """LMStudioLLM can be instantiated."""
+    from llm.lmstudio import LMStudioLLM
+    llm = LMStudioLLM(base_url="http://localhost:1234", model="test-model")
+    assert llm.base_url == "http://localhost:1234"
+    assert llm.model == "test-model"
+
+
+def test_anthropic_instantiation():
+    """AnthropicLLM can be instantiated."""
+    from llm.anthropic import AnthropicLLM
+    llm = AnthropicLLM(api_key="sk-test", model="claude-3-5-sonnet-20241022")
+    assert llm.model == "claude-3-5-sonnet-20241022"
+    assert llm.api_key == "sk-test"
+
+
+def test_gemini_instantiation():
+    """GeminiLLM can be instantiated."""
+    from llm.gemini import GeminiLLM
+    llm = GeminiLLM(api_key="test-key", model="gemini-2.0-flash")
+    assert llm.model == "gemini-2.0-flash"
+    assert llm.api_key == "test-key"
+
+
+def test_llamacpp_instantiation():
+    """LlamaCppLLM can be instantiated."""
+    from llm.llamacpp import LlamaCppLLM
+    llm = LlamaCppLLM(base_url="http://localhost:8080", model="")
+    assert llm.base_url == "http://localhost:8080"
+
+
+def test_tabby_instantiation():
+    """TabbyLLM can be instantiated."""
+    from llm.tabby import TabbyLLM
+    llm = TabbyLLM(base_url="http://localhost:8080", api_key="tok", model="StarCoder")
+    assert llm.base_url == "http://localhost:8080"
+    assert llm.model == "StarCoder"

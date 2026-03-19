@@ -1313,3 +1313,54 @@ body {
 .refactor-match-file { color: var(--accent, #569cd6); font-weight: 600; }
 .refactor-match-before { color: var(--danger, #f44); }
 .refactor-match-after { color: var(--ok, #4caf50); }
+
+/* ── Phase 20: AI Backends panel ─────────────────────────────────────────── */
+.backend-card {
+  border: 1px solid var(--border, #444);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  background: var(--bg2, #1e1e1e);
+}
+.backend-card-active { border-color: var(--accent, #569cd6); }
+.backend-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.backend-card-name { font-size: 12px; font-weight: 600; color: var(--text, #d4d4d4); }
+.backend-active-badge {
+  font-size: 9px;
+  background: var(--accent, #569cd6);
+  color: #fff;
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: auto;
+}
+.backend-card-meta { font-size: 10px; color: var(--text-dim, #888); margin-bottom: 3px; }
+.backend-card-model { font-size: 10px; color: var(--text-muted, #999); margin-bottom: 4px; font-family: var(--font-mono, monospace); }
+.backend-card-actions { display: flex; gap: 4px; margin-bottom: 4px; }
+.backend-btn {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  background: var(--surface2, #2d2d2d);
+  border: 1px solid var(--border, #444);
+  color: var(--text, #d4d4d4);
+}
+.backend-btn:hover { border-color: var(--accent, #569cd6); }
+.backend-btn:disabled { opacity: 0.4; cursor: default; }
+.backend-btn-switch { border-color: var(--accent, #569cd6); color: var(--accent, #569cd6); }
+.backend-test-result { min-height: 14px; font-size: 10px; }
+.backend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.backend-dot-ok   { background: var(--ok, #4caf50); }
+.backend-dot-warn { background: var(--warn, #f5a623); }
+.backend-dot-off  { background: var(--border, #555); }

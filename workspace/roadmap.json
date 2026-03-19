@@ -940,6 +940,77 @@
           "description": "Activity-bar panel with find-replace and rename forms"
         }
       ]
+    },
+    {
+      "id": "m20",
+      "title": "Phase 20 \u2014 Extended AI Backend Integrations",
+      "description": "LM Studio, llama.cpp, Tabby, Anthropic Claude, and Google Gemini backends plus AI Backends management panel",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t20-1",
+          "title": "LM Studio backend (llm/lmstudio.py)",
+          "status": "done",
+          "priority": "high",
+          "description": "OpenAI-compatible LM Studio server backend, default port 1234"
+        },
+        {
+          "id": "t20-2",
+          "title": "llama.cpp server backend (llm/llamacpp.py)",
+          "status": "done",
+          "priority": "high",
+          "description": "Native llama.cpp HTTP server backend with /completion and /v1/chat/completions"
+        },
+        {
+          "id": "t20-3",
+          "title": "Tabby code completion backend (llm/tabby.py)",
+          "status": "done",
+          "priority": "medium",
+          "description": "TabbyML code completion server backend"
+        },
+        {
+          "id": "t20-4",
+          "title": "Anthropic Claude backend (llm/anthropic.py)",
+          "status": "done",
+          "priority": "high",
+          "description": "Anthropic Claude API backend (claude-3-5-sonnet etc.)"
+        },
+        {
+          "id": "t20-5",
+          "title": "Google Gemini backend (llm/gemini.py)",
+          "status": "done",
+          "priority": "high",
+          "description": "Google Gemini API backend (gemini-2.0-flash etc.)"
+        },
+        {
+          "id": "t20-6",
+          "title": "GET /ai/backends \u2014 list backends with live status",
+          "status": "done",
+          "priority": "high",
+          "description": "Probe all backends and return connection status"
+        },
+        {
+          "id": "t20-7",
+          "title": "POST /ai/backends/test \u2014 test specific backend",
+          "status": "done",
+          "priority": "medium",
+          "description": "Test connection to a specific backend and return available models"
+        },
+        {
+          "id": "t20-8",
+          "title": "POST /ai/backends/switch \u2014 hot-swap active backend",
+          "status": "done",
+          "priority": "medium",
+          "description": "Switch active LLM backend without restart"
+        },
+        {
+          "id": "t20-9",
+          "title": "AI Backends settings panel in IDE",
+          "status": "done",
+          "priority": "medium",
+          "description": "Panel showing all backends with status indicators, test and switch buttons"
+        }
+      ]
     }
   ]
 }
