@@ -1322,3 +1322,363 @@ def test_debug_trace_current_process(client):
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "ok"
+
+
+# ── Phase 17: Notes & Tasks ───────────────────────────────────────────────────
+
+def test_notes_crud(client):
+    """Create, list, update, and delete a note."""
+    # Create
+    res = client.post("/notes", json={"title": "Test Note", "content": "hello"})
+    assert res.status_code == 200
+    note = res.json()["note"]
+    assert note["title"] == "Test Note"
+    note_id = note["id"]
+
+    # List
+    res = client.get("/notes")
+    assert res.status_code == 200
+    ids = [n["id"] for n in res.json()["notes"]]
+    assert note_id in ids
+
+    # Update
+    res = client.patch(f"/notes/{note_id}", json={"content": "updated"})
+    assert res.status_code == 200
+    assert res.json()["note"]["content"] == "updated"
+
+    # Delete
+    res = client.delete(f"/notes/{note_id}")
+    assert res.status_code == 200
+    assert res.json()["deleted"] == note_id
+
+    # Confirm gone
+    res = client.delete(f"/notes/{note_id}")
+    assert res.status_code == 404
+
+
+def test_notes_create_missing_title(client):
+    """POST /notes with empty title returns 400."""
+    res = client.post("/notes", json={"title": ""})
+    assert res.status_code == 400
+
+
+def test_tasks_crud(client):
+    """Create, list, update status, and delete a task."""
+    # Create
+    res = client.post("/tasks", json={"title": "Test Task", "status": "todo", "priority": "high"})
+    assert res.status_code == 200
+    task = res.json()["task"]
+    assert task["title"] == "Test Task"
+    task_id = task["id"]
+
+    # List
+    res = client.get("/tasks")
+    assert res.status_code == 200
+    ids = [t["id"] for t in res.json()["tasks"]]
+    assert task_id in ids
+
+    # Update status
+    res = client.patch(f"/tasks/{task_id}", json={"status": "in_progress"})
+    assert res.status_code == 200
+    assert res.json()["task"]["status"] == "in_progress"
+
+    # Delete
+    res = client.delete(f"/tasks/{task_id}")
+    assert res.status_code == 200
+    assert res.json()["deleted"] == task_id
+
+    # Confirm gone
+    res = client.delete(f"/tasks/{task_id}")
+    assert res.status_code == 404
+
+
+def test_tasks_invalid_status(client):
+    """POST /tasks with invalid status returns 400."""
+    res = client.post("/tasks", json={"title": "bad", "status": "invalid"})
+    assert res.status_code == 400
+
+
+# ── Phase 18: Git Advanced ────────────────────────────────────────────────────
+
+def test_git_log(client):
+    """GET /git/log returns 200 or 400 depending on git repo presence."""
+    res = client.get("/git/log?path=workspace")
+    assert res.status_code in (200, 400)
+    if res.status_code == 200:
+        assert "commits" in res.json()
+
+
+def test_git_branches(client):
+    """GET /git/branches returns 200 or 400."""
+    res = client.get("/git/branches?path=workspace")
+    assert res.status_code in (200, 400)
+    if res.status_code == 200:
+        assert "branches" in res.json()
+
+
+def test_git_stash_list(client):
+    """GET /git/stash returns 200 or 400."""
+    res = client.get("/git/stash?path=workspace")
+    assert res.status_code in (200, 400)
+    if res.status_code == 200:
+        assert "stash" in res.json()
+
+
+def test_git_blame(client):
+    """GET /git/blame returns 200 or 400."""
+    res = client.get("/git/blame?repo=workspace&file=README.md")
+    assert res.status_code in (200, 400)
+    if res.status_code == 200:
+        assert "blame" in res.json()
+
+
+def test_git_branch_create_missing_name(client):
+    """POST /git/branches with empty name returns 400."""
+    res = client.post("/git/branches?path=workspace", json={"name": ""})
+    assert res.status_code in (400,)
+
+
+def test_git_checkout_missing_target(client):
+    """POST /git/checkout with empty target returns 400."""
+    res = client.post("/git/checkout?path=workspace", json={"target": ""})
+    assert res.status_code == 400
+
+
+# ── Phase 19: Refactoring ─────────────────────────────────────────────────────
+
+def test_refactor_find_replace_dry_run(client, tmp_path):
+    """POST /refactor/find-replace with dry_run=true returns matches without modifying files."""
+    import os
+    # Create a test file in workspace
+    test_file = Path("workspace/_refactor_test.txt")
+    client.post("/files/write", json={"path": str(test_file), "content": "hello world\nhello again"})
+    res = client.post("/refactor/find-replace", json={
+        "find": "hello",
+        "replace": "goodbye",
+        "glob_pattern": "_refactor_test.txt",
+        "is_regex": False,
+        "dry_run": True,
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert "matches" in data
+    assert data["dry_run"] is True
+    assert data["files_changed"] == 0
+    # Cleanup
+    client.post("/files/delete", json={"path": str(test_file)})
+
+
+def test_refactor_find_replace_apply(client):
+    """POST /refactor/find-replace with dry_run=false modifies files."""
+    test_file = Path("workspace/_refactor_apply_test.txt")
+    client.post("/files/write", json={"path": str(test_file), "content": "FIND_ME is here"})
+    res = client.post("/refactor/find-replace", json={
+        "find": "FIND_ME",
+        "replace": "REPLACED",
+        "glob_pattern": "_refactor_apply_test.txt",
+        "is_regex": False,
+        "dry_run": False,
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["files_changed"] >= 1
+    # Verify file was changed
+    read_res = client.get(f"/files/read?path={test_file}")
+    assert "REPLACED" in read_res.json()["content"]
+    client.post("/files/delete", json={"path": str(test_file)})
+
+
+def test_refactor_rename(client):
+    """POST /refactor/rename renames a symbol across files."""
+    test_file = Path("workspace/_rename_test.txt")
+    client.post("/files/write", json={"path": str(test_file), "content": "old_symbol = 1\nuse_old_symbol()"})
+    res = client.post("/refactor/rename", json={
+        "old_name": "old_symbol",
+        "new_name": "new_symbol",
+        "glob_pattern": "_rename_test.txt",
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert "changes" in data
+    assert any(c["count"] >= 1 for c in data["changes"])
+    client.post("/files/delete", json={"path": str(test_file)})
+
+
+def test_refactor_extract(client):
+    """POST /refactor/extract extracts lines into a new function."""
+    test_file = "workspace/_extract_test.py"
+    client.post("/files/write", json={"path": test_file, "content": "x = 1\ny = 2\nz = x + y\n"})
+    res = client.post("/refactor/extract", json={
+        "file": test_file,
+        "start_line": 1,
+        "end_line": 3,
+        "new_name": "compute",
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert "diff" in data
+    assert data["file"] == test_file
+    client.post("/files/delete", json={"path": test_file})
+
+
+# ── Phase 20: AI Backend tests ────────────────────────────────────────────────
+
+def test_list_ai_backends(client):
+    """GET /ai/backends returns a dict with 'active' and 'backends' keys."""
+    res = client.get("/ai/backends")
+    assert res.status_code == 200
+    data = res.json()
+    assert "active" in data
+    assert "backends" in data
+    assert isinstance(data["backends"], list)
+    names = [b["name"] for b in data["backends"]]
+    assert "ollama" in names
+    assert "anthropic" in names
+    assert "gemini" in names
+    assert "lmstudio" in names
+    assert "llamacpp" in names
+    assert "tabby" in names
+
+
+def test_test_ai_backend(client):
+    """POST /ai/backends/test with a local backend returns a result."""
+    res = client.post("/ai/backends/test", json={"backend": "local"})
+    assert res.status_code == 200
+    data = res.json()
+    assert "ok" in data
+    assert data["ok"] is True
+    assert "message" in data
+    assert "models" in data
+
+
+def test_switch_ai_backend(client):
+    """POST /ai/backends/switch updates the active backend."""
+    res = client.post("/ai/backends/switch", json={"backend": "local"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["backend"] == "local"
+    # Verify it took effect
+    res2 = client.get("/ai/backends")
+    assert res2.json()["active"] == "local"
+
+
+def test_switch_ai_backend_invalid(client):
+    """POST /ai/backends/switch with an unknown backend returns 400."""
+    res = client.post("/ai/backends/switch", json={"backend": "nonexistent_backend_xyz"})
+    assert res.status_code == 400
+
+
+def test_lmstudio_instantiation():
+    """LMStudioLLM can be instantiated."""
+    from llm.lmstudio import LMStudioLLM
+    llm = LMStudioLLM(base_url="http://localhost:1234", model="test-model")
+    assert llm.base_url == "http://localhost:1234"
+    assert llm.model == "test-model"
+
+
+def test_anthropic_instantiation():
+    """AnthropicLLM can be instantiated."""
+    from llm.anthropic import AnthropicLLM
+    llm = AnthropicLLM(api_key="sk-test", model="claude-3-5-sonnet-20241022")
+    assert llm.model == "claude-3-5-sonnet-20241022"
+    assert llm.api_key == "sk-test"
+
+
+def test_gemini_instantiation():
+    """GeminiLLM can be instantiated."""
+    from llm.gemini import GeminiLLM
+    llm = GeminiLLM(api_key="test-key", model="gemini-2.0-flash")
+    assert llm.model == "gemini-2.0-flash"
+    assert llm.api_key == "test-key"
+
+
+def test_llamacpp_instantiation():
+    """LlamaCppLLM can be instantiated."""
+    from llm.llamacpp import LlamaCppLLM
+    llm = LlamaCppLLM(base_url="http://localhost:8080", model="")
+    assert llm.base_url == "http://localhost:8080"
+
+
+def test_tabby_instantiation():
+    """TabbyLLM can be instantiated."""
+    from llm.tabby import TabbyLLM
+    llm = TabbyLLM(base_url="http://localhost:8080", api_key="tok", model="StarCoder")
+    assert llm.base_url == "http://localhost:8080"
+    assert llm.model == "StarCoder"
+
+
+# ── Phase 21: Project Initialization Wizard ───────────────────────────────────
+
+def test_project_init_detect_python(client):
+    """GET /project/init/detect detects Python project."""
+    test_dir = Path("workspace/_test_init_python")
+    test_dir.mkdir(parents=True, exist_ok=True)
+    (test_dir / "requirements.txt").write_text("requests\n")
+    try:
+        res = client.get(f"/project/init/detect?path={test_dir}")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["language"] == "python"
+        assert data["package_manager"] == "pip"
+        assert "requirements.txt" in data["detected_files"]
+        assert "install_deps" in data["recommended_steps"]
+    finally:
+        import shutil
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
+def test_project_init_detect_nodejs(client):
+    """GET /project/init/detect detects Node.js project."""
+    test_dir = Path("workspace/_test_init_nodejs")
+    test_dir.mkdir(parents=True, exist_ok=True)
+    (test_dir / "package.json").write_text('{"name":"test","dependencies":{"react":"^18"}}')
+    try:
+        res = client.get(f"/project/init/detect?path={test_dir}")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["language"] == "nodejs"
+        assert data["framework"] == "react"
+        assert "package.json" in data["detected_files"]
+    finally:
+        import shutil
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
+def test_project_init_run_no_install(client):
+    """POST /project/init with only safe steps (no install_deps)."""
+    test_dir = Path("workspace/_test_init_run")
+    test_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        res = client.post("/project/init", json={
+            "project_path": str(test_dir),
+            "steps": ["create_gitignore", "create_editorconfig"],
+        })
+        assert res.status_code == 200
+        data = res.json()
+        assert "results" in data
+        steps_run = [r["step"] for r in data["results"]]
+        assert "create_gitignore" in steps_run
+        assert "create_editorconfig" in steps_run
+        for r in data["results"]:
+            assert r["ok"] is True
+        assert (test_dir / ".gitignore").exists()
+        assert (test_dir / ".editorconfig").exists()
+    finally:
+        import shutil
+        shutil.rmtree(test_dir, ignore_errors=True)
+
+
+def test_project_init_detect_unknown(client):
+    """GET /project/init/detect on empty dir returns unknown language."""
+    test_dir = Path("workspace/_test_init_unknown")
+    test_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        res = client.get(f"/project/init/detect?path={test_dir}")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["language"] == "unknown"
+        assert data["detected_files"] == []
+    finally:
+        import shutil
+        shutil.rmtree(test_dir, ignore_errors=True)

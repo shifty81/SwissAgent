@@ -36,5 +36,36 @@ def create_llm(backend: str, config: "ConfigLoader") -> "BaseLLM":
             model=config.get("llm.localai.model", "codestral"),
             api_key=config.get("llm.localai.key", ""),
         )
+    if backend == "lmstudio":
+        from llm.lmstudio import LMStudioLLM
+        return LMStudioLLM(
+            base_url=config.get("llm.lmstudio.base_url", "http://localhost:1234"),
+            model=config.get("llm.lmstudio.model", ""),
+        )
+    if backend == "llamacpp":
+        from llm.llamacpp import LlamaCppLLM
+        return LlamaCppLLM(
+            base_url=config.get("llm.llamacpp.base_url", "http://localhost:8080"),
+            model=config.get("llm.llamacpp.model", ""),
+        )
+    if backend == "tabby":
+        from llm.tabby import TabbyLLM
+        return TabbyLLM(
+            base_url=config.get("llm.tabby.base_url", "http://localhost:8080"),
+            api_key=config.get("llm.tabby.key", ""),
+            model=config.get("llm.tabby.model", ""),
+        )
+    if backend == "anthropic":
+        from llm.anthropic import AnthropicLLM
+        return AnthropicLLM(
+            api_key=config.get("llm.anthropic.key", ""),
+            model=config.get("llm.anthropic.model", "claude-3-5-sonnet-20241022"),
+        )
+    if backend == "gemini":
+        from llm.gemini import GeminiLLM
+        return GeminiLLM(
+            api_key=config.get("llm.gemini.key", ""),
+            model=config.get("llm.gemini.model", "gemini-2.0-flash"),
+        )
     from llm.local import LocalLLM
     return LocalLLM(model_path=config.get("llm.local.model_path", ""))

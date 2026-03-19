@@ -46,6 +46,9 @@
       <button class="ab-btn" data-panel="quality"  title="Code Quality">🔬</button>
       <button class="ab-btn" data-panel="templates" title="Templates & Toolchain">🧩</button>
       <button class="ab-btn" data-panel="utilities" title="Utilities (Phase 16)">⚙️</button>
+      <button class="ab-btn" data-panel="notes"     title="Notes &amp; Tasks (Phase 17)">📝</button>
+      <button class="ab-btn" data-panel="refactor"  title="Refactor (Phase 19)">🔧</button>
+      <button class="ab-btn" data-panel="aibackends" title="AI Backends (Phase 20)">🤖</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -432,6 +435,82 @@
         </div>
       </div>
 
+      <!-- ── Panel: Notes & Tasks ───────────────────────────────── -->
+      <div class="sb-panel" id="panel-notes">
+        <div class="sidebar-header">
+          <span>📝 Notes &amp; Tasks</span>
+          <div class="sidebar-buttons">
+            <button id="btn-notes-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto">
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">NOTES</div>
+          <div style="display:flex;gap:4px;margin-bottom:6px">
+            <input id="notes-new-title" style="flex:1;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Note title…" />
+            <button id="btn-notes-add" title="Add note">＋</button>
+          </div>
+          <div id="notes-list" style="margin-bottom:12px"></div>
+
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">TASK BOARD</div>
+          <div style="display:flex;gap:4px;margin-bottom:6px">
+            <input id="tasks-new-title" style="flex:1;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="New task…" />
+            <button id="btn-tasks-add" title="Add task">＋</button>
+          </div>
+          <div style="display:flex;gap:6px">
+            <div style="flex:1">
+              <div style="font-size:10px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px;text-align:center">TODO</div>
+              <div id="tasks-col-todo" class="kanban-col"></div>
+            </div>
+            <div style="flex:1">
+              <div style="font-size:10px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px;text-align:center">IN PROGRESS</div>
+              <div id="tasks-col-in_progress" class="kanban-col"></div>
+            </div>
+            <div style="flex:1">
+              <div style="font-size:10px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px;text-align:center">DONE</div>
+              <div id="tasks-col-done" class="kanban-col"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Refactor ────────────────────────────────────── -->
+      <div class="sb-panel" id="panel-refactor">
+        <div class="sidebar-header">
+          <span>🔧 Refactor</span>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto">
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">FIND &amp; REPLACE</div>
+          <input id="refactor-find" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Find…" />
+          <input id="refactor-replace" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Replace with…" />
+          <input id="refactor-glob" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Glob pattern (default: **/*)" />
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;font-size:11px">
+            <label><input type="checkbox" id="refactor-regex" /> Regex</label>
+            <label><input type="checkbox" id="refactor-dry-run" checked /> Dry run</label>
+          </div>
+          <div style="display:flex;gap:4px;margin-bottom:10px">
+            <button id="btn-refactor-preview" style="flex:1">Preview</button>
+            <button id="btn-refactor-apply" style="flex:1">Apply</button>
+          </div>
+          <div id="refactor-results" style="font-size:11px;font-family:var(--font-mono,monospace);max-height:180px;overflow-y:auto;background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px"></div>
+
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin:10px 0 6px">RENAME SYMBOL</div>
+          <input id="refactor-old-name" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Old name…" />
+          <input id="refactor-new-name" style="width:100%;box-sizing:border-box;margin-bottom:4px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="New name…" />
+          <input id="refactor-rename-glob" style="width:100%;box-sizing:border-box;margin-bottom:6px;padding:4px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Glob pattern (default: **/*)" />
+          <button id="btn-refactor-rename" style="width:100%;margin-bottom:6px">Rename</button>
+          <div id="refactor-rename-results" style="font-size:11px;font-family:var(--font-mono,monospace);max-height:120px;overflow-y:auto;background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px"></div>
+        </div>
+      </div>
+
+      <div class="sb-panel" id="panel-aibackends">
+        <div class="sidebar-header">
+          <span>🤖 AI Backends</span>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="aibackends-panel-content">
+          <div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>
+        </div>
+      </div>
+
     </aside>
 
     <!-- Editor + output column -->
@@ -591,6 +670,20 @@
       <div class="dialog-buttons">
         <button id="btn-clone-ok">Clone</button>
         <button id="btn-clone-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Project Init Wizard ──────────────────────────────────────────────── -->
+  <div id="init-wizard" class="modal-overlay hidden">
+    <div class="modal-box" style="min-width:480px;max-width:600px">
+      <h3>🚀 Initialize Project?</h3>
+      <p id="init-wizard-detect-summary" style="margin:8px 0;color:var(--fg-muted)">Detecting project type…</p>
+      <div id="init-wizard-steps" style="margin:12px 0"></div>
+      <div id="init-wizard-progress" class="hidden" style="margin:12px 0;font-family:monospace;font-size:12px;max-height:180px;overflow-y:auto;background:var(--bg-3);padding:8px;border-radius:4px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button id="btn-init-skip" class="btn-secondary">Skip</button>
+        <button id="btn-init-run" class="btn-primary">Initialize</button>
       </div>
     </div>
   </div>

@@ -39,6 +39,34 @@ model = "codestral"
 [llm.local]
 model_path = "models/model.gguf"
 
+[llm.lmstudio]
+# LM Studio local server (https://lmstudio.ai). Start server in LM Studio app → Local Server tab.
+base_url = "http://localhost:1234"
+# Leave blank to use whatever model is currently loaded in LM Studio
+model = ""
+
+[llm.llamacpp]
+# llama.cpp HTTP server. Run: ./llama-server -m model.gguf --port 8080
+base_url = "http://localhost:8080"
+model = ""
+
+[llm.tabby]
+# Tabby code-completion server (https://tabby.tabbyml.com).
+# docker run -it --gpus all -p 8080:8080 tabbyml/tabby serve --model TabbyML/StarCoder-1B
+base_url = "http://localhost:8080"
+key = ""
+model = ""
+
+[llm.anthropic]
+# Anthropic Claude API (https://console.anthropic.com → API Keys)
+key = ""
+model = "claude-3-5-sonnet-20241022"
+
+[llm.gemini]
+# Google Gemini API (https://aistudio.google.com → Get API Key)
+key = ""
+model = "gemini-2.0-flash"
+
 [permissions]
 allowed_dirs = ["workspace", "projects", "cache", "logs"]
 blocked_dirs = ["configs", "core", "llm"]

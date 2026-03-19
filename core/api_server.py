@@ -6,6 +6,7 @@ import json
 import os
 import queue
 import re
+import requests
 import secrets
 import shutil
 import subprocess
@@ -303,6 +304,76 @@ class AudioTrimRequest(BaseModel):
     end_ms: int = -1             # -1 = end of file
 
 
+# ── Phase 17: Notes & Tasks models ────────────────────────────────────────────
+
+class NoteCreateRequest(BaseModel):
+    title: str
+    content: str = ""
+    file_path: str = ""
+
+
+class NoteUpdateRequest(BaseModel):
+    title: str = ""
+    content: str = ""
+    file_path: str = ""
+
+
+class TaskCreateRequest(BaseModel):
+    title: str
+    description: str = ""
+    status: str = "todo"   # todo | in_progress | done
+    priority: str = "medium"
+
+
+class TaskUpdateRequest(BaseModel):
+    title: str = ""
+    description: str = ""
+    status: str = ""
+    priority: str = ""
+
+
+# ── Phase 18: Git Advanced models ─────────────────────────────────────────────
+
+class GitBranchCreateRequest(BaseModel):
+    name: str
+    base: str = ""
+
+
+class GitCheckoutRequest(BaseModel):
+    target: str
+    is_file: bool = False
+
+
+class GitStashPushRequest(BaseModel):
+    message: str = ""
+
+
+class GitStashPopRequest(BaseModel):
+    index: int = 0
+
+
+# ── Phase 19: Refactoring models ──────────────────────────────────────────────
+
+class RefactorFindReplaceRequest(BaseModel):
+    find: str
+    replace: str = ""
+    glob_pattern: str = "**/*"
+    is_regex: bool = False
+    dry_run: bool = True
+
+
+class RefactorRenameRequest(BaseModel):
+    old_name: str
+    new_name: str
+    glob_pattern: str = "**/*"
+
+
+class RefactorExtractRequest(BaseModel):
+    file: str
+    start_line: int
+    end_line: int
+    new_name: str
+
 
 class FormatRequest(BaseModel):
     content: str
@@ -346,6 +417,31 @@ class AiProposeRequest(BaseModel):
     language: str = ""
     path: str = ""
     llm_backend: str = ""
+
+
+class BackendTestRequest(BaseModel):
+    backend: str
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
+
+
+class BackendSwitchRequest(BaseModel):
+    backend: str
+
+
+class ProjectInitRequest(BaseModel):
+    project_path: str
+    steps: list[str] = []
+
+
+class ProjectInitDetectResult(BaseModel):
+    project_path: str
+    language: str
+    framework: str
+    package_manager: str
+    detected_files: list[str]
+    recommended_steps: list[str]
 
 
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
@@ -2817,7 +2913,1021 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             raise HTTPException(status_code=404, detail=result.get("error", "Trace failed"))
         return result
 
+    # ── Phase 17: Notes & Tasks ───────────────────────────────────────────────
+
+    def _notes_file() -> Path:
+        return base_dir / "workspace" / ".notes.json"
+
+    def _tasks_file() -> Path:
+        return base_dir / "workspace" / ".tasks.json"
+
+    def _load_json_list(path: Path) -> list:
+        if path.is_file():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return []
+
+    def _save_json_list(path: Path, data: list) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    @app.get("/notes")
+    async def notes_list() -> dict[str, Any]:
+        """List all notes."""
+        return {"notes": _load_json_list(_notes_file())}
+
+    @app.post("/notes")
+    async def notes_create(req: NoteCreateRequest) -> dict[str, Any]:
+        """Create a new note."""
+        import time as _time
+        if not req.title.strip():
+            raise HTTPException(status_code=400, detail="title is required")
+        notes = _load_json_list(_notes_file())
+        note = {
+            "id": str(len(notes) + 1) + "_" + str(int(_time.time())),
+            "title": req.title,
+            "content": req.content,
+            "file_path": req.file_path,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        notes.append(note)
+        _save_json_list(_notes_file(), notes)
+        return {"status": "ok", "note": note}
+
+    @app.patch("/notes/{note_id}")
+    async def notes_update(note_id: str, req: NoteUpdateRequest) -> dict[str, Any]:
+        """Update a note's title, content, or file_path."""
+        notes = _load_json_list(_notes_file())
+        for n in notes:
+            if n.get("id") == note_id:
+                if req.title:
+                    n["title"] = req.title
+                if req.content:
+                    n["content"] = req.content
+                if req.file_path:
+                    n["file_path"] = req.file_path
+                _save_json_list(_notes_file(), notes)
+                return {"status": "ok", "note": n}
+        raise HTTPException(status_code=404, detail=f"Note '{note_id}' not found")
+
+    @app.delete("/notes/{note_id}")
+    async def notes_delete(note_id: str) -> dict[str, Any]:
+        """Delete a note by id."""
+        notes = _load_json_list(_notes_file())
+        new_notes = [n for n in notes if n.get("id") != note_id]
+        if len(new_notes) == len(notes):
+            raise HTTPException(status_code=404, detail=f"Note '{note_id}' not found")
+        _save_json_list(_notes_file(), new_notes)
+        return {"status": "ok", "deleted": note_id}
+
+    @app.get("/tasks")
+    async def tasks_list() -> dict[str, Any]:
+        """List all task board items."""
+        return {"tasks": _load_json_list(_tasks_file())}
+
+    @app.post("/tasks")
+    async def tasks_create(req: TaskCreateRequest) -> dict[str, Any]:
+        """Create a new task."""
+        import time as _time
+        if not req.title.strip():
+            raise HTTPException(status_code=400, detail="title is required")
+        if req.status not in ("todo", "in_progress", "done"):
+            raise HTTPException(status_code=400, detail="status must be todo, in_progress, or done")
+        tasks = _load_json_list(_tasks_file())
+        task = {
+            "id": str(len(tasks) + 1) + "_" + str(int(_time.time())),
+            "title": req.title,
+            "description": req.description,
+            "status": req.status,
+            "priority": req.priority,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        tasks.append(task)
+        _save_json_list(_tasks_file(), tasks)
+        return {"status": "ok", "task": task}
+
+    @app.patch("/tasks/{task_id}")
+    async def tasks_update(task_id: str, req: TaskUpdateRequest) -> dict[str, Any]:
+        """Update a task."""
+        tasks = _load_json_list(_tasks_file())
+        for t in tasks:
+            if t.get("id") == task_id:
+                if req.title:
+                    t["title"] = req.title
+                if req.description:
+                    t["description"] = req.description
+                if req.status:
+                    if req.status not in ("todo", "in_progress", "done"):
+                        raise HTTPException(status_code=400, detail="status must be todo, in_progress, or done")
+                    t["status"] = req.status
+                if req.priority:
+                    t["priority"] = req.priority
+                _save_json_list(_tasks_file(), tasks)
+                return {"status": "ok", "task": t}
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
+
+    @app.delete("/tasks/{task_id}")
+    async def tasks_delete(task_id: str) -> dict[str, Any]:
+        """Delete a task by id."""
+        tasks = _load_json_list(_tasks_file())
+        new_tasks = [t for t in tasks if t.get("id") != task_id]
+        if len(new_tasks) == len(tasks):
+            raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
+        _save_json_list(_tasks_file(), new_tasks)
+        return {"status": "ok", "deleted": task_id}
+
+    # ── Phase 18: Git Advanced Features ──────────────────────────────────────
+
+    @app.get("/git/log")
+    async def git_log_endpoint(
+        path: str = Query(default="workspace"),
+        limit: int = Query(default=20),
+    ) -> dict[str, Any]:
+        """Return git commit log with sha, message, author, date, files_changed."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            sep = "|||"
+            fmt = f"%H{sep}%s{sep}%an{sep}%ai"
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "log", f"--pretty=format:{fmt}", f"-{limit}"],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=15,
+                ),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip())
+            commits = []
+            for line in proc.stdout.splitlines():
+                parts = line.split(sep, 3)
+                if len(parts) == 4:
+                    sha, msg, author, date = parts
+                    # count files changed
+                    stat_proc = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda s=sha: subprocess.run(
+                            ["git", "diff-tree", "--no-commit-id", "-r", "--name-only", s],
+                            cwd=str(repo_dir), capture_output=True, text=True, timeout=10,
+                        ),
+                    )
+                    files_changed = [f for f in stat_proc.stdout.splitlines() if f]
+                    commits.append({
+                        "sha": sha[:7],
+                        "full_sha": sha,
+                        "message": msg,
+                        "author": author,
+                        "date": date.strip(),
+                        "files_changed": files_changed,
+                    })
+            return {"commits": commits}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/git/branches")
+    async def git_branches_list(path: str = Query(default="workspace")) -> dict[str, Any]:
+        """List all branches, marking the current branch."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "branch", "-a"],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=10,
+                ),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip())
+            branches = []
+            for line in proc.stdout.splitlines():
+                is_current = line.startswith("*")
+                name = line.lstrip("* ").strip()
+                if name:
+                    branches.append({"name": name, "current": is_current})
+            return {"branches": branches}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/git/branches")
+    async def git_branch_create(req: GitBranchCreateRequest, path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Create a new branch, optionally from a base branch."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        if not req.name.strip():
+            raise HTTPException(status_code=400, detail="Branch name is required")
+        try:
+            cmd = ["git", "branch", req.name]
+            if req.base:
+                cmd.append(req.base)
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, cwd=str(repo_dir), capture_output=True, text=True, timeout=10),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            return {"status": "ok", "branch": req.name}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.delete("/git/branches/{name:path}")
+    async def git_branch_delete(name: str, path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Delete a branch."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "branch", "-d", name],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=10,
+                ),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            return {"status": "ok", "deleted": name}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/git/checkout")
+    async def git_checkout_endpoint(req: GitCheckoutRequest, path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Checkout a branch or restore a file."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        if not req.target.strip():
+            raise HTTPException(status_code=400, detail="target is required")
+        try:
+            if req.is_file:
+                cmd = ["git", "checkout", "--", req.target]
+            else:
+                cmd = ["git", "checkout", req.target]
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, cwd=str(repo_dir), capture_output=True, text=True, timeout=15),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            return {"status": "ok", "target": req.target}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/git/stash")
+    async def git_stash_list(path: str = Query(default="workspace")) -> dict[str, Any]:
+        """List all stash entries."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "stash", "list"],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=10,
+                ),
+            )
+            entries = [{"index": i, "description": line.strip()} for i, line in enumerate(proc.stdout.splitlines()) if line.strip()]
+            return {"stash": entries}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/git/stash")
+    async def git_stash_push(req: GitStashPushRequest, path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Push current changes to stash."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            cmd = ["git", "stash", "push"]
+            if req.message:
+                cmd += ["-m", req.message]
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, cwd=str(repo_dir), capture_output=True, text=True, timeout=15),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            return {"status": "ok", "output": proc.stdout.strip()}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/git/stash/pop")
+    async def git_stash_pop(req: GitStashPopRequest, path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Pop a stash entry."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            cmd = ["git", "stash", "pop", f"stash@{{{req.index}}}"]
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, cwd=str(repo_dir), capture_output=True, text=True, timeout=15),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            return {"status": "ok", "output": proc.stdout.strip()}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/git/blame")
+    async def git_blame_file(
+        repo: str = Query(default="workspace"),
+        file: str = Query(..., description="File path relative to the repo root"),
+    ) -> dict[str, Any]:
+        """Return per-line blame data: sha, author, date, line content."""
+        import subprocess
+        top = Path(repo).parts[0] if Path(repo).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, repo)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "blame", "--porcelain", file],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=15,
+                ),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            import datetime as _blame_dt
+            lines = []
+            current: dict[str, Any] = {}
+            line_num = 0
+            for raw in proc.stdout.splitlines():
+                if raw.startswith("\t"):
+                    line_num += 1
+                    lines.append({
+                        "line_num": line_num,
+                        "sha": current.get("sha", "")[:7],
+                        "author": current.get("author", ""),
+                        "date": current.get("date", ""),
+                        "line": raw[1:],
+                    })
+                    current = {}
+                elif " " in raw:
+                    key, _, val = raw.partition(" ")
+                    if len(key) == 40 and all(c in "0123456789abcdef" for c in key):
+                        current["sha"] = key
+                    elif key == "author":
+                        current["author"] = val
+                    elif key == "author-time":
+                        current["date"] = _blame_dt.datetime.fromtimestamp(int(val), tz=_blame_dt.timezone.utc).isoformat()
+            return {"blame": lines}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # ── Phase 19: Project-Wide Refactoring ───────────────────────────────────
+
+    @app.post("/refactor/find-replace")
+    async def refactor_find_replace(req: RefactorFindReplaceRequest) -> dict[str, Any]:
+        """Find (and optionally replace) text across all workspace files."""
+        import re as _re
+        import glob as _glob
+        workspace_dir = base_dir / "workspace"
+        pattern = req.glob_pattern or "**/*"
+        matches = []
+        files_changed = 0
+        try:
+            all_files = [
+                Path(p) for p in _glob.glob(str(workspace_dir / pattern), recursive=True)
+                if Path(p).is_file()
+            ]
+            for fpath in all_files:
+                try:
+                    text = fpath.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    continue
+                file_matches = []
+                if req.is_regex:
+                    try:
+                        compiled = _re.compile(req.find)
+                    except _re.error as e:
+                        raise HTTPException(status_code=400, detail=f"Invalid regex: {e}")
+                    for i, line in enumerate(text.splitlines(), 1):
+                        if compiled.search(line):
+                            after = compiled.sub(req.replace, line) if req.replace else line
+                            file_matches.append({"line": i, "before": line, "after": after})
+                else:
+                    for i, line in enumerate(text.splitlines(), 1):
+                        if req.find in line:
+                            after = line.replace(req.find, req.replace) if req.replace else line
+                            file_matches.append({"line": i, "before": line, "after": after})
+                if file_matches:
+                    rel = str(fpath.relative_to(base_dir))
+                    for m in file_matches:
+                        matches.append({"file": rel, "line": m["line"], "before": m["before"], "after": m["after"]})
+                    if not req.dry_run and req.replace:
+                        if req.is_regex:
+                            new_text = compiled.sub(req.replace, text)
+                        else:
+                            new_text = text.replace(req.find, req.replace)
+                        fpath.write_text(new_text, encoding="utf-8")
+                        files_changed += 1
+            return {"matches": matches, "files_changed": files_changed, "dry_run": req.dry_run}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/refactor/rename")
+    async def refactor_rename(req: RefactorRenameRequest) -> dict[str, Any]:
+        """Rename a symbol across all matching workspace files."""
+        import glob as _glob
+        if not req.old_name.strip() or not req.new_name.strip():
+            raise HTTPException(status_code=400, detail="old_name and new_name are required")
+        workspace_dir = base_dir / "workspace"
+        pattern = req.glob_pattern or "**/*"
+        changes = []
+        try:
+            all_files = [
+                Path(p) for p in _glob.glob(str(workspace_dir / pattern), recursive=True)
+                if Path(p).is_file()
+            ]
+            for fpath in all_files:
+                try:
+                    text = fpath.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    continue
+                count = text.count(req.old_name)
+                if count > 0:
+                    new_text = text.replace(req.old_name, req.new_name)
+                    fpath.write_text(new_text, encoding="utf-8")
+                    changes.append({"file": str(fpath.relative_to(base_dir)), "count": count})
+            return {"changes": changes}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/refactor/extract")
+    async def refactor_extract(req: RefactorExtractRequest) -> dict[str, Any]:
+        """Extract lines from a file into a new named function and return the diff."""
+        import difflib
+        if not req.file or not req.new_name.strip():
+            raise HTTPException(status_code=400, detail="file and new_name are required")
+        top = Path(req.file).parts[0] if Path(req.file).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        target = _safe_path(base_dir, req.file)
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail=f"File '{req.file}' not found")
+        try:
+            text = target.read_text(encoding="utf-8")
+            lines = text.splitlines(keepends=True)
+            total = len(lines)
+            s = max(0, req.start_line - 1)
+            e = min(total, req.end_line)
+            if s >= e:
+                raise HTTPException(status_code=400, detail="start_line must be less than end_line")
+            extracted = lines[s:e]
+            # Detect indent of first extracted line for de-indentation
+            first_indent = len(extracted[0]) - len(extracted[0].lstrip()) if extracted else 0
+            body = "".join("    " + ln[first_indent:] if ln.strip() else ln for ln in extracted)
+            func_def = f"\ndef {req.new_name}():\n{body}\n"
+            call_line = " " * first_indent + f"{req.new_name}()\n"
+            new_lines = lines[:s] + [call_line] + lines[e:]
+            new_text = func_def + "".join(new_lines)
+            diff = "".join(difflib.unified_diff(
+                lines, new_text.splitlines(keepends=True),
+                fromfile=req.file, tofile=req.file,
+            ))
+            target.write_text(new_text, encoding="utf-8")
+            return {"file": req.file, "diff": diff}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # ── AI Backends ──────────────────────────────────────────────────────────
+
+    _KNOWN_BACKENDS = [
+        {
+            "name": "ollama",
+            "display_name": "Ollama",
+            "description": "Local Ollama server (llama3, mistral, etc.)",
+            "probe_type": "ollama",
+        },
+        {
+            "name": "api",
+            "display_name": "OpenAI API",
+            "description": "OpenAI-compatible API (GPT-4o, etc.)",
+            "probe_type": "openai_compat",
+        },
+        {
+            "name": "lmstudio",
+            "display_name": "LM Studio",
+            "description": "LM Studio local server (OpenAI-compatible, port 1234)",
+            "probe_type": "openai_compat",
+        },
+        {
+            "name": "openwebui",
+            "display_name": "Open WebUI",
+            "description": "Open WebUI frontend for local models",
+            "probe_type": "openai_compat",
+        },
+        {
+            "name": "localai",
+            "display_name": "LocalAI",
+            "description": "LocalAI OpenAI-compatible local inference server",
+            "probe_type": "openai_compat",
+        },
+        {
+            "name": "llamacpp",
+            "display_name": "llama.cpp server",
+            "description": "llama.cpp HTTP server (native /completion API)",
+            "probe_type": "llamacpp",
+        },
+        {
+            "name": "tabby",
+            "display_name": "Tabby",
+            "description": "TabbyML code-completion server",
+            "probe_type": "tabby",
+        },
+        {
+            "name": "anthropic",
+            "display_name": "Anthropic Claude",
+            "description": "Anthropic Claude API (requires API key)",
+            "probe_type": "key_only",
+        },
+        {
+            "name": "gemini",
+            "display_name": "Google Gemini",
+            "description": "Google Gemini API (requires API key)",
+            "probe_type": "key_only",
+        },
+        {
+            "name": "local",
+            "display_name": "Local (stub)",
+            "description": "Local stub backend (offline, no network)",
+            "probe_type": "local",
+        },
+    ]
+
+    def _probe_backend(name: str, probe_type: str, base_url: str, api_key: str) -> str:
+        """Return 'ok', 'unreachable', or 'no_key'."""
+        if probe_type == "key_only":
+            return "ok" if api_key else "no_key"
+        if probe_type == "local":
+            return "ok"
+        try:
+            if probe_type == "ollama":
+                url = f"{base_url.rstrip('/')}/api/tags"
+            elif probe_type == "tabby":
+                url = f"{base_url.rstrip('/')}/v1/health"
+            elif probe_type == "llamacpp":
+                url = f"{base_url.rstrip('/')}/health"
+            else:
+                url = f"{base_url.rstrip('/')}/v1/models"
+            resp = requests.get(url, timeout=2)
+            resp.raise_for_status()
+            return "ok"
+        except Exception:
+            return "unreachable"
+
+    @app.get("/ai/backends")
+    async def list_ai_backends() -> dict[str, Any]:
+        """List all configured AI backends with live connection status."""
+        active = config.get("agent.default_llm_backend", "ollama")
+        result = []
+        for b in _KNOWN_BACKENDS:
+            n = b["name"]
+            base_url = config.get(f"llm.{n}.base_url", "")
+            api_key = config.get(f"llm.{n}.key", "")
+            model = config.get(f"llm.{n}.model", "")
+            status = await asyncio.get_event_loop().run_in_executor(
+                None, _probe_backend, n, b["probe_type"], base_url, api_key
+            )
+            result.append({
+                "name": n,
+                "display_name": b["display_name"],
+                "description": b["description"],
+                "base_url": base_url,
+                "model": model,
+                "status": status,
+            })
+        return {"active": active, "backends": result}
+
+    @app.post("/ai/backends/test")
+    async def test_ai_backend(req: BackendTestRequest) -> dict[str, Any]:
+        """Test connection to a specific AI backend."""
+        name = req.backend.lower()
+        # Find probe type for this backend
+        probe_type = next(
+            (b["probe_type"] for b in _KNOWN_BACKENDS if b["name"] == name), "openai_compat"
+        )
+        base_url = req.base_url or config.get(f"llm.{name}.base_url", "")
+        api_key = req.api_key or config.get(f"llm.{name}.key", "")
+
+        if probe_type == "key_only":
+            if not api_key:
+                return {"ok": False, "message": "No API key configured", "models": []}
+            return {"ok": True, "message": "API key is set (connectivity not probed)", "models": []}
+
+        if probe_type == "local":
+            return {"ok": True, "message": "Local stub backend is always available", "models": []}
+
+        models: list[str] = []
+        try:
+            if probe_type == "ollama":
+                url = f"{base_url.rstrip('/')}/api/tags"
+                resp = requests.get(url, timeout=5)
+                resp.raise_for_status()
+                models = [m.get("name", "") for m in resp.json().get("models", [])]
+            elif probe_type == "tabby":
+                url = f"{base_url.rstrip('/')}/v1/health"
+                resp = requests.get(url, timeout=5)
+                resp.raise_for_status()
+            elif probe_type == "llamacpp":
+                url = f"{base_url.rstrip('/')}/health"
+                resp = requests.get(url, timeout=5)
+                if resp.status_code == 404:
+                    url = f"{base_url.rstrip('/')}/v1/models"
+                    resp = requests.get(url, timeout=5)
+                resp.raise_for_status()
+            else:
+                url = f"{base_url.rstrip('/')}/v1/models"
+                resp = requests.get(url, timeout=5)
+                resp.raise_for_status()
+                models = [m.get("id", "") for m in resp.json().get("data", [])]
+            return {"ok": True, "message": "Connected successfully", "models": models}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc), "models": []}
+
+    @app.post("/ai/backends/switch")
+    async def switch_ai_backend(req: BackendSwitchRequest) -> dict[str, Any]:
+        """Hot-swap the active LLM backend for this session."""
+        name = req.backend.lower()
+        known_names = {b["name"] for b in _KNOWN_BACKENDS}
+        if name not in known_names:
+            raise HTTPException(status_code=400, detail=f"Unknown backend '{name}'")
+        config.set("agent.default_llm_backend", name)
+        return {"ok": True, "backend": name}
+
+    # ── Project Initialization Wizard (Phase 21) ──────────────────────────
+
+    _GITIGNORE_TEMPLATES: dict[str, str] = {
+        "python": "__pycache__/\n*.pyc\n.venv/\ndist/\nbuild/\n*.egg-info/\n.env\n",
+        "nodejs": "node_modules/\ndist/\n.env\n*.log\n.cache/\n",
+        "rust": "target/\nCargo.lock\n",
+        "go": "*.exe\nvendor/\n",
+        "java": "target/\n*.class\n.gradle/\n",
+        "php": "vendor/\n.env\n",
+        "ruby": ".bundle/\nvendor/bundle/\n.env\n",
+        "dart": ".dart_tool/\nbuild/\n.env\n",
+        "cpp": "build/\n*.o\n*.out\n",
+        "dotnet": "bin/\nobj/\n.env\n",
+    }
+
+    _EDITORCONFIG = """\
+root = true
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+[*.{js,ts,jsx,tsx,json,yaml,yml,html,css}]
+indent_size = 2
+[Makefile]
+indent_style = tab
+"""
+
+    def _detect_project(project_dir: Path) -> dict[str, Any]:
+        """Inspect *project_dir* and return detection results."""
+        files = {f.name for f in project_dir.iterdir() if f.is_file()} if project_dir.is_dir() else set()
+        # Also check for .csproj / .sln by extension
+        ext_files = {f.suffix for f in project_dir.iterdir() if f.is_file()} if project_dir.is_dir() else set()
+
+        language = "unknown"
+        framework = ""
+        package_manager = ""
+        detected: list[str] = []
+        steps: list[str] = ["create_gitignore", "create_editorconfig"]
+
+        if "package.json" in files:
+            language = "nodejs"
+            package_manager = "yarn" if "yarn.lock" in files else "npm"
+            detected.append("package.json")
+            # Detect JS framework from package.json
+            try:
+                pkg = json.loads((project_dir / "package.json").read_text(encoding="utf-8", errors="replace"))
+                deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+                for fw in ("next", "react", "vue", "angular", "svelte", "express", "fastify", "nuxt", "remix"):
+                    if fw in deps:
+                        framework = fw
+                        break
+            except Exception:
+                pass
+            steps.insert(0, "install_deps")
+            steps.append("create_env_example")
+        elif "requirements.txt" in files:
+            language = "python"
+            package_manager = "pip"
+            detected.append("requirements.txt")
+            steps.insert(0, "install_deps")
+            steps.append("create_env_example")
+        elif "pyproject.toml" in files:
+            language = "python"
+            package_manager = "pip_pyproject"
+            detected.append("pyproject.toml")
+            steps.insert(0, "install_deps")
+            steps.append("create_env_example")
+        elif "setup.py" in files:
+            language = "python"
+            package_manager = "pip_pyproject"
+            detected.append("setup.py")
+            steps.insert(0, "install_deps")
+        elif "Cargo.toml" in files:
+            language = "rust"
+            package_manager = "cargo"
+            detected.append("Cargo.toml")
+            steps.insert(0, "install_deps")
+        elif "go.mod" in files:
+            language = "go"
+            package_manager = "go"
+            detected.append("go.mod")
+            steps.insert(0, "install_deps")
+        elif "pom.xml" in files:
+            language = "java"
+            package_manager = "maven"
+            detected.append("pom.xml")
+        elif "build.gradle" in files:
+            language = "java"
+            package_manager = "gradle"
+            detected.append("build.gradle")
+        elif ".csproj" in ext_files or ".sln" in ext_files:
+            language = "dotnet"
+            package_manager = "dotnet"
+            for f in project_dir.iterdir():
+                if f.suffix in (".csproj", ".sln"):
+                    detected.append(f.name)
+        elif "composer.json" in files:
+            language = "php"
+            package_manager = "composer"
+            detected.append("composer.json")
+            steps.insert(0, "install_deps")
+        elif "Gemfile" in files:
+            language = "ruby"
+            package_manager = "bundle"
+            detected.append("Gemfile")
+            steps.insert(0, "install_deps")
+        elif "pubspec.yaml" in files:
+            language = "dart"
+            package_manager = "flutter"
+            detected.append("pubspec.yaml")
+        elif "CMakeLists.txt" in files:
+            language = "cpp"
+            package_manager = "cmake"
+            detected.append("CMakeLists.txt")
+
+        # Filter steps: only add create_env_example if .env exists but .env.example doesn't
+        if "create_env_example" in steps:
+            has_env = any(f in files for f in (".env", ".env.local", ".env.development"))
+            has_example = ".env.example" in files
+            if not has_env or has_example:
+                steps.remove("create_env_example")
+
+        # Remove create_gitignore if already exists
+        if ".gitignore" in files and "create_gitignore" in steps:
+            steps.remove("create_gitignore")
+
+        # Remove create_editorconfig if already exists
+        if ".editorconfig" in files and "create_editorconfig" in steps:
+            steps.remove("create_editorconfig")
+
+        return {
+            "language": language,
+            "framework": framework,
+            "package_manager": package_manager,
+            "detected_files": detected,
+            "recommended_steps": steps,
+        }
+
+    async def _run_install(project_dir: Path, pm: str) -> tuple[bool, str]:
+        """Run package manager install in the project directory."""
+        cmds: dict[str, list[str]] = {
+            "pip": [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+            "pip_pyproject": [sys.executable, "-m", "pip", "install", "-e", ".[dev]"],
+            "npm": ["npm", "install"],
+            "yarn": ["yarn", "install"],
+            "cargo": ["cargo", "build"],
+            "go": ["go", "mod", "download"],
+            "composer": ["composer", "install"],
+            "bundle": ["bundle", "install"],
+        }
+        cmd = cmds.get(pm)
+        if not cmd:
+            return False, f"Unknown package manager: {pm}"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, cwd=str(project_dir),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            return proc.returncode == 0, out.decode(errors="replace")
+        except asyncio.TimeoutError:
+            return False, "Install timed out after 120s"
+        except Exception as exc:
+            return False, str(exc)
+
+    async def _run_init_step(
+        step: str, project_dir: Path, language: str
+    ) -> tuple[bool, str]:
+        """Execute a single init step; return (ok, output)."""
+        if step == "install_deps":
+            info = _detect_project(project_dir)
+            pm = info["package_manager"]
+            ok, out = await _run_install(project_dir, pm)
+            return ok, out
+
+        if step == "create_gitignore":
+            dest = project_dir / ".gitignore"
+            if dest.exists():
+                return True, ".gitignore already exists — skipped"
+            template = _GITIGNORE_TEMPLATES.get(language, "")
+            dest.write_text(template, encoding="utf-8")
+            return True, f"Created .gitignore for {language}"
+
+        if step == "create_editorconfig":
+            dest = project_dir / ".editorconfig"
+            if dest.exists():
+                return True, ".editorconfig already exists — skipped"
+            dest.write_text(_EDITORCONFIG, encoding="utf-8")
+            return True, "Created .editorconfig"
+
+        if step == "create_env_example":
+            dest = project_dir / ".env.example"
+            if dest.exists():
+                return True, ".env.example already exists — skipped"
+            # Copy .env if present, stripping values; else create empty stub
+            env_src = next(
+                (project_dir / n for n in (".env", ".env.local") if (project_dir / n).exists()),
+                None,
+            )
+            if env_src:
+                lines = []
+                for line in env_src.read_text(encoding="utf-8", errors="replace").splitlines():
+                    if "=" in line and not line.startswith("#"):
+                        key = line.split("=", 1)[0]
+                        lines.append(f"{key}=")
+                    else:
+                        lines.append(line)
+                dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            else:
+                dest.write_text("# Add environment variables here\n", encoding="utf-8")
+            return True, "Created .env.example"
+
+        return False, f"Unknown step: {step}"
+
+    @app.get("/project/init/detect")
+    async def project_init_detect(path: str = Query(...)) -> dict[str, Any]:
+        """Detect language/framework/package-manager for a project directory."""
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BROWSER_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        project_dir = _safe_path(base_dir, path)
+        if not project_dir.is_dir():
+            raise HTTPException(status_code=404, detail="Project directory not found")
+        info = _detect_project(project_dir)
+        return {"project_path": path, **info}
+
+    @app.post("/project/init")
+    async def project_init(req: ProjectInitRequest) -> dict[str, Any]:
+        """Run project initialization steps synchronously."""
+        top = Path(req.project_path).parts[0] if Path(req.project_path).parts else ""
+        if top not in _BROWSER_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        project_dir = _safe_path(base_dir, req.project_path)
+        if not project_dir.is_dir():
+            raise HTTPException(status_code=404, detail="Project directory not found")
+
+        info = _detect_project(project_dir)
+        language = info["language"]
+        steps = req.steps if req.steps else info["recommended_steps"]
+
+        results = []
+        for step in steps:
+            ok, output = await _run_init_step(step, project_dir, language)
+            results.append({"step": step, "ok": ok, "output": output})
+
+        return {
+            "steps_run": steps,
+            "results": results,
+            "language": language,
+            "framework": info["framework"],
+        }
+
+    @app.websocket("/ws/project-init")
+    async def ws_project_init(websocket: WebSocket) -> None:
+        """Stream project initialization progress step by step."""
+        await websocket.accept()
+        try:
+            raw = await websocket.receive_text()
+            data = json.loads(raw)
+            project_path = data.get("project_path", "")
+            requested_steps: list[str] = data.get("steps", [])
+
+            top = Path(project_path).parts[0] if Path(project_path).parts else ""
+            if top not in _BROWSER_ROOTS:
+                await websocket.send_text(json.dumps({
+                    "step": "validate", "status": "error",
+                    "output": f"Root '{top}' not allowed",
+                }))
+                return
+
+            project_dir = _safe_path(base_dir, project_path)
+            if not project_dir.is_dir():
+                await websocket.send_text(json.dumps({
+                    "step": "validate", "status": "error",
+                    "output": "Project directory not found",
+                }))
+                return
+
+            info = _detect_project(project_dir)
+            language = info["language"]
+            steps = requested_steps if requested_steps else info["recommended_steps"]
+
+            for step in steps:
+                await websocket.send_text(json.dumps({
+                    "step": step, "status": "running", "output": "",
+                }))
+                ok, output = await _run_init_step(step, project_dir, language)
+                await websocket.send_text(json.dumps({
+                    "step": step,
+                    "status": "ok" if ok else "error",
+                    "output": output,
+                }))
+
+        except WebSocketDisconnect:
+            pass
+        except Exception as exc:
+            try:
+                await websocket.send_text(json.dumps({
+                    "step": "error", "status": "error", "output": str(exc),
+                }))
+            except Exception:
+                pass
+
     return app
+
 
 
 # ── Module-level helper functions for chat history + session memory ────────────

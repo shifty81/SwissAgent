@@ -832,6 +832,228 @@
           "description": "Use os.path.samefile() instead of == for path comparison in ignore_fn to handle Windows case-insensitive paths"
         }
       ]
+    },
+    {
+      "id": "m17",
+      "title": "Phase 17 \u2014 Workspace Notes & Task Board",
+      "description": "Persistent notes and Kanban task board with REST API and IDE panel",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t17-1",
+          "title": "Notes CRUD endpoints (GET/POST/PATCH/DELETE /notes)",
+          "status": "done",
+          "priority": "high",
+          "description": "Persistent notes stored in workspace/.notes.json"
+        },
+        {
+          "id": "t17-2",
+          "title": "Task board endpoints (GET/POST/PATCH/DELETE /tasks)",
+          "status": "done",
+          "priority": "high",
+          "description": "Kanban task board stored in workspace/.tasks.json with todo/in_progress/done columns"
+        },
+        {
+          "id": "t17-3",
+          "title": "Notes & Task Board panel in IDE",
+          "status": "done",
+          "priority": "medium",
+          "description": "Activity-bar panel showing notes list and kanban board"
+        }
+      ]
+    },
+    {
+      "id": "m18",
+      "title": "Phase 18 \u2014 Git Advanced Features",
+      "description": "Git log browser, branch manager, stash support, blame viewer, and enhanced Git panel",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t18-1",
+          "title": "Git log endpoint (GET /git/log)",
+          "status": "done",
+          "priority": "high",
+          "description": "Commit history with sha, message, author, date, files_changed"
+        },
+        {
+          "id": "t18-2",
+          "title": "Branch management endpoints (GET/POST/DELETE /git/branches, POST /git/checkout)",
+          "status": "done",
+          "priority": "high",
+          "description": "List, create, delete branches and checkout"
+        },
+        {
+          "id": "t18-3",
+          "title": "Stash management (POST/GET /git/stash, POST /git/stash/pop)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Push to stash, list stash entries, pop from stash"
+        },
+        {
+          "id": "t18-4",
+          "title": "Git blame endpoint (GET /git/blame)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Per-line blame data: sha, author, date, line content"
+        },
+        {
+          "id": "t18-5",
+          "title": "Enhanced Git panel in IDE",
+          "status": "done",
+          "priority": "medium",
+          "description": "Tabbed Git panel with log viewer, branch manager, and stash panel"
+        }
+      ]
+    },
+    {
+      "id": "m19",
+      "title": "Phase 19 \u2014 Project-Wide Refactoring",
+      "description": "Multi-file find-replace, symbol rename, and extract-function endpoints plus Refactoring panel in IDE",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t19-1",
+          "title": "Project-wide find-replace endpoint (POST /refactor/find-replace)",
+          "status": "done",
+          "priority": "high",
+          "description": "Find and optionally replace text/regex across all workspace files with dry-run mode"
+        },
+        {
+          "id": "t19-2",
+          "title": "Symbol rename endpoint (POST /refactor/rename)",
+          "status": "done",
+          "priority": "high",
+          "description": "Rename a symbol across all matching workspace files"
+        },
+        {
+          "id": "t19-3",
+          "title": "Extract-function endpoint (POST /refactor/extract)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Extract selected lines from a file into a new named function"
+        },
+        {
+          "id": "t19-4",
+          "title": "Refactoring panel in IDE",
+          "status": "done",
+          "priority": "medium",
+          "description": "Activity-bar panel with find-replace and rename forms"
+        }
+      ]
+    },
+    {
+      "id": "m20",
+      "title": "Phase 20 \u2014 Extended AI Backend Integrations",
+      "description": "LM Studio, llama.cpp, Tabby, Anthropic Claude, and Google Gemini backends plus AI Backends management panel",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t20-1",
+          "title": "LM Studio backend (llm/lmstudio.py)",
+          "status": "done",
+          "priority": "high",
+          "description": "OpenAI-compatible LM Studio server backend, default port 1234"
+        },
+        {
+          "id": "t20-2",
+          "title": "llama.cpp server backend (llm/llamacpp.py)",
+          "status": "done",
+          "priority": "high",
+          "description": "Native llama.cpp HTTP server backend with /completion and /v1/chat/completions"
+        },
+        {
+          "id": "t20-3",
+          "title": "Tabby code completion backend (llm/tabby.py)",
+          "status": "done",
+          "priority": "medium",
+          "description": "TabbyML code completion server backend"
+        },
+        {
+          "id": "t20-4",
+          "title": "Anthropic Claude backend (llm/anthropic.py)",
+          "status": "done",
+          "priority": "high",
+          "description": "Anthropic Claude API backend (claude-3-5-sonnet etc.)"
+        },
+        {
+          "id": "t20-5",
+          "title": "Google Gemini backend (llm/gemini.py)",
+          "status": "done",
+          "priority": "high",
+          "description": "Google Gemini API backend (gemini-2.0-flash etc.)"
+        },
+        {
+          "id": "t20-6",
+          "title": "GET /ai/backends \u2014 list backends with live status",
+          "status": "done",
+          "priority": "high",
+          "description": "Probe all backends and return connection status"
+        },
+        {
+          "id": "t20-7",
+          "title": "POST /ai/backends/test \u2014 test specific backend",
+          "status": "done",
+          "priority": "medium",
+          "description": "Test connection to a specific backend and return available models"
+        },
+        {
+          "id": "t20-8",
+          "title": "POST /ai/backends/switch \u2014 hot-swap active backend",
+          "status": "done",
+          "priority": "medium",
+          "description": "Switch active LLM backend without restart"
+        },
+        {
+          "id": "t20-9",
+          "title": "AI Backends settings panel in IDE",
+          "status": "done",
+          "priority": "medium",
+          "description": "Panel showing all backends with status indicators, test and switch buttons"
+        }
+      ]
+    },
+    {
+      "id": "m21",
+      "title": "Phase 21 \u2014 Project Initialization Wizard",
+      "description": "AI-assisted project setup wizard that detects language/framework, installs deps, and scaffolds config files when a project is added via the GUI",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t21-1",
+          "title": "GET /project/init/detect \u2014 detect project type",
+          "status": "done",
+          "priority": "high",
+          "description": "Detect language, framework, package manager from project files"
+        },
+        {
+          "id": "t21-2",
+          "title": "POST /project/init \u2014 run initialization steps",
+          "status": "done",
+          "priority": "high",
+          "description": "Install deps, create .gitignore, .editorconfig, .env.example"
+        },
+        {
+          "id": "t21-3",
+          "title": "WebSocket /ws/project-init \u2014 streaming init progress",
+          "status": "done",
+          "priority": "medium",
+          "description": "Stream step-by-step initialization progress"
+        },
+        {
+          "id": "t21-4",
+          "title": "Project init wizard dialog in IDE GUI",
+          "status": "done",
+          "priority": "high",
+          "description": "Modal dialog with detect summary, step checkboxes, and streaming progress log"
+        },
+        {
+          "id": "t21-5",
+          "title": "Auto-trigger wizard after import and clone",
+          "status": "done",
+          "priority": "high",
+          "description": "showInitWizard() called automatically after successful doImport() and doClone()"
+        }
+      ]
     }
   ]
 }

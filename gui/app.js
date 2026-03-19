@@ -920,6 +920,7 @@
       $("import-dialog").classList.add("hidden");
       appendOutput(`✓ Imported project: ${data.destination || sourcePath}\n`);
       await loadFileTree();
+      showInitWizard(data.destination || `workspace/${destName || sourcePath.split('/').pop()}`);
     } catch (e) {
       appendOutput(`Error importing: ${e.message}\n`);
     }
@@ -1393,6 +1394,10 @@
     if (e.key === "Escape") $("clone-dialog").classList.add("hidden");
   });
 
+  // Init wizard
+  $("btn-init-skip").addEventListener("click", () => $("init-wizard").classList.add("hidden"));
+  $("btn-init-run").addEventListener("click", runInitWizard);
+
   // ── Git clone ──────────────────────────────────────────────────────────────
   function showCloneDialog() {
     $("clone-url").value = "";
@@ -1427,13 +1432,86 @@
       await loadFileTree();
       await _refreshProjectSwitcher();
       appendOutput(`✓ Cloned ${url} → ${data.destination}\n`);
-      setTimeout(() => $("clone-dialog").classList.add("hidden"), 1500);
+      setTimeout(() => {
+        $("clone-dialog").classList.add("hidden");
+        showInitWizard(`workspace/${data.destination}`);
+      }, 1500);
     } catch (e) {
       status.className = "clone-status error";
       status.textContent = `⚠ ${e.message}`;
     } finally {
       $("btn-clone-ok").disabled = false;
     }
+  }
+
+  // ── Project Init Wizard ────────────────────────────────────────────────────
+  async function showInitWizard(projectPath) {
+    $("init-wizard").classList.remove("hidden");
+    $("init-wizard-detect-summary").textContent = "Detecting project type…";
+    $("init-wizard-steps").innerHTML = "";
+    $("init-wizard-progress").classList.add("hidden");
+    $("btn-init-run").disabled = false;
+
+    try {
+      const res = await fetch(`/project/init/detect?path=${encodeURIComponent(projectPath)}`);
+      const data = await res.json();
+
+      const lang = data.language || "unknown";
+      const fw = data.framework ? ` / ${data.framework}` : "";
+      $("init-wizard-detect-summary").textContent =
+        `Detected: ${lang}${fw}. Choose setup steps:`;
+
+      const steps = data.recommended_steps || [];
+      const stepLabels = {
+        install_deps: "Install dependencies",
+        create_gitignore: "Create .gitignore",
+        create_editorconfig: "Create .editorconfig",
+        create_env_example: "Create .env.example",
+      };
+      $("init-wizard-steps").innerHTML = steps.map(s =>
+        `<label style="display:block;margin:4px 0">
+          <input type="checkbox" value="${s}" checked> ${stepLabels[s] || s}
+        </label>`
+      ).join("") || '<em style="color:var(--fg-muted)">No setup steps detected.</em>';
+
+      $("btn-init-run").dataset.path = projectPath;
+      if (!steps.length) $("btn-init-run").disabled = true;
+    } catch (e) {
+      $("init-wizard-detect-summary").textContent = `Could not detect project type: ${e.message}`;
+    }
+  }
+
+  async function runInitWizard() {
+    const projectPath = $("btn-init-run").dataset.path;
+    const checked = [...$("init-wizard-steps").querySelectorAll("input:checked")].map(c => c.value);
+    if (!checked.length) { $("init-wizard").classList.add("hidden"); return; }
+
+    $("btn-init-run").disabled = true;
+    $("btn-init-skip").disabled = true;
+    const progress = $("init-wizard-progress");
+    progress.classList.remove("hidden");
+    progress.textContent = "";
+
+    const wsProto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${wsProto}://${location.host}/ws/project-init`);
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ project_path: projectPath, steps: checked }));
+    };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        const icon = msg.status === "ok" ? "✓" : msg.status === "error" ? "✗" : "⟳";
+        progress.textContent += `${icon} [${msg.step}] ${msg.output || ""}\n`;
+        progress.scrollTop = progress.scrollHeight;
+      } catch { progress.textContent += e.data + "\n"; }
+    };
+    ws.onclose = () => {
+      progress.textContent += "\n✓ Done!\n";
+      $("btn-init-skip").textContent = "Close";
+      $("btn-init-skip").disabled = false;
+      $("btn-init-run").disabled = true;
+    };
   }
 
   // ── Project switcher ───────────────────────────────────────────────────────
@@ -2024,6 +2102,8 @@
       if (panel === "models")    loadModelsPanel();
       // Focus search input when search panel is shown
       if (panel === "search") setTimeout(() => $("sb-search-input")?.focus(), 50);
+      if (panel === "notes")   loadNotesPanel();
+      if (panel === "aibackends") loadAIBackendsPanel();
     });
   });
 
@@ -3135,4 +3215,263 @@
     } catch (e) { utilOut({ error: e.message }); }
   });
 
+  // ── Phase 17: Notes & Task Board ─────────────────────────────────────────
+
+  async function loadNotesPanel() {
+    try {
+      const [nRes, tRes] = await Promise.all([fetch("/notes"), fetch("/tasks")]);
+      const { notes } = await nRes.json();
+      const { tasks } = await tRes.json();
+      renderNotesList(notes || []);
+      renderKanban(tasks || []);
+    } catch (e) {
+      $("notes-list").textContent = `Error: ${e.message}`;
+    }
+  }
+
+  function renderNotesList(notes) {
+    const el = $("notes-list");
+    if (!el) return;
+    if (!notes.length) {
+      el.innerHTML = '<div style="font-size:11px;color:var(--text-dim);padding:2px">No notes yet.</div>';
+      return;
+    }
+    el.innerHTML = notes.map((n) => `
+      <div class="note-card" data-id="${escHtmlSimple(n.id)}">
+        <div class="note-card-title">📄 ${escHtmlSimple(n.title)}</div>
+        <div class="note-card-content">${escHtmlSimple(n.content || "")}</div>
+        <div class="note-card-actions">
+          <button class="btn-note-delete" data-id="${escHtmlSimple(n.id)}">🗑</button>
+        </div>
+      </div>
+    `).join("");
+    el.querySelectorAll(".btn-note-delete").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await fetch(`/notes/${btn.dataset.id}`, { method: "DELETE" });
+        loadNotesPanel();
+      });
+    });
+  }
+
+  function renderKanban(tasks) {
+    const cols = { todo: $("tasks-col-todo"), in_progress: $("tasks-col-in_progress"), done: $("tasks-col-done") };
+    Object.values(cols).forEach((c) => { if (c) c.innerHTML = ""; });
+    tasks.forEach((t) => {
+      const col = cols[t.status] || cols.todo;
+      if (!col) return;
+      const card = document.createElement("div");
+      card.className = "kanban-card";
+      card.innerHTML = `
+        <div class="kanban-card-title">${escHtmlSimple(t.title)}</div>
+        <div class="kanban-card-priority">${escHtmlSimple(t.priority || "")}</div>
+        <div style="display:flex;gap:2px;margin-top:3px">
+          ${t.status !== "todo" ? `<button class="btn-task-status" data-id="${escHtmlSimple(t.id)}" data-status="todo" style="font-size:9px;padding:1px 3px">←</button>` : ""}
+          ${t.status !== "done" ? `<button class="btn-task-status" data-id="${escHtmlSimple(t.id)}" data-status="${t.status === "todo" ? "in_progress" : "done"}" style="font-size:9px;padding:1px 3px">→</button>` : ""}
+          <button class="btn-task-delete" data-id="${escHtmlSimple(t.id)}" style="font-size:9px;padding:1px 3px;margin-left:auto">🗑</button>
+        </div>
+      `;
+      col.appendChild(card);
+    });
+    document.querySelectorAll(".btn-task-status").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await fetch(`/tasks/${btn.dataset.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: btn.dataset.status }),
+        });
+        loadNotesPanel();
+      });
+    });
+    document.querySelectorAll(".btn-task-delete").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await fetch(`/tasks/${btn.dataset.id}`, { method: "DELETE" });
+        loadNotesPanel();
+      });
+    });
+  }
+
+  $("btn-notes-add")?.addEventListener("click", async () => {
+    const title = $("notes-new-title")?.value.trim();
+    if (!title) return;
+    await fetch("/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    $("notes-new-title").value = "";
+    loadNotesPanel();
+  });
+
+  $("btn-tasks-add")?.addEventListener("click", async () => {
+    const title = $("tasks-new-title")?.value.trim();
+    if (!title) return;
+    await fetch("/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, status: "todo" }),
+    });
+    $("tasks-new-title").value = "";
+    loadNotesPanel();
+  });
+
+  $("btn-notes-refresh")?.addEventListener("click", () => loadNotesPanel());
+
+  // ── Phase 19: Refactor panel ─────────────────────────────────────────────
+
+  async function runRefactorFindReplace(dryRun) {
+    const find = $("refactor-find")?.value || "";
+    const replace = $("refactor-replace")?.value || "";
+    const glob_pattern = $("refactor-glob")?.value || "**/*";
+    const is_regex = $("refactor-regex")?.checked || false;
+    if (!find) return;
+    try {
+      const res = await fetch("/refactor/find-replace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ find, replace, glob_pattern, is_regex, dry_run: dryRun }),
+      });
+      const data = await res.json();
+      const el = $("refactor-results");
+      if (!el) return;
+      if (data.detail) { el.textContent = `Error: ${data.detail}`; return; }
+      const matches = data.matches || [];
+      if (!matches.length) { el.textContent = "No matches found."; return; }
+      el.innerHTML = matches.slice(0, 50).map((m) => `
+        <div class="refactor-match">
+          <span class="refactor-match-file">${escHtmlSimple(m.file)}:${m.line}</span><br>
+          <span class="refactor-match-before">- ${escHtmlSimple(m.before)}</span><br>
+          ${m.after !== m.before ? `<span class="refactor-match-after">+ ${escHtmlSimple(m.after)}</span>` : ""}
+        </div>
+      `).join("") + (matches.length > 50 ? `<div style="color:var(--text-dim)">(${matches.length - 50} more…)</div>` : "");
+      if (!dryRun) el.insertAdjacentHTML("afterbegin", `<div style="color:var(--ok)">✅ Applied to ${data.files_changed} file(s)</div>`);
+    } catch (e) {
+      const el = $("refactor-results");
+      if (el) el.textContent = `Error: ${e.message}`;
+    }
+  }
+
+  $("btn-refactor-preview")?.addEventListener("click", () => runRefactorFindReplace(true));
+  $("btn-refactor-apply")?.addEventListener("click", () => runRefactorFindReplace(false));
+
+  $("btn-refactor-rename")?.addEventListener("click", async () => {
+    const old_name = $("refactor-old-name")?.value.trim();
+    const new_name = $("refactor-new-name")?.value.trim();
+    const glob_pattern = $("refactor-rename-glob")?.value || "**/*";
+    if (!old_name || !new_name) return;
+    try {
+      const res = await fetch("/refactor/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ old_name, new_name, glob_pattern }),
+      });
+      const data = await res.json();
+      const el = $("refactor-rename-results");
+      if (!el) return;
+      if (data.detail) { el.textContent = `Error: ${data.detail}`; return; }
+      const changes = data.changes || [];
+      if (!changes.length) { el.textContent = "No occurrences found."; return; }
+      el.innerHTML = `<div style="color:var(--ok)">✅ Renamed in ${changes.length} file(s):</div>` +
+        changes.map((c) => `<div>${escHtmlSimple(c.file)} (${c.count}x)</div>`).join("");
+    } catch (e) {
+      const el = $("refactor-rename-results");
+      if (el) el.textContent = `Error: ${e.message}`;
+    }
+  });
+
+  // ── AI Backends panel ────────────────────────────────────────────────────
+
+  async function loadAIBackendsPanel() {
+    const container = $("aibackends-panel-content");
+    if (!container) return;
+    container.innerHTML = '<div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>';
+    try {
+      const res = await fetch("/ai/backends");
+      const data = await res.json();
+      renderAIBackendsPanel(data);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderAIBackendsPanel(data) {
+    const container = $("aibackends-panel-content");
+    if (!container) return;
+    const active = data.active || "";
+    const backends = data.backends || [];
+
+    const statusDot = (s) => {
+      if (s === "ok") return '<span class="backend-dot backend-dot-ok"></span>';
+      if (s === "no_key") return '<span class="backend-dot backend-dot-warn"></span>';
+      return '<span class="backend-dot backend-dot-off"></span>';
+    };
+
+    const cards = backends.map((b) => `
+      <div class="backend-card${b.name === active ? " backend-card-active" : ""}">
+        <div class="backend-card-header">
+          ${statusDot(b.status)}
+          <span class="backend-card-name">${escHtmlSimple(b.display_name)}</span>
+          ${b.name === active ? '<span class="backend-active-badge">active</span>' : ""}
+        </div>
+        <div class="backend-card-meta">${escHtmlSimple(b.description)}</div>
+        ${b.model ? `<div class="backend-card-model">Model: ${escHtmlSimple(b.model)}</div>` : ""}
+        <div class="backend-card-actions">
+          <button class="backend-btn" data-action="test" data-backend="${escHtmlSimple(b.name)}">Test</button>
+          <button class="backend-btn backend-btn-switch" data-action="switch" data-backend="${escHtmlSimple(b.name)}"${b.name === active ? " disabled" : ""}>Switch</button>
+        </div>
+        <div class="backend-test-result" id="backend-result-${escHtmlSimple(b.name)}"></div>
+      </div>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:8px">AI BACKENDS</div>
+      <div style="font-size:11px;margin-bottom:10px;color:var(--text-dim,#999)">Active: <strong style="color:var(--accent)">${escHtmlSimple(active)}</strong></div>
+      ${cards}
+    `;
+
+    container.querySelectorAll(".backend-btn[data-action='test']").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.backend;
+        const resultEl = $(`backend-result-${name}`);
+        if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-muted);font-size:10px">Testing…</span>';
+        try {
+          const res = await fetch("/ai/backends/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ backend: name }),
+          });
+          const d = await res.json();
+          if (resultEl) {
+            const color = d.ok ? "var(--ok,#4caf50)" : "var(--danger,#f44)";
+            const models = d.models && d.models.length ? `<br>${d.models.slice(0, 5).map(escHtmlSimple).join(", ")}` : "";
+            resultEl.innerHTML = `<span style="color:${color};font-size:10px">${d.ok ? "✅" : "❌"} ${escHtmlSimple(d.message)}${models}</span>`;
+          }
+        } catch (e) {
+          if (resultEl) resultEl.innerHTML = `<span style="color:var(--danger);font-size:10px">Error: ${e.message}</span>`;
+        }
+      });
+    });
+
+    container.querySelectorAll(".backend-btn[data-action='switch']").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.backend;
+        try {
+          const res = await fetch("/ai/backends/switch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ backend: name }),
+          });
+          const d = await res.json();
+          if (d.ok) {
+            await loadAIBackendsPanel();
+            const llmSel = $("llm-select");
+            if (llmSel) llmSel.value = name;
+          }
+        } catch (e) {
+          alert(`Switch failed: ${e.message}`);
+        }
+      });
+    });
+  }
+
 })();
+
