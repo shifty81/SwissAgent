@@ -303,6 +303,76 @@ class AudioTrimRequest(BaseModel):
     end_ms: int = -1             # -1 = end of file
 
 
+# ── Phase 17: Notes & Tasks models ────────────────────────────────────────────
+
+class NoteCreateRequest(BaseModel):
+    title: str
+    content: str = ""
+    file_path: str = ""
+
+
+class NoteUpdateRequest(BaseModel):
+    title: str = ""
+    content: str = ""
+    file_path: str = ""
+
+
+class TaskCreateRequest(BaseModel):
+    title: str
+    description: str = ""
+    status: str = "todo"   # todo | in_progress | done
+    priority: str = "medium"
+
+
+class TaskUpdateRequest(BaseModel):
+    title: str = ""
+    description: str = ""
+    status: str = ""
+    priority: str = ""
+
+
+# ── Phase 18: Git Advanced models ─────────────────────────────────────────────
+
+class GitBranchCreateRequest(BaseModel):
+    name: str
+    base: str = ""
+
+
+class GitCheckoutRequest(BaseModel):
+    target: str
+    is_file: bool = False
+
+
+class GitStashPushRequest(BaseModel):
+    message: str = ""
+
+
+class GitStashPopRequest(BaseModel):
+    index: int = 0
+
+
+# ── Phase 19: Refactoring models ──────────────────────────────────────────────
+
+class RefactorFindReplaceRequest(BaseModel):
+    find: str
+    replace: str = ""
+    glob_pattern: str = "**/*"
+    is_regex: bool = False
+    dry_run: bool = True
+
+
+class RefactorRenameRequest(BaseModel):
+    old_name: str
+    new_name: str
+    glob_pattern: str = "**/*"
+
+
+class RefactorExtractRequest(BaseModel):
+    file: str
+    start_line: int
+    end_line: int
+    new_name: str
+
 
 class FormatRequest(BaseModel):
     content: str
@@ -2816,6 +2886,548 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         if result.get("status") == "error":
             raise HTTPException(status_code=404, detail=result.get("error", "Trace failed"))
         return result
+
+    # ── Phase 17: Notes & Tasks ───────────────────────────────────────────────
+
+    def _notes_file() -> Path:
+        return base_dir / "workspace" / ".notes.json"
+
+    def _tasks_file() -> Path:
+        return base_dir / "workspace" / ".tasks.json"
+
+    def _load_json_list(path: Path) -> list:
+        if path.is_file():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return []
+
+    def _save_json_list(path: Path, data: list) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    @app.get("/notes")
+    async def notes_list() -> dict[str, Any]:
+        """List all notes."""
+        return {"notes": _load_json_list(_notes_file())}
+
+    @app.post("/notes")
+    async def notes_create(req: NoteCreateRequest) -> dict[str, Any]:
+        """Create a new note."""
+        import time as _time
+        if not req.title.strip():
+            raise HTTPException(status_code=400, detail="title is required")
+        notes = _load_json_list(_notes_file())
+        note = {
+            "id": str(len(notes) + 1) + "_" + str(int(_time.time())),
+            "title": req.title,
+            "content": req.content,
+            "file_path": req.file_path,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        notes.append(note)
+        _save_json_list(_notes_file(), notes)
+        return {"status": "ok", "note": note}
+
+    @app.patch("/notes/{note_id}")
+    async def notes_update(note_id: str, req: NoteUpdateRequest) -> dict[str, Any]:
+        """Update a note's title, content, or file_path."""
+        notes = _load_json_list(_notes_file())
+        for n in notes:
+            if n.get("id") == note_id:
+                if req.title:
+                    n["title"] = req.title
+                if req.content:
+                    n["content"] = req.content
+                if req.file_path:
+                    n["file_path"] = req.file_path
+                _save_json_list(_notes_file(), notes)
+                return {"status": "ok", "note": n}
+        raise HTTPException(status_code=404, detail=f"Note '{note_id}' not found")
+
+    @app.delete("/notes/{note_id}")
+    async def notes_delete(note_id: str) -> dict[str, Any]:
+        """Delete a note by id."""
+        notes = _load_json_list(_notes_file())
+        new_notes = [n for n in notes if n.get("id") != note_id]
+        if len(new_notes) == len(notes):
+            raise HTTPException(status_code=404, detail=f"Note '{note_id}' not found")
+        _save_json_list(_notes_file(), new_notes)
+        return {"status": "ok", "deleted": note_id}
+
+    @app.get("/tasks")
+    async def tasks_list() -> dict[str, Any]:
+        """List all task board items."""
+        return {"tasks": _load_json_list(_tasks_file())}
+
+    @app.post("/tasks")
+    async def tasks_create(req: TaskCreateRequest) -> dict[str, Any]:
+        """Create a new task."""
+        import time as _time
+        if not req.title.strip():
+            raise HTTPException(status_code=400, detail="title is required")
+        if req.status not in ("todo", "in_progress", "done"):
+            raise HTTPException(status_code=400, detail="status must be todo, in_progress, or done")
+        tasks = _load_json_list(_tasks_file())
+        task = {
+            "id": str(len(tasks) + 1) + "_" + str(int(_time.time())),
+            "title": req.title,
+            "description": req.description,
+            "status": req.status,
+            "priority": req.priority,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        tasks.append(task)
+        _save_json_list(_tasks_file(), tasks)
+        return {"status": "ok", "task": task}
+
+    @app.patch("/tasks/{task_id}")
+    async def tasks_update(task_id: str, req: TaskUpdateRequest) -> dict[str, Any]:
+        """Update a task."""
+        tasks = _load_json_list(_tasks_file())
+        for t in tasks:
+            if t.get("id") == task_id:
+                if req.title:
+                    t["title"] = req.title
+                if req.description:
+                    t["description"] = req.description
+                if req.status:
+                    if req.status not in ("todo", "in_progress", "done"):
+                        raise HTTPException(status_code=400, detail="status must be todo, in_progress, or done")
+                    t["status"] = req.status
+                if req.priority:
+                    t["priority"] = req.priority
+                _save_json_list(_tasks_file(), tasks)
+                return {"status": "ok", "task": t}
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
+
+    @app.delete("/tasks/{task_id}")
+    async def tasks_delete(task_id: str) -> dict[str, Any]:
+        """Delete a task by id."""
+        tasks = _load_json_list(_tasks_file())
+        new_tasks = [t for t in tasks if t.get("id") != task_id]
+        if len(new_tasks) == len(tasks):
+            raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
+        _save_json_list(_tasks_file(), new_tasks)
+        return {"status": "ok", "deleted": task_id}
+
+    # ── Phase 18: Git Advanced Features ──────────────────────────────────────
+
+    @app.get("/git/log")
+    async def git_log_endpoint(
+        path: str = Query(default="workspace"),
+        limit: int = Query(default=20),
+    ) -> dict[str, Any]:
+        """Return git commit log with sha, message, author, date, files_changed."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            sep = "|||"
+            fmt = f"%H{sep}%s{sep}%an{sep}%ai"
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "log", f"--pretty=format:{fmt}", f"-{limit}"],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=15,
+                ),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip())
+            commits = []
+            for line in proc.stdout.splitlines():
+                parts = line.split(sep, 3)
+                if len(parts) == 4:
+                    sha, msg, author, date = parts
+                    # count files changed
+                    stat_proc = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda s=sha: subprocess.run(
+                            ["git", "diff-tree", "--no-commit-id", "-r", "--name-only", s],
+                            cwd=str(repo_dir), capture_output=True, text=True, timeout=10,
+                        ),
+                    )
+                    files_changed = [f for f in stat_proc.stdout.splitlines() if f]
+                    commits.append({
+                        "sha": sha[:7],
+                        "full_sha": sha,
+                        "message": msg,
+                        "author": author,
+                        "date": date.strip(),
+                        "files_changed": files_changed,
+                    })
+            return {"commits": commits}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/git/branches")
+    async def git_branches_list(path: str = Query(default="workspace")) -> dict[str, Any]:
+        """List all branches, marking the current branch."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "branch", "-a"],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=10,
+                ),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip())
+            branches = []
+            for line in proc.stdout.splitlines():
+                is_current = line.startswith("*")
+                name = line.lstrip("* ").strip()
+                if name:
+                    branches.append({"name": name, "current": is_current})
+            return {"branches": branches}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/git/branches")
+    async def git_branch_create(req: GitBranchCreateRequest, path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Create a new branch, optionally from a base branch."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        if not req.name.strip():
+            raise HTTPException(status_code=400, detail="Branch name is required")
+        try:
+            cmd = ["git", "branch", req.name]
+            if req.base:
+                cmd.append(req.base)
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, cwd=str(repo_dir), capture_output=True, text=True, timeout=10),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            return {"status": "ok", "branch": req.name}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.delete("/git/branches/{name:path}")
+    async def git_branch_delete(name: str, path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Delete a branch."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "branch", "-d", name],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=10,
+                ),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            return {"status": "ok", "deleted": name}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/git/checkout")
+    async def git_checkout_endpoint(req: GitCheckoutRequest, path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Checkout a branch or restore a file."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        if not req.target.strip():
+            raise HTTPException(status_code=400, detail="target is required")
+        try:
+            if req.is_file:
+                cmd = ["git", "checkout", "--", req.target]
+            else:
+                cmd = ["git", "checkout", req.target]
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, cwd=str(repo_dir), capture_output=True, text=True, timeout=15),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            return {"status": "ok", "target": req.target}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/git/stash")
+    async def git_stash_list(path: str = Query(default="workspace")) -> dict[str, Any]:
+        """List all stash entries."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "stash", "list"],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=10,
+                ),
+            )
+            entries = [{"index": i, "description": line.strip()} for i, line in enumerate(proc.stdout.splitlines()) if line.strip()]
+            return {"stash": entries}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/git/stash")
+    async def git_stash_push(req: GitStashPushRequest, path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Push current changes to stash."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            cmd = ["git", "stash", "push"]
+            if req.message:
+                cmd += ["-m", req.message]
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, cwd=str(repo_dir), capture_output=True, text=True, timeout=15),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            return {"status": "ok", "output": proc.stdout.strip()}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/git/stash/pop")
+    async def git_stash_pop(req: GitStashPopRequest, path: str = Query(default="workspace")) -> dict[str, Any]:
+        """Pop a stash entry."""
+        import subprocess
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, path)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            cmd = ["git", "stash", "pop", f"stash@{{{req.index}}}"]
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(cmd, cwd=str(repo_dir), capture_output=True, text=True, timeout=15),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            return {"status": "ok", "output": proc.stdout.strip()}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/git/blame")
+    async def git_blame_file(
+        repo: str = Query(default="workspace"),
+        file: str = Query(..., description="File path relative to the repo root"),
+    ) -> dict[str, Any]:
+        """Return per-line blame data: sha, author, date, line content."""
+        import subprocess
+        top = Path(repo).parts[0] if Path(repo).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        repo_dir = _safe_path(base_dir, repo)
+        if not (repo_dir / ".git").exists():
+            raise HTTPException(status_code=400, detail="Not a git repository")
+        try:
+            proc = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["git", "blame", "--porcelain", file],
+                    cwd=str(repo_dir), capture_output=True, text=True, timeout=15,
+                ),
+            )
+            if proc.returncode != 0:
+                raise HTTPException(status_code=400, detail=proc.stderr.strip() or proc.stdout.strip())
+            import datetime as _blame_dt
+            lines = []
+            current: dict[str, Any] = {}
+            line_num = 0
+            for raw in proc.stdout.splitlines():
+                if raw.startswith("\t"):
+                    line_num += 1
+                    lines.append({
+                        "line_num": line_num,
+                        "sha": current.get("sha", "")[:7],
+                        "author": current.get("author", ""),
+                        "date": current.get("date", ""),
+                        "line": raw[1:],
+                    })
+                    current = {}
+                elif " " in raw:
+                    key, _, val = raw.partition(" ")
+                    if len(key) == 40 and all(c in "0123456789abcdef" for c in key):
+                        current["sha"] = key
+                    elif key == "author":
+                        current["author"] = val
+                    elif key == "author-time":
+                        current["date"] = _blame_dt.datetime.fromtimestamp(int(val), tz=_blame_dt.timezone.utc).isoformat()
+            return {"blame": lines}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # ── Phase 19: Project-Wide Refactoring ───────────────────────────────────
+
+    @app.post("/refactor/find-replace")
+    async def refactor_find_replace(req: RefactorFindReplaceRequest) -> dict[str, Any]:
+        """Find (and optionally replace) text across all workspace files."""
+        import re as _re
+        import glob as _glob
+        workspace_dir = base_dir / "workspace"
+        pattern = req.glob_pattern or "**/*"
+        matches = []
+        files_changed = 0
+        try:
+            all_files = [
+                Path(p) for p in _glob.glob(str(workspace_dir / pattern), recursive=True)
+                if Path(p).is_file()
+            ]
+            for fpath in all_files:
+                try:
+                    text = fpath.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    continue
+                file_matches = []
+                if req.is_regex:
+                    try:
+                        compiled = _re.compile(req.find)
+                    except _re.error as e:
+                        raise HTTPException(status_code=400, detail=f"Invalid regex: {e}")
+                    for i, line in enumerate(text.splitlines(), 1):
+                        if compiled.search(line):
+                            after = compiled.sub(req.replace, line) if req.replace else line
+                            file_matches.append({"line": i, "before": line, "after": after})
+                else:
+                    for i, line in enumerate(text.splitlines(), 1):
+                        if req.find in line:
+                            after = line.replace(req.find, req.replace) if req.replace else line
+                            file_matches.append({"line": i, "before": line, "after": after})
+                if file_matches:
+                    rel = str(fpath.relative_to(base_dir))
+                    for m in file_matches:
+                        matches.append({"file": rel, "line": m["line"], "before": m["before"], "after": m["after"]})
+                    if not req.dry_run and req.replace:
+                        if req.is_regex:
+                            new_text = compiled.sub(req.replace, text)
+                        else:
+                            new_text = text.replace(req.find, req.replace)
+                        fpath.write_text(new_text, encoding="utf-8")
+                        files_changed += 1
+            return {"matches": matches, "files_changed": files_changed, "dry_run": req.dry_run}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/refactor/rename")
+    async def refactor_rename(req: RefactorRenameRequest) -> dict[str, Any]:
+        """Rename a symbol across all matching workspace files."""
+        import glob as _glob
+        if not req.old_name.strip() or not req.new_name.strip():
+            raise HTTPException(status_code=400, detail="old_name and new_name are required")
+        workspace_dir = base_dir / "workspace"
+        pattern = req.glob_pattern or "**/*"
+        changes = []
+        try:
+            all_files = [
+                Path(p) for p in _glob.glob(str(workspace_dir / pattern), recursive=True)
+                if Path(p).is_file()
+            ]
+            for fpath in all_files:
+                try:
+                    text = fpath.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    continue
+                count = text.count(req.old_name)
+                if count > 0:
+                    new_text = text.replace(req.old_name, req.new_name)
+                    fpath.write_text(new_text, encoding="utf-8")
+                    changes.append({"file": str(fpath.relative_to(base_dir)), "count": count})
+            return {"changes": changes}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/refactor/extract")
+    async def refactor_extract(req: RefactorExtractRequest) -> dict[str, Any]:
+        """Extract lines from a file into a new named function and return the diff."""
+        import difflib
+        if not req.file or not req.new_name.strip():
+            raise HTTPException(status_code=400, detail="file and new_name are required")
+        top = Path(req.file).parts[0] if Path(req.file).parts else ""
+        if top not in _BUILD_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not allowed")
+        target = _safe_path(base_dir, req.file)
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail=f"File '{req.file}' not found")
+        try:
+            text = target.read_text(encoding="utf-8")
+            lines = text.splitlines(keepends=True)
+            total = len(lines)
+            s = max(0, req.start_line - 1)
+            e = min(total, req.end_line)
+            if s >= e:
+                raise HTTPException(status_code=400, detail="start_line must be less than end_line")
+            extracted = lines[s:e]
+            # Detect indent of first extracted line for de-indentation
+            first_indent = len(extracted[0]) - len(extracted[0].lstrip()) if extracted else 0
+            body = "".join("    " + ln[first_indent:] if ln.strip() else ln for ln in extracted)
+            func_def = f"\ndef {req.new_name}():\n{body}\n"
+            call_line = " " * first_indent + f"{req.new_name}()\n"
+            new_lines = lines[:s] + [call_line] + lines[e:]
+            new_text = func_def + "".join(new_lines)
+            diff = "".join(difflib.unified_diff(
+                lines, new_text.splitlines(keepends=True),
+                fromfile=req.file, tofile=req.file,
+            ))
+            target.write_text(new_text, encoding="utf-8")
+            return {"file": req.file, "diff": diff}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
 
     return app
 

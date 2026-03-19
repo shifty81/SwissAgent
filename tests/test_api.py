@@ -1322,3 +1322,200 @@ def test_debug_trace_current_process(client):
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "ok"
+
+
+# ── Phase 17: Notes & Tasks ───────────────────────────────────────────────────
+
+def test_notes_crud(client):
+    """Create, list, update, and delete a note."""
+    # Create
+    res = client.post("/notes", json={"title": "Test Note", "content": "hello"})
+    assert res.status_code == 200
+    note = res.json()["note"]
+    assert note["title"] == "Test Note"
+    note_id = note["id"]
+
+    # List
+    res = client.get("/notes")
+    assert res.status_code == 200
+    ids = [n["id"] for n in res.json()["notes"]]
+    assert note_id in ids
+
+    # Update
+    res = client.patch(f"/notes/{note_id}", json={"content": "updated"})
+    assert res.status_code == 200
+    assert res.json()["note"]["content"] == "updated"
+
+    # Delete
+    res = client.delete(f"/notes/{note_id}")
+    assert res.status_code == 200
+    assert res.json()["deleted"] == note_id
+
+    # Confirm gone
+    res = client.delete(f"/notes/{note_id}")
+    assert res.status_code == 404
+
+
+def test_notes_create_missing_title(client):
+    """POST /notes with empty title returns 400."""
+    res = client.post("/notes", json={"title": ""})
+    assert res.status_code == 400
+
+
+def test_tasks_crud(client):
+    """Create, list, update status, and delete a task."""
+    # Create
+    res = client.post("/tasks", json={"title": "Test Task", "status": "todo", "priority": "high"})
+    assert res.status_code == 200
+    task = res.json()["task"]
+    assert task["title"] == "Test Task"
+    task_id = task["id"]
+
+    # List
+    res = client.get("/tasks")
+    assert res.status_code == 200
+    ids = [t["id"] for t in res.json()["tasks"]]
+    assert task_id in ids
+
+    # Update status
+    res = client.patch(f"/tasks/{task_id}", json={"status": "in_progress"})
+    assert res.status_code == 200
+    assert res.json()["task"]["status"] == "in_progress"
+
+    # Delete
+    res = client.delete(f"/tasks/{task_id}")
+    assert res.status_code == 200
+    assert res.json()["deleted"] == task_id
+
+    # Confirm gone
+    res = client.delete(f"/tasks/{task_id}")
+    assert res.status_code == 404
+
+
+def test_tasks_invalid_status(client):
+    """POST /tasks with invalid status returns 400."""
+    res = client.post("/tasks", json={"title": "bad", "status": "invalid"})
+    assert res.status_code == 400
+
+
+# ── Phase 18: Git Advanced ────────────────────────────────────────────────────
+
+def test_git_log(client):
+    """GET /git/log returns 200 or 400 depending on git repo presence."""
+    res = client.get("/git/log?path=workspace")
+    assert res.status_code in (200, 400)
+    if res.status_code == 200:
+        assert "commits" in res.json()
+
+
+def test_git_branches(client):
+    """GET /git/branches returns 200 or 400."""
+    res = client.get("/git/branches?path=workspace")
+    assert res.status_code in (200, 400)
+    if res.status_code == 200:
+        assert "branches" in res.json()
+
+
+def test_git_stash_list(client):
+    """GET /git/stash returns 200 or 400."""
+    res = client.get("/git/stash?path=workspace")
+    assert res.status_code in (200, 400)
+    if res.status_code == 200:
+        assert "stash" in res.json()
+
+
+def test_git_blame(client):
+    """GET /git/blame returns 200 or 400."""
+    res = client.get("/git/blame?repo=workspace&file=README.md")
+    assert res.status_code in (200, 400)
+    if res.status_code == 200:
+        assert "blame" in res.json()
+
+
+def test_git_branch_create_missing_name(client):
+    """POST /git/branches with empty name returns 400."""
+    res = client.post("/git/branches?path=workspace", json={"name": ""})
+    assert res.status_code in (400,)
+
+
+def test_git_checkout_missing_target(client):
+    """POST /git/checkout with empty target returns 400."""
+    res = client.post("/git/checkout?path=workspace", json={"target": ""})
+    assert res.status_code == 400
+
+
+# ── Phase 19: Refactoring ─────────────────────────────────────────────────────
+
+def test_refactor_find_replace_dry_run(client, tmp_path):
+    """POST /refactor/find-replace with dry_run=true returns matches without modifying files."""
+    import os
+    # Create a test file in workspace
+    test_file = Path("workspace/_refactor_test.txt")
+    client.post("/files/write", json={"path": str(test_file), "content": "hello world\nhello again"})
+    res = client.post("/refactor/find-replace", json={
+        "find": "hello",
+        "replace": "goodbye",
+        "glob_pattern": "_refactor_test.txt",
+        "is_regex": False,
+        "dry_run": True,
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert "matches" in data
+    assert data["dry_run"] is True
+    assert data["files_changed"] == 0
+    # Cleanup
+    client.post("/files/delete", json={"path": str(test_file)})
+
+
+def test_refactor_find_replace_apply(client):
+    """POST /refactor/find-replace with dry_run=false modifies files."""
+    test_file = Path("workspace/_refactor_apply_test.txt")
+    client.post("/files/write", json={"path": str(test_file), "content": "FIND_ME is here"})
+    res = client.post("/refactor/find-replace", json={
+        "find": "FIND_ME",
+        "replace": "REPLACED",
+        "glob_pattern": "_refactor_apply_test.txt",
+        "is_regex": False,
+        "dry_run": False,
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["files_changed"] >= 1
+    # Verify file was changed
+    read_res = client.get(f"/files/read?path={test_file}")
+    assert "REPLACED" in read_res.json()["content"]
+    client.post("/files/delete", json={"path": str(test_file)})
+
+
+def test_refactor_rename(client):
+    """POST /refactor/rename renames a symbol across files."""
+    test_file = Path("workspace/_rename_test.txt")
+    client.post("/files/write", json={"path": str(test_file), "content": "old_symbol = 1\nuse_old_symbol()"})
+    res = client.post("/refactor/rename", json={
+        "old_name": "old_symbol",
+        "new_name": "new_symbol",
+        "glob_pattern": "_rename_test.txt",
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert "changes" in data
+    assert any(c["count"] >= 1 for c in data["changes"])
+    client.post("/files/delete", json={"path": str(test_file)})
+
+
+def test_refactor_extract(client):
+    """POST /refactor/extract extracts lines into a new function."""
+    test_file = "workspace/_extract_test.py"
+    client.post("/files/write", json={"path": test_file, "content": "x = 1\ny = 2\nz = x + y\n"})
+    res = client.post("/refactor/extract", json={
+        "file": test_file,
+        "start_line": 1,
+        "end_line": 3,
+        "new_name": "compute",
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert "diff" in data
+    assert data["file"] == test_file
+    client.post("/files/delete", json={"path": test_file})

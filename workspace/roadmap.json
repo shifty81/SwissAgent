@@ -832,6 +832,114 @@
           "description": "Use os.path.samefile() instead of == for path comparison in ignore_fn to handle Windows case-insensitive paths"
         }
       ]
+    },
+    {
+      "id": "m17",
+      "title": "Phase 17 \u2014 Workspace Notes & Task Board",
+      "description": "Persistent notes and Kanban task board with REST API and IDE panel",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t17-1",
+          "title": "Notes CRUD endpoints (GET/POST/PATCH/DELETE /notes)",
+          "status": "done",
+          "priority": "high",
+          "description": "Persistent notes stored in workspace/.notes.json"
+        },
+        {
+          "id": "t17-2",
+          "title": "Task board endpoints (GET/POST/PATCH/DELETE /tasks)",
+          "status": "done",
+          "priority": "high",
+          "description": "Kanban task board stored in workspace/.tasks.json with todo/in_progress/done columns"
+        },
+        {
+          "id": "t17-3",
+          "title": "Notes & Task Board panel in IDE",
+          "status": "done",
+          "priority": "medium",
+          "description": "Activity-bar panel showing notes list and kanban board"
+        }
+      ]
+    },
+    {
+      "id": "m18",
+      "title": "Phase 18 \u2014 Git Advanced Features",
+      "description": "Git log browser, branch manager, stash support, blame viewer, and enhanced Git panel",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t18-1",
+          "title": "Git log endpoint (GET /git/log)",
+          "status": "done",
+          "priority": "high",
+          "description": "Commit history with sha, message, author, date, files_changed"
+        },
+        {
+          "id": "t18-2",
+          "title": "Branch management endpoints (GET/POST/DELETE /git/branches, POST /git/checkout)",
+          "status": "done",
+          "priority": "high",
+          "description": "List, create, delete branches and checkout"
+        },
+        {
+          "id": "t18-3",
+          "title": "Stash management (POST/GET /git/stash, POST /git/stash/pop)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Push to stash, list stash entries, pop from stash"
+        },
+        {
+          "id": "t18-4",
+          "title": "Git blame endpoint (GET /git/blame)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Per-line blame data: sha, author, date, line content"
+        },
+        {
+          "id": "t18-5",
+          "title": "Enhanced Git panel in IDE",
+          "status": "done",
+          "priority": "medium",
+          "description": "Tabbed Git panel with log viewer, branch manager, and stash panel"
+        }
+      ]
+    },
+    {
+      "id": "m19",
+      "title": "Phase 19 \u2014 Project-Wide Refactoring",
+      "description": "Multi-file find-replace, symbol rename, and extract-function endpoints plus Refactoring panel in IDE",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t19-1",
+          "title": "Project-wide find-replace endpoint (POST /refactor/find-replace)",
+          "status": "done",
+          "priority": "high",
+          "description": "Find and optionally replace text/regex across all workspace files with dry-run mode"
+        },
+        {
+          "id": "t19-2",
+          "title": "Symbol rename endpoint (POST /refactor/rename)",
+          "status": "done",
+          "priority": "high",
+          "description": "Rename a symbol across all matching workspace files"
+        },
+        {
+          "id": "t19-3",
+          "title": "Extract-function endpoint (POST /refactor/extract)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Extract selected lines from a file into a new named function"
+        },
+        {
+          "id": "t19-4",
+          "title": "Refactoring panel in IDE",
+          "status": "done",
+          "priority": "medium",
+          "description": "Activity-bar panel with find-replace and rename forms"
+        }
+      ]
     }
   ]
 }
