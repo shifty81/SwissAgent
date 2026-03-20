@@ -168,12 +168,18 @@ body {
   align-items: center;
   overflow: hidden;
   max-height: 0;
-  transition: max-height .2s ease;
+  transition: max-height .25s ease;
   background: var(--bg);
-  border-left: 2px solid rgba(124, 106, 247, 0.2);
+  border-left: 2px solid transparent;
   padding: 0;
+  pointer-events: none;
 }
-.ab-group.open .ab-group-items { max-height: 600px; padding: 4px 0; }
+.ab-group.open .ab-group-items {
+  max-height: 600px;
+  padding: 4px 0;
+  border-left-color: rgba(124, 106, 247, 0.25);
+  pointer-events: auto;
+}
 
 /* Individual panel buttons inside a group */
 .ab-btn {

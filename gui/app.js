@@ -2103,9 +2103,20 @@
 
   // ── Activity bar group toggle ─────────────────────────────────────────────
   document.querySelectorAll(".ab-group-hdr").forEach((hdr) => {
-    hdr.addEventListener("click", () => {
+    hdr.addEventListener("click", (e) => {
+      e.stopPropagation();
       const group = hdr.closest(".ab-group");
-      if (group) group.classList.toggle("open");
+      if (!group) return;
+      const items = group.querySelector(".ab-group-items");
+      const opening = !group.classList.contains("open");
+      group.classList.toggle("open", opening);
+      if (items) {
+        // Drive max-height via scrollHeight for consistent animation timing
+        items.style.maxHeight = items.scrollHeight + "px";
+        if (!opening) {
+          requestAnimationFrame(() => { items.style.maxHeight = "0"; });
+        }
+      }
     });
   });
 
