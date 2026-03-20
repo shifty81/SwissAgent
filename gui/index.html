@@ -59,6 +59,8 @@
       <button class="ab-btn" data-panel="webhooks"  title="WebHook Manager (Phase 29)">🪝</button>
       <button class="ab-btn" data-panel="ratelimit"  title="Rate Limits (Phase 30)">⏱</button>
       <button class="ab-btn" data-panel="events"    title="Event Bus (Phase 31)">📡</button>
+      <button class="ab-btn" data-panel="cron"      title="Cron Jobs (Phase 32)">🕐</button>
+      <button class="ab-btn" data-panel="audit"     title="Audit Log (Phase 33)">📋</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -647,6 +649,32 @@
           </div>
         </div>
         <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="events-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Cron Job Scheduler (Phase 32) ──────────────────── -->
+      <div class="sb-panel" id="panel-cron">
+        <div class="sb-panel-header">
+          <span>🕐 Cron Jobs</span>
+          <div>
+            <button id="btn-cron-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="cron-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Audit Log (Phase 33) ───────────────────────────── -->
+      <div class="sb-panel" id="panel-audit">
+        <div class="sb-panel-header">
+          <span>📋 Audit Log</span>
+          <div>
+            <button id="btn-audit-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="audit-panel-content">
           <div style="color:var(--text-dim);font-size:11px">Loading…</div>
         </div>
       </div>

@@ -2157,3 +2157,97 @@ def test_events_subscription_delete(client):
     r2 = client.delete(f"/events/subscription/{sub_id}")
     assert r2.status_code == 200
     assert r2.json()["deleted"] == sub_id
+
+# ── Phase 32: Cron Job Scheduler ──────────────────────────────────────────────
+def test_cron_job_set(client):
+    r = client.post("/cron/job", json={"name": "hello", "schedule": "every 60s", "command": "echo hi"})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "hello"
+
+def test_cron_jobs_list(client):
+    client.post("/cron/job", json={"name": "list_job", "schedule": "every 30s", "command": "echo list"})
+    r = client.get("/cron/jobs")
+    assert r.status_code == 200
+    data = r.json()
+    assert "jobs" in data
+    assert any(j["name"] == "list_job" for j in data["jobs"])
+
+def test_cron_job_no_command(client):
+    r = client.post("/cron/job", json={"name": "bad", "schedule": "every 60s", "command": ""})
+    assert r.status_code == 400
+
+def test_cron_job_run(client):
+    client.post("/cron/job", json={"name": "run_job", "schedule": "manual", "command": "echo running"})
+    r = client.post("/cron/job/run_job/run")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["job"] == "run_job"
+    assert "exit_code" in data
+
+def test_cron_job_history(client):
+    client.post("/cron/job", json={"name": "hist_job", "schedule": "manual", "command": "echo hist"})
+    client.post("/cron/job/hist_job/run")
+    r = client.get("/cron/job/hist_job/history")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["job"] == "hist_job"
+    assert len(data["history"]) >= 1
+
+def test_cron_history_all(client):
+    r = client.get("/cron/history")
+    assert r.status_code == 200
+    assert "history" in r.json()
+
+def test_cron_job_delete(client):
+    client.post("/cron/job", json={"name": "del_cron", "schedule": "manual", "command": "true"})
+    r = client.delete("/cron/job/del_cron")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "del_cron"
+
+# ── Phase 33: Audit Log ───────────────────────────────────────────────────────
+def test_audit_log_append(client):
+    r = client.post("/audit/log", json={"action": "login", "actor": "admin", "level": "info"})
+    assert r.status_code == 200
+    assert r.json()["logged"] == "login"
+
+def test_audit_log_no_action(client):
+    r = client.post("/audit/log", json={"action": "", "actor": "admin"})
+    assert r.status_code == 400
+
+def test_audit_log_list(client):
+    client.post("/audit/log", json={"action": "file.edit", "actor": "user1", "level": "info"})
+    r = client.get("/audit/log")
+    assert r.status_code == 200
+    data = r.json()
+    assert "entries" in data
+    assert any(e["action"] == "file.edit" for e in data["entries"])
+
+def test_audit_log_get(client):
+    r = client.post("/audit/log", json={"action": "get.test", "actor": "test"})
+    entry_id = r.json()["id"]
+    r2 = client.get(f"/audit/log/{entry_id}")
+    assert r2.status_code == 200
+    assert r2.json()["action"] == "get.test"
+
+def test_audit_stats(client):
+    client.post("/audit/log", json={"action": "stats.test", "level": "info"})
+    r = client.get("/audit/stats")
+    assert r.status_code == 200
+    data = r.json()
+    assert "total" in data
+    assert data["total"] >= 1
+
+def test_audit_log_filter_level(client):
+    client.post("/audit/log", json={"action": "warn.action", "level": "warn"})
+    r = client.get("/audit/log?level=warn")
+    assert r.status_code == 200
+    entries = r.json()["entries"]
+    assert all(e["level"] == "warn" for e in entries)
+
+def test_audit_log_clear(client):
+    client.post("/audit/log", json={"action": "pre.clear", "level": "info"})
+    r = client.delete("/audit/log/clear")
+    assert r.status_code == 200
+    assert "cleared" in r.json()
+    r2 = client.get("/audit/log")
+    assert len(r2.json()["entries"]) == 0

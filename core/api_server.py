@@ -558,6 +558,24 @@ class EventSubscribeRequest(BaseModel):
     topics: list[str]           # list of topic patterns to subscribe to
     name: str = ""              # friendly subscriber name
 
+# ── Phase 32: Cron Job Scheduler request models ───────────────────────────────
+
+class CronJobRequest(BaseModel):
+    name: str
+    schedule: str               # cron expression or "every Ns" (e.g. "every 60s")
+    command: str                # shell command to run
+    enabled: bool = True
+    description: str = ""
+
+# ── Phase 33: Audit Log request models ───────────────────────────────────────
+
+class AuditLogEntryRequest(BaseModel):
+    action: str
+    actor: str = "system"
+    resource: str = ""
+    detail: str = ""
+    level: str = "info"       # info | warn | error
+
 
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
@@ -4883,6 +4901,169 @@ indent_style = tab
             if websocket in _event_ws_clients:
                 _event_ws_clients.remove(websocket)
 
+    # ── Phase 32: Cron Job Scheduler ─────────────────────────────────────────
+
+    @app.post("/cron/job")
+    async def cron_job_set(req: CronJobRequest) -> dict[str, Any]:
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        if not req.command:
+            raise HTTPException(status_code=400, detail="command is required")
+        _cron_jobs[req.name] = {
+            "name": req.name,
+            "schedule": req.schedule,
+            "command": req.command,
+            "enabled": req.enabled,
+            "description": req.description,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "last_run": None,
+            "run_count": 0,
+        }
+        return {"saved": req.name}
+
+    @app.get("/cron/jobs")
+    async def cron_jobs_list() -> dict[str, Any]:
+        return {"jobs": list(_cron_jobs.values())}
+
+    @app.delete("/cron/job/{job_name}")
+    async def cron_job_delete(job_name: str) -> dict[str, Any]:
+        _cron_jobs.pop(job_name, None)
+        return {"deleted": job_name}
+
+    @app.post("/cron/job/{job_name}/run")
+    async def cron_job_run(job_name: str) -> dict[str, Any]:
+        global _cron_run_id
+        if job_name not in _cron_jobs:
+            raise HTTPException(status_code=404, detail="Job not found")
+        import asyncio, subprocess as _sp
+        job = _cron_jobs[job_name]
+        _cron_run_id += 1
+        run_id = _cron_run_id
+        start = datetime.datetime.now(datetime.timezone.utc)
+        output = ""
+        error = ""
+        exit_code = 0
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                job["command"],
+                stdout=_sp.PIPE,
+                stderr=_sp.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            output = stdout.decode(errors="replace")
+            error  = stderr.decode(errors="replace")
+            exit_code = proc.returncode or 0
+        except Exception as exc:
+            error = str(exc)
+            exit_code = 1
+        end = datetime.datetime.now(datetime.timezone.utc)
+        record: dict[str, Any] = {
+            "run_id": run_id,
+            "job": job_name,
+            "started_at": start.isoformat(),
+            "finished_at": end.isoformat(),
+            "exit_code": exit_code,
+            "output": output[:4096],
+            "error": error[:2048],
+        }
+        _cron_history.append(record)
+        if len(_cron_history) > 200:
+            _cron_history[:] = _cron_history[-200:]
+        job["last_run"] = end.isoformat()
+        job["run_count"] = job.get("run_count", 0) + 1
+        dead: list[Any] = []
+        for ws in list(_cron_ws_clients):
+            try:
+                await ws.send_json(record)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            if ws in _cron_ws_clients:
+                _cron_ws_clients.remove(ws)
+        return record
+
+    @app.get("/cron/job/{job_name}/history")
+    async def cron_job_history(job_name: str, limit: int = 20) -> dict[str, Any]:
+        runs = [r for r in _cron_history if r["job"] == job_name]
+        return {"job": job_name, "history": runs[-limit:]}
+
+    @app.get("/cron/history")
+    async def cron_history_all(limit: int = 50) -> dict[str, Any]:
+        return {"history": _cron_history[-limit:]}
+
+    @app.websocket("/ws/cron")
+    async def ws_cron(websocket: WebSocket):
+        await websocket.accept()
+        _cron_ws_clients.append(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except Exception:
+            pass
+        finally:
+            if websocket in _cron_ws_clients:
+                _cron_ws_clients.remove(websocket)
+
+    # ── Phase 33: Audit Log ───────────────────────────────────────────────────
+
+    def _audit(action: str, actor: str = "api", resource: str = "", detail: str = "", level: str = "info") -> None:
+        global _audit_id_counter
+        _audit_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": _audit_id_counter,
+            "action": action,
+            "actor": actor,
+            "resource": resource,
+            "detail": detail,
+            "level": level,
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _audit_log.append(entry)
+        if len(_audit_log) > _MAX_AUDIT:
+            _audit_log[:] = _audit_log[-_MAX_AUDIT:]
+
+    @app.post("/audit/log")
+    async def audit_log_append(req: AuditLogEntryRequest) -> dict[str, Any]:
+        if not req.action:
+            raise HTTPException(status_code=400, detail="action is required")
+        _audit(req.action, actor=req.actor, resource=req.resource, detail=req.detail, level=req.level)
+        return {"logged": req.action, "id": _audit_id_counter}
+
+    @app.delete("/audit/log/clear")
+    async def audit_log_clear() -> dict[str, Any]:
+        count = len(_audit_log)
+        _audit_log.clear()
+        return {"cleared": count}
+
+    @app.get("/audit/log")
+    async def audit_log_list(limit: int = 50, level: str = "", actor: str = "") -> dict[str, Any]:
+        entries = list(_audit_log)
+        if level:
+            entries = [e for e in entries if e["level"] == level]
+        if actor:
+            entries = [e for e in entries if e["actor"] == actor]
+        return {"entries": entries[-limit:]}
+
+    @app.get("/audit/log/{entry_id}")
+    async def audit_log_get(entry_id: int) -> dict[str, Any]:
+        for e in _audit_log:
+            if e["id"] == entry_id:
+                return e
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    @app.get("/audit/stats")
+    async def audit_stats() -> dict[str, Any]:
+        from collections import Counter as _Counter
+        levels  = _Counter(e["level"]  for e in _audit_log)
+        actions = _Counter(e["action"] for e in _audit_log)
+        actors  = _Counter(e["actor"]  for e in _audit_log)
+        return {
+            "total": len(_audit_log),
+            "by_level": dict(levels),
+            "top_actions": dict(actions.most_common(10)),
+            "top_actors": dict(actors.most_common(10)),
+        }
+
     return app
 
 
@@ -5011,3 +5192,14 @@ _event_subscriptions: dict[str, Any] = {}
 _event_sub_counter: int = 0
 _event_ws_clients: list[Any] = []
 _event_id_counter: int = 0
+
+# ── Phase 32: Cron Job Scheduler ─────────────────────────────────────────────
+_cron_jobs: dict[str, Any] = {}
+_cron_history: list[dict[str, Any]] = []
+_cron_ws_clients: list[Any] = []
+_cron_run_id: int = 0
+
+# ── Phase 33: Audit Log ───────────────────────────────────────────────────────
+_audit_log: list[dict[str, Any]] = []
+_MAX_AUDIT = 500
+_audit_id_counter: int = 0

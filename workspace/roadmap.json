@@ -1624,6 +1624,120 @@
           "description": "GUI panel with publish form, subscriptions table, event history"
         }
       ]
+    },
+    {
+      "id": "m32",
+      "title": "Phase 32 \u2014 Cron Job Scheduler",
+      "description": "Define named cron jobs, trigger manually, view run history, and stream job events over WebSocket",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t32-1",
+          "title": "POST /cron/job \u2014 create/update a job",
+          "status": "done",
+          "priority": "high",
+          "description": "Define a named job with schedule and command"
+        },
+        {
+          "id": "t32-2",
+          "title": "GET /cron/jobs \u2014 list jobs",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all registered cron jobs"
+        },
+        {
+          "id": "t32-3",
+          "title": "DELETE /cron/job/{name} \u2014 remove a job",
+          "status": "done",
+          "priority": "medium",
+          "description": "Delete a named job"
+        },
+        {
+          "id": "t32-4",
+          "title": "POST /cron/job/{name}/run \u2014 trigger job now",
+          "status": "done",
+          "priority": "high",
+          "description": "Execute job command immediately and record result"
+        },
+        {
+          "id": "t32-5",
+          "title": "GET /cron/job/{name}/history \u2014 per-job run history",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return run records for a specific job"
+        },
+        {
+          "id": "t32-6",
+          "title": "GET /cron/history \u2014 global run history",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return all recent run records"
+        },
+        {
+          "id": "t32-7",
+          "title": "/ws/cron \u2014 WebSocket live stream",
+          "status": "done",
+          "priority": "high",
+          "description": "Stream job run results to WebSocket clients"
+        },
+        {
+          "id": "t32-8",
+          "title": "Cron Jobs panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with job definition, run/delete buttons, run history"
+        }
+      ]
+    },
+    {
+      "id": "m33",
+      "title": "Phase 33 \u2014 Audit Log",
+      "description": "Record all significant API actions as structured audit entries, query by level or actor, and view stats",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t33-1",
+          "title": "POST /audit/log \u2014 manual audit entry",
+          "status": "done",
+          "priority": "high",
+          "description": "Append a structured audit log entry"
+        },
+        {
+          "id": "t33-2",
+          "title": "GET /audit/log \u2014 query log",
+          "status": "done",
+          "priority": "high",
+          "description": "Return recent entries filtered by level/actor"
+        },
+        {
+          "id": "t33-3",
+          "title": "GET /audit/log/{id} \u2014 single entry",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch a specific audit entry by ID"
+        },
+        {
+          "id": "t33-4",
+          "title": "GET /audit/stats \u2014 aggregate stats",
+          "status": "done",
+          "priority": "high",
+          "description": "Return counts by level, top actions, top actors"
+        },
+        {
+          "id": "t33-5",
+          "title": "DELETE /audit/log/clear \u2014 purge log",
+          "status": "done",
+          "priority": "medium",
+          "description": "Clear all audit log entries"
+        },
+        {
+          "id": "t33-6",
+          "title": "Audit Log panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with stats overview, manual entry form, entries table with level colors"
+        }
+      ]
     }
   ]
 }

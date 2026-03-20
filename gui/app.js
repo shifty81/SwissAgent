@@ -2114,6 +2114,8 @@
       if (panel === "webhooks") loadWebhooksPanel();
       if (panel === "ratelimit") loadRatelimitPanel();
       if (panel === "events")    loadEventsPanel();
+      if (panel === "cron")      loadCronPanel();
+      if (panel === "audit")     loadAuditPanel();
     });
   });
 
@@ -4622,6 +4624,216 @@
           loadEventsPanel();
         } catch (e) { /* ignore */ }
       });
+    });
+  }
+
+  // ── Phase 32: Cron Job Scheduler panel ───────────────────────────────────
+  async function loadCronPanel() {
+    const container = $("cron-panel-content");
+    if (!container) return;
+    try {
+      const [jobsRes, histRes] = await Promise.all([
+        fetch("/cron/jobs"),
+        fetch("/cron/history"),
+      ]);
+      const jobsData = await jobsRes.json();
+      const histData = await histRes.json();
+      renderCronPanel(jobsData.jobs || [], histData.history || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderCronPanel(jobs, history) {
+    const container = $("cron-panel-content");
+    if (!container) return;
+
+    const jobRows = jobs.map((j) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(j.name)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(j.schedule)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${j.enabled ? "var(--ok,#4caf50)" : "var(--text-dim)"}">${j.enabled ? "on" : "off"}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${j.run_count ?? 0}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-cron-run" data-name="${escHtmlSimple(j.name)}" style="font-size:10px;padding:1px 4px" title="Run now">▶</button>
+          <button class="btn-cron-del" data-name="${escHtmlSimple(j.name)}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    const histRows = history.slice().reverse().slice(0, 10).map((r) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(r.job)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${r.exit_code === 0 ? "var(--ok,#4caf50)" : "var(--danger,#f44)"}">${r.exit_code === 0 ? "✓" : "✗"} ${r.exit_code}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple((r.started_at || "").slice(11, 19))}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">ADD JOB</div>
+      <input id="cron-name"     style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="job name" />
+      <input id="cron-schedule" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="schedule (e.g. every 60s)" />
+      <input id="cron-command"  style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="command (e.g. echo hello)" />
+      <button id="btn-cron-add" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Add Job</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">JOBS</div>
+      ${jobs.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Schedule</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Enabled</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Runs</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${jobRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No jobs defined.</div>'}
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RECENT RUNS</div>
+      ${history.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Job</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Result</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Time</th>
+          </tr></thead>
+          <tbody>${histRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No runs yet.</div>'}
+    `;
+
+    $("btn-cron-refresh")?.addEventListener("click", () => loadCronPanel());
+
+    $("btn-cron-add")?.addEventListener("click", async () => {
+      const name     = $("cron-name")?.value.trim();
+      const schedule = $("cron-schedule")?.value.trim();
+      const command  = $("cron-command")?.value.trim();
+      if (!name || !command) return;
+      try {
+        const res = await fetch("/cron/job", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, schedule: schedule || "manual", command }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadCronPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-cron-run").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/cron/job/${encodeURIComponent(btn.dataset.name)}/run`, { method: "POST" });
+          loadCronPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-cron-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/cron/job/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+          loadCronPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 33: Audit Log panel ─────────────────────────────────────────────
+  async function loadAuditPanel() {
+    const container = $("audit-panel-content");
+    if (!container) return;
+    try {
+      const [logRes, statsRes] = await Promise.all([
+        fetch("/audit/log?limit=30"),
+        fetch("/audit/stats"),
+      ]);
+      const logData   = await logRes.json();
+      const statsData = await statsRes.json();
+      renderAuditPanel(logData.entries || [], statsData);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderAuditPanel(entries, stats) {
+    const container = $("audit-panel-content");
+    if (!container) return;
+
+    const levelColor = (lv) =>
+      lv === "error" ? "var(--danger,#f44)" : lv === "warn" ? "var(--warn,#fc0)" : "var(--ok,#4caf50)";
+
+    const entryRows = entries.slice().reverse().slice(0, 20).map((e) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;color:${levelColor(e.level)}">${escHtmlSimple(e.level)}</td>
+        <td style="padding:2px 4px;font-size:10px;font-weight:600">${escHtmlSimple(e.action)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(e.actor)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple((e.ts || "").slice(11, 19))}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">STATS</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:11px">
+        <span>Total: <b>${stats.total ?? 0}</b></span>
+        <span style="color:var(--ok,#4caf50)">info: ${stats.by_level?.info ?? 0}</span>
+        <span style="color:var(--warn,#fc0)">warn: ${stats.by_level?.warn ?? 0}</span>
+        <span style="color:var(--danger,#f44)">error: ${stats.by_level?.error ?? 0}</span>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">MANUAL ENTRY</div>
+      <input id="audit-action" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="action" />
+      <div style="display:flex;gap:4px;margin-bottom:4px">
+        <input id="audit-actor"  style="width:50%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="actor" />
+        <select id="audit-level" style="width:50%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px">
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </select>
+      </div>
+      <input id="audit-detail" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="detail (optional)" />
+      <div style="display:flex;gap:4px;margin-bottom:8px">
+        <button id="btn-audit-add"   style="font-size:11px;padding:3px 8px">Log Entry</button>
+        <button id="btn-audit-clear" style="font-size:11px;padding:3px 8px;color:var(--danger,#f44)" title="Clear all audit log entries">Clear All</button>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RECENT ENTRIES</div>
+      ${entries.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Level</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Action</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Actor</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Time</th>
+          </tr></thead>
+          <tbody>${entryRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No entries yet.</div>'}
+    `;
+
+    $("btn-audit-refresh")?.addEventListener("click", () => loadAuditPanel());
+
+    $("btn-audit-add")?.addEventListener("click", async () => {
+      const action = $("audit-action")?.value.trim();
+      const actor  = $("audit-actor")?.value.trim() || "manual";
+      const level  = $("audit-level")?.value || "info";
+      const detail = $("audit-detail")?.value.trim();
+      if (!action) return;
+      try {
+        const res = await fetch("/audit/log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, actor, level, detail }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadAuditPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    $("btn-audit-clear")?.addEventListener("click", async () => {
+      if (!confirm("Clear all audit log entries?")) return;
+      try {
+        await fetch("/audit/log/clear", { method: "DELETE" });
+        loadAuditPanel();
+      } catch (e) { /* ignore */ }
     });
   }
 
