@@ -1738,6 +1738,120 @@
           "description": "GUI panel with stats overview, manual entry form, entries table with level colors"
         }
       ]
+    },
+    {
+      "id": "m34",
+      "title": "Phase 34 \u2014 Feature Flags",
+      "description": "Define named feature flags with enabled/disabled state and optional variants; toggle and check flags via API",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t34-1",
+          "title": "POST /flags/flag \u2014 create/update a flag",
+          "status": "done",
+          "priority": "high",
+          "description": "Define a named flag with enabled state and optional variant"
+        },
+        {
+          "id": "t34-2",
+          "title": "GET /flags \u2014 list all flags",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all registered feature flags"
+        },
+        {
+          "id": "t34-3",
+          "title": "GET /flags/flag/{name} \u2014 get a flag",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch a specific flag by name"
+        },
+        {
+          "id": "t34-4",
+          "title": "DELETE /flags/flag/{name} \u2014 delete a flag",
+          "status": "done",
+          "priority": "medium",
+          "description": "Remove a named flag"
+        },
+        {
+          "id": "t34-5",
+          "title": "POST /flags/flag/{name}/toggle \u2014 toggle a flag",
+          "status": "done",
+          "priority": "high",
+          "description": "Flip enabled state of a flag"
+        },
+        {
+          "id": "t34-6",
+          "title": "GET /flags/check/{name} \u2014 check if flag is on",
+          "status": "done",
+          "priority": "high",
+          "description": "Return enabled state and variant for a flag"
+        },
+        {
+          "id": "t34-7",
+          "title": "Feature Flags panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with flag form, flags table, toggle/delete buttons"
+        }
+      ]
+    },
+    {
+      "id": "m35",
+      "title": "Phase 35 \u2014 Config Profiles",
+      "description": "Define named configuration profiles with key-value maps, activate one as the current profile, and retrieve active values",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t35-1",
+          "title": "POST /config/profile \u2014 create/update a profile",
+          "status": "done",
+          "priority": "high",
+          "description": "Define a named profile with a key-value map"
+        },
+        {
+          "id": "t35-2",
+          "title": "GET /config/profiles \u2014 list all profiles",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all registered profiles and the active one"
+        },
+        {
+          "id": "t35-3",
+          "title": "GET /config/profile/{name} \u2014 get a profile",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch a specific profile by name"
+        },
+        {
+          "id": "t35-4",
+          "title": "DELETE /config/profile/{name} \u2014 delete a profile",
+          "status": "done",
+          "priority": "medium",
+          "description": "Remove a named profile; clears active if it was active"
+        },
+        {
+          "id": "t35-5",
+          "title": "POST /config/profile/{name}/activate \u2014 activate a profile",
+          "status": "done",
+          "priority": "high",
+          "description": "Set a profile as the active configuration"
+        },
+        {
+          "id": "t35-6",
+          "title": "GET /config/active \u2014 get active profile values",
+          "status": "done",
+          "priority": "high",
+          "description": "Return the active profile name and its values"
+        },
+        {
+          "id": "t35-7",
+          "title": "Config Profiles panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with profile form, profiles table, activate/delete buttons, active values display"
+        }
+      ]
     }
   ]
 }

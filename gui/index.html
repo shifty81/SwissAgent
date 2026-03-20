@@ -61,6 +61,8 @@
       <button class="ab-btn" data-panel="events"    title="Event Bus (Phase 31)">📡</button>
       <button class="ab-btn" data-panel="cron"      title="Cron Jobs (Phase 32)">🕐</button>
       <button class="ab-btn" data-panel="audit"     title="Audit Log (Phase 33)">📋</button>
+      <button class="ab-btn" data-panel="flags"     title="Feature Flags (Phase 34)">🚩</button>
+      <button class="ab-btn" data-panel="cfgprofile" title="Config Profiles (Phase 35)">⚙️</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -675,6 +677,32 @@
           </div>
         </div>
         <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="audit-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Feature Flags (Phase 34) ───────────────────────── -->
+      <div class="sb-panel" id="panel-flags">
+        <div class="sb-panel-header">
+          <span>🚩 Feature Flags</span>
+          <div>
+            <button id="btn-flags-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="flags-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Config Profiles (Phase 35) ────────────────────── -->
+      <div class="sb-panel" id="panel-cfgprofile">
+        <div class="sb-panel-header">
+          <span>⚙️ Config Profiles</span>
+          <div>
+            <button id="btn-cfgprofile-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="cfgprofile-panel-content">
           <div style="color:var(--text-dim);font-size:11px">Loading…</div>
         </div>
       </div>

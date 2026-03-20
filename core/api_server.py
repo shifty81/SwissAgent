@@ -576,6 +576,21 @@ class AuditLogEntryRequest(BaseModel):
     detail: str = ""
     level: str = "info"       # info | warn | error
 
+# ── Phase 34: Feature Flags request models ────────────────────────────────────
+
+class FeatureFlagRequest(BaseModel):
+    name: str
+    enabled: bool = True
+    variant: str = ""          # optional string variant value
+    description: str = ""
+
+# ── Phase 35: Config Profiles request models ──────────────────────────────────
+
+class ConfigProfileRequest(BaseModel):
+    name: str
+    values: dict[str, str] = {}
+    description: str = ""
+
 
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
@@ -5064,6 +5079,98 @@ indent_style = tab
             "top_actors": dict(actors.most_common(10)),
         }
 
+    # ── Phase 34: Feature Flags ───────────────────────────────────────────────
+
+    @app.post("/flags/flag")
+    async def flag_set(req: FeatureFlagRequest) -> dict[str, Any]:
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        _feature_flags[req.name] = {
+            "name": req.name,
+            "enabled": req.enabled,
+            "variant": req.variant,
+            "description": req.description,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        return {"saved": req.name}
+
+    @app.get("/flags")
+    async def flags_list() -> dict[str, Any]:
+        return {"flags": list(_feature_flags.values())}
+
+    @app.get("/flags/flag/{flag_name}")
+    async def flag_get(flag_name: str) -> dict[str, Any]:
+        if flag_name not in _feature_flags:
+            raise HTTPException(status_code=404, detail="Flag not found")
+        return _feature_flags[flag_name]
+
+    @app.delete("/flags/flag/{flag_name}")
+    async def flag_delete(flag_name: str) -> dict[str, Any]:
+        _feature_flags.pop(flag_name, None)
+        return {"deleted": flag_name}
+
+    @app.post("/flags/flag/{flag_name}/toggle")
+    async def flag_toggle(flag_name: str) -> dict[str, Any]:
+        if flag_name not in _feature_flags:
+            raise HTTPException(status_code=404, detail="Flag not found")
+        _feature_flags[flag_name]["enabled"] = not _feature_flags[flag_name]["enabled"]
+        _feature_flags[flag_name]["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"name": flag_name, "enabled": _feature_flags[flag_name]["enabled"]}
+
+    @app.get("/flags/check/{flag_name}")
+    async def flag_check(flag_name: str) -> dict[str, Any]:
+        flag = _feature_flags.get(flag_name)
+        if flag is None:
+            return {"name": flag_name, "enabled": False, "variant": ""}
+        return {"name": flag_name, "enabled": flag["enabled"], "variant": flag.get("variant", "")}
+
+    # ── Phase 35: Config Profiles ─────────────────────────────────────────────
+
+    @app.post("/config/profile")
+    async def config_profile_set(req: ConfigProfileRequest) -> dict[str, Any]:
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        _config_profiles[req.name] = {
+            "name": req.name,
+            "values": req.values,
+            "description": req.description,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        return {"saved": req.name}
+
+    @app.get("/config/profiles")
+    async def config_profiles_list() -> dict[str, Any]:
+        return {"profiles": list(_config_profiles.values()), "active": _active_config_profile}
+
+    @app.get("/config/profile/{profile_name}")
+    async def config_profile_get(profile_name: str) -> dict[str, Any]:
+        if profile_name not in _config_profiles:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        return _config_profiles[profile_name]
+
+    @app.delete("/config/profile/{profile_name}")
+    async def config_profile_delete(profile_name: str) -> dict[str, Any]:
+        global _active_config_profile
+        _config_profiles.pop(profile_name, None)
+        if _active_config_profile == profile_name:
+            _active_config_profile = ""
+        return {"deleted": profile_name}
+
+    @app.post("/config/profile/{profile_name}/activate")
+    async def config_profile_activate(profile_name: str) -> dict[str, Any]:
+        global _active_config_profile
+        if profile_name not in _config_profiles:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        _active_config_profile = profile_name
+        return {"activated": profile_name}
+
+    @app.get("/config/active")
+    async def config_active() -> dict[str, Any]:
+        if not _active_config_profile or _active_config_profile not in _config_profiles:
+            return {"active": None, "values": {}}
+        profile = _config_profiles[_active_config_profile]
+        return {"active": _active_config_profile, "values": profile.get("values", {})}
+
     return app
 
 
@@ -5203,3 +5310,10 @@ _cron_run_id: int = 0
 _audit_log: list[dict[str, Any]] = []
 _MAX_AUDIT = 500
 _audit_id_counter: int = 0
+
+# ── Phase 34: Feature Flags ───────────────────────────────────────────────────
+_feature_flags: dict[str, Any] = {}
+
+# ── Phase 35: Config Profiles ─────────────────────────────────────────────────
+_config_profiles: dict[str, Any] = {}
+_active_config_profile: str = ""

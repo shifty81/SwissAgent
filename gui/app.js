@@ -2116,6 +2116,8 @@
       if (panel === "events")    loadEventsPanel();
       if (panel === "cron")      loadCronPanel();
       if (panel === "audit")     loadAuditPanel();
+      if (panel === "flags")     loadFlagsPanel();
+      if (panel === "cfgprofile") loadCfgProfilePanel();
     });
   });
 
@@ -4834,6 +4836,212 @@
         await fetch("/audit/log/clear", { method: "DELETE" });
         loadAuditPanel();
       } catch (e) { /* ignore */ }
+    });
+  }
+
+  // ── Phase 34: Feature Flags panel ────────────────────────────────────────
+  async function loadFlagsPanel() {
+    const container = $("flags-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/flags");
+      const data = await res.json();
+      renderFlagsPanel(data.flags || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderFlagsPanel(flags) {
+    const container = $("flags-panel-content");
+    if (!container) return;
+
+    const flagRows = flags.map((f) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(f.name)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${f.enabled ? "var(--ok,#4caf50)" : "var(--text-dim)"}">${f.enabled ? "on" : "off"}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(f.variant || "")}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-flag-toggle" data-name="${escHtmlSimple(f.name)}" style="font-size:10px;padding:1px 4px" title="Toggle">${f.enabled ? "⏸" : "▶"}</button>
+          <button class="btn-flag-del"    data-name="${escHtmlSimple(f.name)}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">ADD / UPDATE FLAG</div>
+      <input id="flag-name"    style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="flag name" />
+      <input id="flag-variant" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="variant (optional)" />
+      <input id="flag-desc"    style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="description (optional)" />
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <label style="font-size:11px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="flag-enabled" checked /> Enabled</label>
+        <button id="btn-flag-add" style="font-size:11px;padding:3px 8px">Save Flag</button>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">FLAGS</div>
+      ${flags.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">State</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Variant</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${flagRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No flags defined.</div>'}
+    `;
+
+    $("btn-flags-refresh")?.addEventListener("click", () => loadFlagsPanel());
+
+    $("btn-flag-add")?.addEventListener("click", async () => {
+      const name    = $("flag-name")?.value.trim();
+      const variant = $("flag-variant")?.value.trim();
+      const desc    = $("flag-desc")?.value.trim();
+      const enabled = $("flag-enabled")?.checked ?? true;
+      if (!name) return;
+      try {
+        const res = await fetch("/flags/flag", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, variant, description: desc, enabled }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadFlagsPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-flag-toggle").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/flags/flag/${encodeURIComponent(btn.dataset.name)}/toggle`, { method: "POST" });
+          loadFlagsPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-flag-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/flags/flag/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+          loadFlagsPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 35: Config Profiles panel ──────────────────────────────────────
+  async function loadCfgProfilePanel() {
+    const container = $("cfgprofile-panel-content");
+    if (!container) return;
+    try {
+      const [profilesRes, activeRes] = await Promise.all([
+        fetch("/config/profiles"),
+        fetch("/config/active"),
+      ]);
+      const profilesData = await profilesRes.json();
+      const activeData   = await activeRes.json();
+      renderCfgProfilePanel(profilesData.profiles || [], profilesData.active || "", activeData);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderCfgProfilePanel(profiles, activeProfile, activeData) {
+    const container = $("cfgprofile-panel-content");
+    if (!container) return;
+
+    const profileRows = profiles.map((p) => {
+      const isActive = p.name === activeProfile;
+      return `
+        <tr style="${isActive ? "background:rgba(33,150,243,0.1)" : ""}">
+          <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(p.name)}</td>
+          <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${Object.keys(p.values || {}).length} keys</td>
+          <td style="padding:2px 4px;font-size:10px;color:${isActive ? "var(--info,#2196f3)" : "var(--text-dim)"}">${isActive ? "● active" : ""}</td>
+          <td style="padding:2px 4px">
+            ${!isActive ? `<button class="btn-cfgprofile-activate" data-name="${escHtmlSimple(p.name)}" style="font-size:10px;padding:1px 4px" title="Activate">✓</button>` : ""}
+            <button class="btn-cfgprofile-del" data-name="${escHtmlSimple(p.name)}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    const activeValues = activeData?.values || {};
+    const activeRows = Object.entries(activeValues).map(([k, v]) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace);color:var(--text-dim)">${escHtmlSimple(k)}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(v)}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">ADD / UPDATE PROFILE</div>
+      <input id="cfgprofile-name" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="profile name" />
+      <textarea id="cfgprofile-values" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;height:60px;resize:vertical;margin-bottom:4px;font-family:var(--font-mono,monospace)" placeholder='key=value pairs (one per line)'></textarea>
+      <button id="btn-cfgprofile-add" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Save Profile</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">PROFILES</div>
+      ${profiles.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Keys</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Status</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${profileRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No profiles defined.</div>'}
+
+      ${activeData?.active ? `
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">ACTIVE VALUES <span style="font-size:10px;color:var(--info,#2196f3)">(${escHtmlSimple(activeData.active)})</span></div>
+        ${Object.keys(activeValues).length ? `
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Key</th>
+              <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Value</th>
+            </tr></thead>
+            <tbody>${activeRows}</tbody>
+          </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">Profile has no keys.</div>'}
+      ` : ""}
+    `;
+
+    $("btn-cfgprofile-refresh")?.addEventListener("click", () => loadCfgProfilePanel());
+
+    $("btn-cfgprofile-add")?.addEventListener("click", async () => {
+      const name   = $("cfgprofile-name")?.value.trim();
+      const rawVal = $("cfgprofile-values")?.value || "";
+      if (!name) return;
+      const values = {};
+      for (const line of rawVal.split("\n")) {
+        const idx = line.indexOf("=");
+        if (idx > 0) values[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+      }
+      try {
+        const res = await fetch("/config/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, values }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadCfgProfilePanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-cfgprofile-activate").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/config/profile/${encodeURIComponent(btn.dataset.name)}/activate`, { method: "POST" });
+          loadCfgProfilePanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-cfgprofile-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/config/profile/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+          loadCfgProfilePanel();
+        } catch (e) { /* ignore */ }
+      });
     });
   }
 

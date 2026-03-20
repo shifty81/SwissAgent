@@ -2251,3 +2251,94 @@ def test_audit_log_clear(client):
     assert "cleared" in r.json()
     r2 = client.get("/audit/log")
     assert len(r2.json()["entries"]) == 0
+
+# ── Phase 34: Feature Flags ───────────────────────────────────────────────────
+def test_flag_set(client):
+    r = client.post("/flags/flag", json={"name": "dark_mode", "enabled": True, "variant": "v2"})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "dark_mode"
+
+def test_flag_no_name(client):
+    r = client.post("/flags/flag", json={"name": "", "enabled": True})
+    assert r.status_code == 400
+
+def test_flags_list(client):
+    client.post("/flags/flag", json={"name": "list_flag", "enabled": False})
+    r = client.get("/flags")
+    assert r.status_code == 200
+    data = r.json()
+    assert "flags" in data
+    assert any(f["name"] == "list_flag" for f in data["flags"])
+
+def test_flag_get(client):
+    client.post("/flags/flag", json={"name": "get_flag", "enabled": True, "variant": "beta"})
+    r = client.get("/flags/flag/get_flag")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["name"] == "get_flag"
+    assert data["variant"] == "beta"
+
+def test_flag_toggle(client):
+    client.post("/flags/flag", json={"name": "toggle_flag", "enabled": True})
+    r = client.post("/flags/flag/toggle_flag/toggle")
+    assert r.status_code == 200
+    assert r.json()["enabled"] is False
+
+def test_flag_check(client):
+    client.post("/flags/flag", json={"name": "check_flag", "enabled": True})
+    r = client.get("/flags/check/check_flag")
+    assert r.status_code == 200
+    assert r.json()["enabled"] is True
+
+def test_flag_delete(client):
+    client.post("/flags/flag", json={"name": "del_flag", "enabled": True})
+    r = client.delete("/flags/flag/del_flag")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "del_flag"
+
+# ── Phase 35: Config Profiles ─────────────────────────────────────────────────
+def test_config_profile_set(client):
+    r = client.post("/config/profile", json={"name": "prod", "values": {"HOST": "prod.example.com", "PORT": "443"}})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "prod"
+
+def test_config_profile_no_name(client):
+    r = client.post("/config/profile", json={"name": "", "values": {}})
+    assert r.status_code == 400
+
+def test_config_profiles_list(client):
+    client.post("/config/profile", json={"name": "dev", "values": {"HOST": "localhost"}})
+    r = client.get("/config/profiles")
+    assert r.status_code == 200
+    data = r.json()
+    assert "profiles" in data
+    assert any(p["name"] == "dev" for p in data["profiles"])
+
+def test_config_profile_get(client):
+    client.post("/config/profile", json={"name": "staging", "values": {"ENV": "staging"}})
+    r = client.get("/config/profile/staging")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["name"] == "staging"
+    assert data["values"]["ENV"] == "staging"
+
+def test_config_profile_activate(client):
+    client.post("/config/profile", json={"name": "active_prof", "values": {"K": "V"}})
+    r = client.post("/config/profile/active_prof/activate")
+    assert r.status_code == 200
+    assert r.json()["activated"] == "active_prof"
+
+def test_config_active(client):
+    client.post("/config/profile", json={"name": "act2", "values": {"X": "1"}})
+    client.post("/config/profile/act2/activate")
+    r = client.get("/config/active")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["active"] == "act2"
+    assert data["values"]["X"] == "1"
+
+def test_config_profile_delete(client):
+    client.post("/config/profile", json={"name": "del_prof", "values": {}})
+    r = client.delete("/config/profile/del_prof")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "del_prof"
