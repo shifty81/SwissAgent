@@ -51,6 +51,8 @@
       <button class="ab-btn" data-panel="aibackends" title="AI Backends (Phase 20)">🤖</button>
       <button class="ab-btn" data-panel="agents"    title="Multi-Agent Orchestration (Phase 22)">🕹</button>
       <button class="ab-btn" data-panel="ci"        title="CI/CD Pipeline (Phase 23)">🔁</button>
+      <button class="ab-btn" data-panel="docker"    title="Docker Management (Phase 24)">🐳</button>
+      <button class="ab-btn" data-panel="deploy"    title="Remote Deployment (Phase 25)">🚀</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -535,6 +537,32 @@
           </div>
         </div>
         <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="ci-panel-content">
+          <div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Docker Management (Phase 24) ──────────────────── -->
+      <div class="sb-panel" id="panel-docker">
+        <div class="sidebar-header">
+          <span>🐳 Docker</span>
+          <div class="sidebar-buttons">
+            <button id="btn-docker-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="docker-panel-content">
+          <div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Remote Deployment (Phase 25) ──────────────────── -->
+      <div class="sb-panel" id="panel-deploy">
+        <div class="sidebar-header">
+          <span>🚀 Deploy</span>
+          <div class="sidebar-buttons">
+            <button id="btn-deploy-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="deploy-panel-content">
           <div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>
         </div>
       </div>

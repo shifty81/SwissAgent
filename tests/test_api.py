@@ -1733,3 +1733,95 @@ def test_ci_runs_list(client):
     r = client.get("/ci/runs")
     assert r.status_code == 200
     assert "runs" in r.json()
+
+# ── Phase 24: Container & Docker Management ───────────────────────────────────
+def test_docker_build_returns_output(client):
+    r = client.post("/docker/build", json={"dockerfile": "Dockerfile", "tag": "test:latest", "context": "."})
+    assert r.status_code == 200
+    data = r.json()
+    assert "exit_code" in data
+    assert "output" in data
+    assert data["tag"] == "test:latest"
+
+def test_docker_run_returns_output(client):
+    r = client.post("/docker/run", json={"image": "hello-world", "detach": False})
+    assert r.status_code == 200
+    data = r.json()
+    assert "exit_code" in data
+    assert "output" in data
+    assert "container_id" in data
+
+def test_docker_containers_list(client):
+    r = client.get("/docker/containers")
+    assert r.status_code == 200
+    data = r.json()
+    assert "containers" in data
+    assert isinstance(data["containers"], list)
+
+def test_docker_containers_all_flag(client):
+    r = client.get("/docker/containers?all=true")
+    assert r.status_code == 200
+    assert "containers" in r.json()
+
+def test_docker_stop_nonexistent(client):
+    r = client.post("/docker/stop/nonexistent_container_xyz")
+    assert r.status_code == 200
+    data = r.json()
+    assert "exit_code" in data
+    assert data["container_id"] == "nonexistent_container_xyz"
+
+def test_docker_logs_nonexistent(client):
+    r = client.get("/docker/logs/nonexistent_container_xyz")
+    assert r.status_code == 200
+    data = r.json()
+    assert "exit_code" in data
+    assert "output" in data
+
+# ── Phase 25: Remote Deployment & SSH ────────────────────────────────────────
+def test_deploy_config_create(client):
+    r = client.post("/deploy/config", json={
+        "name": "prod", "host": "example.com", "user": "deploy",
+        "port": 22, "command": "echo deployed"
+    })
+    assert r.status_code == 200
+    assert r.json()["saved"] == "prod"
+
+def test_deploy_configs_list(client):
+    client.post("/deploy/config", json={
+        "name": "staging", "host": "staging.example.com", "user": "deploy",
+        "port": 22, "command": "echo staging"
+    })
+    r = client.get("/deploy/configs")
+    assert r.status_code == 200
+    data = r.json()
+    assert "configs" in data
+    assert any(c["name"] == "staging" for c in data["configs"])
+
+def test_deploy_config_delete(client):
+    client.post("/deploy/config", json={
+        "name": "temp_cfg", "host": "temp.example.com", "user": "root",
+        "port": 22, "command": "echo temp"
+    })
+    r = client.delete("/deploy/config/temp_cfg")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "temp_cfg"
+    r2 = client.get("/deploy/configs")
+    assert not any(c["name"] == "temp_cfg" for c in r2.json()["configs"])
+
+def test_deploy_run_missing_host(client):
+    r = client.post("/deploy/run", json={"host": "", "command": ""})
+    assert r.status_code == 400
+
+def test_deploy_run_adhoc(client):
+    r = client.post("/deploy/run", json={
+        "host": "127.0.0.1", "user": "root", "port": 22, "command": "echo hello"
+    })
+    assert r.status_code == 200
+    data = r.json()
+    assert "exit_code" in data
+    assert "output" in data
+
+def test_deploy_history(client):
+    r = client.get("/deploy/history")
+    assert r.status_code == 200
+    assert "history" in r.json()

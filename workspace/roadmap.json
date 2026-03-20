@@ -1147,6 +1147,120 @@
           "description": "GUI panel to run CI commands and view history"
         }
       ]
+    },
+    {
+      "id": "m24",
+      "title": "Phase 24 \u2014 Container & Docker Management",
+      "description": "Build and run Docker containers, inspect running containers, stream logs, and manage images via REST API and IDE panel",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t24-1",
+          "title": "POST /docker/build \u2014 build a Docker image",
+          "status": "done",
+          "priority": "high",
+          "description": "Build a Docker image from a Dockerfile path and optional tag"
+        },
+        {
+          "id": "t24-2",
+          "title": "POST /docker/run \u2014 run a container",
+          "status": "done",
+          "priority": "high",
+          "description": "Run a container from an image with optional name and detach flag"
+        },
+        {
+          "id": "t24-3",
+          "title": "GET /docker/containers \u2014 list containers",
+          "status": "done",
+          "priority": "high",
+          "description": "List running (and optionally all) Docker containers"
+        },
+        {
+          "id": "t24-4",
+          "title": "POST /docker/stop/{id} \u2014 stop a container",
+          "status": "done",
+          "priority": "high",
+          "description": "Stop a running container by ID or name"
+        },
+        {
+          "id": "t24-5",
+          "title": "GET /docker/logs/{id} \u2014 get container logs",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch stdout/stderr logs from a container"
+        },
+        {
+          "id": "t24-6",
+          "title": "WebSocket /ws/docker \u2014 stream Docker events",
+          "status": "done",
+          "priority": "medium",
+          "description": "Stream Docker daemon events in real-time"
+        },
+        {
+          "id": "t24-7",
+          "title": "Docker management panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel to build images, manage containers, and view logs"
+        }
+      ]
+    },
+    {
+      "id": "m25",
+      "title": "Phase 25 \u2014 Remote Deployment & SSH",
+      "description": "Store deployment configurations, run remote commands via SSH, track deployment history, and stream output via WebSocket",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t25-1",
+          "title": "POST /deploy/config \u2014 store a deploy config",
+          "status": "done",
+          "priority": "high",
+          "description": "Save a named deployment config (host, user, port, command)"
+        },
+        {
+          "id": "t25-2",
+          "title": "GET /deploy/configs \u2014 list deploy configs",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all stored deployment configurations"
+        },
+        {
+          "id": "t25-3",
+          "title": "DELETE /deploy/config/{name} \u2014 remove a deploy config",
+          "status": "done",
+          "priority": "medium",
+          "description": "Delete a named deployment configuration"
+        },
+        {
+          "id": "t25-4",
+          "title": "POST /deploy/run \u2014 execute a deployment",
+          "status": "done",
+          "priority": "high",
+          "description": "Run a deployment using a stored config or ad-hoc SSH command"
+        },
+        {
+          "id": "t25-5",
+          "title": "GET /deploy/history \u2014 deployment history",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return list of past deployments with status and output"
+        },
+        {
+          "id": "t25-6",
+          "title": "WebSocket /ws/deploy \u2014 stream deployment output",
+          "status": "done",
+          "priority": "medium",
+          "description": "Stream the output of the last deployment in real-time"
+        },
+        {
+          "id": "t25-7",
+          "title": "Deploy panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel to manage deploy configs and run/monitor deployments"
+        }
+      ]
     }
   ]
 }
