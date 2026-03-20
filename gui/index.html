@@ -53,6 +53,8 @@
       <button class="ab-btn" data-panel="ci"        title="CI/CD Pipeline (Phase 23)">🔁</button>
       <button class="ab-btn" data-panel="docker"    title="Docker Management (Phase 24)">🐳</button>
       <button class="ab-btn" data-panel="deploy"    title="Remote Deployment (Phase 25)">🚀</button>
+      <button class="ab-btn" data-panel="monitor"   title="Monitoring & Observability (Phase 26)">📊</button>
+      <button class="ab-btn" data-panel="database"  title="Database Management (Phase 27)">🗄️</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -564,6 +566,32 @@
         </div>
         <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="deploy-panel-content">
           <div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Monitoring & Observability (Phase 26) ──────────── -->
+      <div class="sb-panel" id="panel-monitor">
+        <div class="sb-panel-header">
+          <span>📊 Monitoring</span>
+          <div>
+            <button id="btn-monitor-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="monitor-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Database Management (Phase 27) ─────────────────── -->
+      <div class="sb-panel" id="panel-database">
+        <div class="sb-panel-header">
+          <span>🗄️ Database</span>
+          <div>
+            <button id="btn-db-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="database-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
         </div>
       </div>
 

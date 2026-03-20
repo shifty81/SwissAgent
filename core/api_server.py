@@ -495,6 +495,27 @@ class DeployRunRequest(BaseModel):
     key_path: str = ""
 
 
+# ── Phase 26: Monitoring & Observability request models ──────────────────────
+
+class MetricsAlertRequest(BaseModel):
+    name: str
+    metric: str          # "cpu_load" | "mem_percent" | "disk_percent"
+    threshold: float     # alert when value >= threshold
+    enabled: bool = True
+
+# ── Phase 27: Database Management request models ──────────────────────────────
+
+class DbConnectRequest(BaseModel):
+    path: str                      # path to SQLite file (relative to workspace/)
+    alias: str = ""                # optional friendly name
+
+class DbQueryRequest(BaseModel):
+    connection_id: str
+    sql: str
+    params: list[Any] = []
+    limit: int = 200               # max rows returned
+
+
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
 # Context window sizes sent to the LLM.  Prefix is longer because the model
@@ -4299,6 +4320,211 @@ indent_style = tab
         except Exception:
             pass
 
+    # ── Phase 26: Monitoring & Observability ──────────────────────────────────
+
+    def _collect_metrics() -> dict[str, Any]:
+        """Collect current system metrics using stdlib only."""
+        import shutil
+        ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        try:
+            load1, load5, load15 = os.getloadavg()
+            cpu_count = os.cpu_count() or 1
+            cpu_load_percent = round((load1 / cpu_count) * 100, 1)
+        except Exception:
+            load1, load5, load15 = 0.0, 0.0, 0.0
+            cpu_load_percent = 0.0
+        mem_total_kb, mem_avail_kb = 0, 0
+        try:
+            with open("/proc/meminfo", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        mem_total_kb = int(line.split()[1])
+                    elif line.startswith("MemAvailable:"):
+                        mem_avail_kb = int(line.split()[1])
+        except Exception:
+            pass
+        mem_used_kb = mem_total_kb - mem_avail_kb
+        mem_percent = round((mem_used_kb / mem_total_kb) * 100, 1) if mem_total_kb else 0.0
+        try:
+            du = shutil.disk_usage(".")
+            disk_total = du.total
+            disk_used = du.used
+            disk_percent = round((disk_used / disk_total) * 100, 1) if disk_total else 0.0
+        except Exception:
+            disk_total, disk_used, disk_percent = 0, 0, 0.0
+        return {
+            "ts": ts,
+            "cpu_load_percent": cpu_load_percent,
+            "cpu_load_avg": {"1m": round(load1, 2), "5m": round(load5, 2), "15m": round(load15, 2)},
+            "mem_total_kb": mem_total_kb,
+            "mem_used_kb": mem_used_kb,
+            "mem_percent": mem_percent,
+            "disk_total_bytes": disk_total,
+            "disk_used_bytes": disk_used,
+            "disk_percent": disk_percent,
+        }
+
+    @app.get("/metrics")
+    async def metrics_current() -> dict[str, Any]:
+        snap = _collect_metrics()
+        _metrics_history.append(snap)
+        if len(_metrics_history) > _MAX_METRICS_HISTORY:
+            _metrics_history[:] = _metrics_history[-_MAX_METRICS_HISTORY:]
+        return snap
+
+    @app.get("/metrics/history")
+    async def metrics_history_list(limit: int = 20) -> dict[str, Any]:
+        return {"history": _metrics_history[-limit:]}
+
+    @app.post("/metrics/snapshot")
+    async def metrics_snapshot() -> dict[str, Any]:
+        snap = _collect_metrics()
+        _metrics_history.append(snap)
+        if len(_metrics_history) > _MAX_METRICS_HISTORY:
+            _metrics_history[:] = _metrics_history[-_MAX_METRICS_HISTORY:]
+        return {"saved": True, "snapshot": snap}
+
+    @app.get("/health/detailed")
+    async def health_detailed() -> dict[str, Any]:
+        snap = _collect_metrics()
+        checks = {
+            "api": "ok",
+            "cpu": "ok" if snap["cpu_load_percent"] < 90 else "warn",
+            "memory": "ok" if snap["mem_percent"] < 90 else "warn",
+            "disk": "ok" if snap["disk_percent"] < 90 else "warn",
+        }
+        overall = "ok" if all(v == "ok" for v in checks.values()) else "degraded"
+        return {"status": overall, "checks": checks, "metrics": snap}
+
+    @app.post("/metrics/alert")
+    async def metrics_alert_set(req: MetricsAlertRequest) -> dict[str, Any]:
+        _metrics_alerts[req.name] = {
+            "name": req.name,
+            "metric": req.metric,
+            "threshold": req.threshold,
+            "enabled": req.enabled,
+        }
+        return {"saved": req.name}
+
+    @app.get("/metrics/alerts")
+    async def metrics_alerts_list() -> dict[str, Any]:
+        return {"alerts": list(_metrics_alerts.values())}
+
+    @app.delete("/metrics/alert/{name}")
+    async def metrics_alert_delete(name: str) -> dict[str, Any]:
+        _metrics_alerts.pop(name, None)
+        return {"deleted": name}
+
+    @app.websocket("/ws/metrics")
+    async def ws_metrics(websocket: WebSocket) -> None:
+        await websocket.accept()
+        try:
+            for _ in range(3):
+                snap = _collect_metrics()
+                await websocket.send_text(json.dumps(snap))
+                await asyncio.sleep(1)
+            await websocket.send_text(json.dumps({"done": True}))
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
+    # ── Phase 27: Database Management (SQLite) ────────────────────────────────
+
+    @app.post("/db/connect")
+    async def db_connect(req: DbConnectRequest) -> dict[str, Any]:
+        import sqlite3 as _sqlite3
+        global _db_conn_counter
+        db_path = _safe_path(base_dir / "workspace", req.path)
+        try:
+            conn = _sqlite3.connect(str(db_path))
+            conn.close()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        _db_conn_counter += 1
+        conn_id = str(_db_conn_counter)
+        alias = req.alias or db_path.name
+        _db_connections[conn_id] = {
+            "id": conn_id,
+            "path": str(db_path),
+            "alias": alias,
+            "connected_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        return _db_connections[conn_id]
+
+    @app.get("/db/connections")
+    async def db_connections_list() -> dict[str, Any]:
+        return {"connections": list(_db_connections.values())}
+
+    @app.delete("/db/connection/{connection_id}")
+    async def db_connection_delete(connection_id: str) -> dict[str, Any]:
+        _db_connections.pop(connection_id, None)
+        return {"deleted": connection_id}
+
+    @app.post("/db/query")
+    async def db_query(req: DbQueryRequest) -> dict[str, Any]:
+        import sqlite3 as _sqlite3
+        if req.connection_id not in _db_connections:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        db_path = _db_connections[req.connection_id]["path"]
+        try:
+            conn = _sqlite3.connect(db_path)
+            conn.row_factory = _sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(req.sql, req.params)
+            if cur.description:
+                columns = [d[0] for d in cur.description]
+                rows = [dict(r) for r in cur.fetchmany(req.limit)]
+                conn.close()
+                result = {"columns": columns, "rows": rows, "row_count": len(rows)}
+            else:
+                conn.commit()
+                affected = cur.rowcount
+                conn.close()
+                result = {"columns": [], "rows": [], "row_count": affected}
+            _db_last_results.clear()
+            _db_last_results.extend(result.get("rows", []))
+            return result
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/db/schema/{connection_id}")
+    async def db_schema(connection_id: str) -> dict[str, Any]:
+        import sqlite3 as _sqlite3
+        if connection_id not in _db_connections:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        db_path = _db_connections[connection_id]["path"]
+        try:
+            conn = _sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("SELECT name, type FROM sqlite_master WHERE type IN ('table','view') ORDER BY name")
+            tables = []
+            for name, ttype in cur.fetchall():
+                try:
+                    cur2 = conn.cursor()
+                    quoted = name.replace('"', '""')
+                    cur2.execute(f'PRAGMA table_info("{quoted}")')
+                    cols = [{"name": r[1], "type": r[2], "not_null": bool(r[3]), "pk": bool(r[5])} for r in cur2.fetchall()]
+                except Exception:
+                    cols = []
+                tables.append({"name": name, "type": ttype, "columns": cols})
+            conn.close()
+            return {"connection_id": connection_id, "tables": tables}
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.websocket("/ws/db")
+    async def ws_db(websocket: WebSocket) -> None:
+        await websocket.accept()
+        try:
+            for row in _db_last_results[:50]:
+                await websocket.send_text(json.dumps({"row": row}))
+            await websocket.send_text(json.dumps({"done": True}))
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
     return app
 
 
@@ -4395,3 +4621,13 @@ _deploy_history: list[dict[str, Any]] = []
 _MAX_DEPLOY_RUNS = 50
 _DEPLOY_TIMEOUT = 120  # seconds
 _deploy_run_counter: int = 0
+
+# ── Phase 26: Monitoring & Observability ─────────────────────────────────────
+_metrics_history: list[dict[str, Any]] = []
+_MAX_METRICS_HISTORY = 100
+_metrics_alerts: dict[str, Any] = {}
+
+# ── Phase 27: Database Management ─────────────────────────────────────────────
+_db_connections: dict[str, Any] = {}
+_db_conn_counter: int = 0
+_db_last_results: list[dict[str, Any]] = []

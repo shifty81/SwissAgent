@@ -1261,6 +1261,134 @@
           "description": "GUI panel to manage deploy configs and run/monitor deployments"
         }
       ]
+    },
+    {
+      "id": "m26",
+      "title": "Phase 26 \u2014 Monitoring & Observability",
+      "description": "Real-time system metrics, health checks, alert thresholds, and live metrics streaming via WebSocket",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t26-1",
+          "title": "GET /metrics \u2014 current system metrics",
+          "status": "done",
+          "priority": "high",
+          "description": "Collect and return CPU load, memory, and disk usage"
+        },
+        {
+          "id": "t26-2",
+          "title": "GET /metrics/history \u2014 historical snapshots",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return the last N metric snapshots"
+        },
+        {
+          "id": "t26-3",
+          "title": "POST /metrics/snapshot \u2014 manual snapshot",
+          "status": "done",
+          "priority": "low",
+          "description": "Trigger and store a metrics snapshot"
+        },
+        {
+          "id": "t26-4",
+          "title": "GET /health/detailed \u2014 detailed health check",
+          "status": "done",
+          "priority": "high",
+          "description": "Full system health report with per-resource checks"
+        },
+        {
+          "id": "t26-5",
+          "title": "POST /metrics/alert \u2014 set alert threshold",
+          "status": "done",
+          "priority": "medium",
+          "description": "Store a named alert threshold for a metric"
+        },
+        {
+          "id": "t26-6",
+          "title": "GET /metrics/alerts \u2014 list alert thresholds",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return all configured alert thresholds"
+        },
+        {
+          "id": "t26-7",
+          "title": "DELETE /metrics/alert/{name} \u2014 remove alert",
+          "status": "done",
+          "priority": "low",
+          "description": "Delete a named alert threshold"
+        },
+        {
+          "id": "t26-8",
+          "title": "WebSocket /ws/metrics \u2014 stream live metrics",
+          "status": "done",
+          "priority": "medium",
+          "description": "Stream 3 metric snapshots then done"
+        },
+        {
+          "id": "t26-9",
+          "title": "Monitoring panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with gauges, alert configuration"
+        }
+      ]
+    },
+    {
+      "id": "m27",
+      "title": "Phase 27 \u2014 Database Management",
+      "description": "SQLite connection management, schema browsing, SQL query execution, and WebSocket result streaming",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t27-1",
+          "title": "POST /db/connect \u2014 connect to SQLite file",
+          "status": "done",
+          "priority": "high",
+          "description": "Register a SQLite database file as a named connection"
+        },
+        {
+          "id": "t27-2",
+          "title": "GET /db/connections \u2014 list connections",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all registered database connections"
+        },
+        {
+          "id": "t27-3",
+          "title": "DELETE /db/connection/{id} \u2014 disconnect",
+          "status": "done",
+          "priority": "medium",
+          "description": "Remove a database connection"
+        },
+        {
+          "id": "t27-4",
+          "title": "POST /db/query \u2014 execute SQL",
+          "status": "done",
+          "priority": "high",
+          "description": "Run a SQL query and return rows"
+        },
+        {
+          "id": "t27-5",
+          "title": "GET /db/schema/{id} \u2014 browse schema",
+          "status": "done",
+          "priority": "high",
+          "description": "List tables and columns for a connection"
+        },
+        {
+          "id": "t27-6",
+          "title": "WebSocket /ws/db \u2014 stream query results",
+          "status": "done",
+          "priority": "medium",
+          "description": "Stream last query result rows"
+        },
+        {
+          "id": "t27-7",
+          "title": "Database panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel for connections, schema browser, and SQL editor"
+        }
+      ]
     }
   ]
 }

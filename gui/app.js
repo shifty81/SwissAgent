@@ -2108,6 +2108,8 @@
       if (panel === "ci")     loadCIPanel();
       if (panel === "docker") loadDockerPanel();
       if (panel === "deploy") loadDeployPanel();
+      if (panel === "monitor")   loadMonitorPanel();
+      if (panel === "database")  loadDatabasePanel();
     });
   });
 
@@ -3923,6 +3925,222 @@
   }
 
   $("btn-deploy-refresh")?.addEventListener("click", () => loadDeployPanel());
+
+  // ── Phase 26: Monitoring & Observability panel ────────────────────────────
+  async function loadMonitorPanel() {
+    const container = $("monitor-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/metrics");
+      const data = await res.json();
+      renderMonitorPanel(data);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderMonitorPanel(metrics) {
+    const container = $("monitor-panel-content");
+    if (!container) return;
+    const bar = (pct) => {
+      const color = pct >= 90 ? "var(--danger,#f44)" : pct >= 70 ? "#f90" : "var(--ok,#4caf50)";
+      return `<div style="height:6px;background:var(--bg3,#333);border-radius:3px;overflow:hidden;margin-top:2px">
+        <div style="width:${Math.min(pct,100)}%;height:100%;background:${color};transition:width .3s"></div>
+      </div>`;
+    };
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">SYSTEM METRICS</div>
+      <div style="font-size:11px;color:var(--text-dim,#aaa);margin-bottom:2px">Updated: ${escHtmlSimple((metrics.ts||"").slice(0,19).replace("T"," "))} UTC</div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--text,#d4d4d4);margin-top:6px">CPU Load (1m avg)</div>
+        <div style="font-size:10px;color:var(--text-dim,#aaa)">${escHtmlSimple(String(metrics.cpu_load_percent))}% &nbsp;|&nbsp; 1m: ${escHtmlSimple(String((metrics.cpu_load_avg||{})['1m']||0))} 5m: ${escHtmlSimple(String((metrics.cpu_load_avg||{})['5m']||0))} 15m: ${escHtmlSimple(String((metrics.cpu_load_avg||{})['15m']||0))}</div>
+        ${bar(metrics.cpu_load_percent||0)}
+      </div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--text,#d4d4d4)">Memory</div>
+        <div style="font-size:10px;color:var(--text-dim,#aaa)">${escHtmlSimple(String(metrics.mem_percent))}% used &nbsp;|&nbsp; ${escHtmlSimple(String(Math.round((metrics.mem_used_kb||0)/1024)))} / ${escHtmlSimple(String(Math.round((metrics.mem_total_kb||0)/1024)))} MB</div>
+        ${bar(metrics.mem_percent||0)}
+      </div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--text,#d4d4d4)">Disk</div>
+        <div style="font-size:10px;color:var(--text-dim,#aaa)">${escHtmlSimple(String(metrics.disk_percent))}% used &nbsp;|&nbsp; ${escHtmlSimple(String(Math.round((metrics.disk_used_bytes||0)/1e9*10)/10))} / ${escHtmlSimple(String(Math.round((metrics.disk_total_bytes||0)/1e9*10)/10))} GB</div>
+        ${bar(metrics.disk_percent||0)}
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">SET ALERT</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:4px">
+        <input id="mon-alert-name"      style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;grid-column:span 1" placeholder="alert name" />
+        <select id="mon-alert-metric"   style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px">
+          <option value="cpu_load_percent">CPU</option>
+          <option value="mem_percent">Memory</option>
+          <option value="disk_percent">Disk</option>
+        </select>
+        <input id="mon-alert-threshold" style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="threshold %" type="number" />
+      </div>
+      <button id="btn-mon-alert-save" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Save Alert</button>
+      <div id="mon-alerts-list"></div>
+    `;
+
+    $("btn-monitor-refresh")?.addEventListener("click", () => loadMonitorPanel());
+    $("btn-mon-alert-save")?.addEventListener("click", async () => {
+      const name = $("mon-alert-name")?.value.trim();
+      const metric = $("mon-alert-metric")?.value;
+      const threshold = parseFloat($("mon-alert-threshold")?.value || "0");
+      if (!name) return;
+      try {
+        await fetch("/metrics/alert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, metric, threshold }),
+        });
+        const r2 = await fetch("/metrics/alerts");
+        const d2 = await r2.json();
+        const alertsList = $("mon-alerts-list");
+        if (alertsList) {
+          alertsList.innerHTML = (d2.alerts || []).map((a) =>
+            `<div style="font-size:10px;color:var(--text-dim,#aaa);margin:1px 0">${escHtmlSimple(a.name)}: ${escHtmlSimple(a.metric)} &ge; ${escHtmlSimple(String(a.threshold))}%
+              <button data-name="${escHtmlSimple(a.name)}" class="btn-mon-alert-del" style="font-size:9px;padding:1px 3px;margin-left:4px">✕</button></div>`
+          ).join("");
+          alertsList.querySelectorAll(".btn-mon-alert-del").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              await fetch(`/metrics/alert/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+              loadMonitorPanel();
+            });
+          });
+        }
+      } catch (e) {
+        alert(`Error: ${e.message}`);
+      }
+    });
+  }
+
+  // ── Phase 27: Database Management panel ──────────────────────────────────
+  async function loadDatabasePanel() {
+    const container = $("database-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/db/connections");
+      const data = await res.json();
+      renderDatabasePanel(data.connections || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderDatabasePanel(connections) {
+    const container = $("database-panel-content");
+    if (!container) return;
+    const connOptions = connections.map((c) =>
+      `<option value="${escHtmlSimple(c.id)}">${escHtmlSimple(c.alias)} (#${escHtmlSimple(c.id)})</option>`
+    ).join("");
+    const connRows = connections.map((c) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(c.id)}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(c.alias)}</td>
+        <td style="padding:2px 4px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px" title="${escHtmlSimple(c.path)}">${escHtmlSimple(c.path.split('/').pop())}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-db-schema" data-id="${escHtmlSimple(c.id)}" style="font-size:10px;padding:1px 4px">⬡</button>
+          <button class="btn-db-del"    data-id="${escHtmlSimple(c.id)}" style="font-size:10px;padding:1px 4px">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">CONNECT (SQLite)</div>
+      <input id="db-path"  style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="path relative to workspace/ (e.g. mydb.sqlite)" />
+      <input id="db-alias" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="alias (optional)" />
+      <button id="btn-db-connect" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Connect</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">CONNECTIONS</div>
+      ${connections.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Alias</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">File</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)"></th>
+          </tr></thead>
+          <tbody>${connRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No connections.</div>'}
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">QUERY</div>
+      <select id="db-query-conn" style="width:100%;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px">
+        <option value="">— select connection —</option>
+        ${connOptions}
+      </select>
+      <textarea id="db-sql" style="width:100%;box-sizing:border-box;height:60px;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;font-family:var(--font-mono,monospace);resize:vertical;margin-bottom:4px" placeholder="SELECT * FROM ..."></textarea>
+      <button id="btn-db-run-query" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Run Query</button>
+      <div id="db-query-result" style="font-size:10px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;overflow:auto;max-height:140px;white-space:pre"></div>
+      <div id="db-schema-result" style="margin-top:8px"></div>
+    `;
+
+    $("btn-db-refresh")?.addEventListener("click", () => loadDatabasePanel());
+
+    $("btn-db-connect")?.addEventListener("click", async () => {
+      const path = $("db-path")?.value.trim();
+      if (!path) return;
+      const alias = $("db-alias")?.value.trim();
+      try {
+        const res = await fetch("/db/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, alias }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadDatabasePanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    $("btn-db-run-query")?.addEventListener("click", async () => {
+      const conn_id = $("db-query-conn")?.value;
+      const sql = $("db-sql")?.value.trim();
+      if (!conn_id || !sql) return;
+      const resultDiv = $("db-query-result");
+      if (resultDiv) resultDiv.textContent = "Running…";
+      try {
+        const res = await fetch("/db/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connection_id: conn_id, sql }),
+        });
+        const data = await res.json();
+        if (!res.ok) { if (resultDiv) resultDiv.textContent = data.detail || "Error"; return; }
+        if (data.columns && data.columns.length) {
+          const header = data.columns.join(" | ");
+          const rows = (data.rows || []).map((r) => Object.values(r).join(" | ")).join("\n");
+          if (resultDiv) resultDiv.textContent = `${header}\n${"-".repeat(header.length)}\n${rows}\n(${data.row_count} rows)`;
+        } else {
+          if (resultDiv) resultDiv.textContent = `OK — ${data.row_count} row(s) affected`;
+        }
+      } catch (e) { if (resultDiv) resultDiv.textContent = `Error: ${e.message}`; }
+    });
+
+    container.querySelectorAll(".btn-db-schema").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          const res = await fetch(`/db/schema/${encodeURIComponent(btn.dataset.id)}`);
+          const data = await res.json();
+          const schemaDiv = $("db-schema-result");
+          if (!schemaDiv) return;
+          if (!data.tables || !data.tables.length) { schemaDiv.innerHTML = '<div style="font-size:11px;color:var(--text-dim)">No tables found.</div>'; return; }
+          schemaDiv.innerHTML = `<div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">SCHEMA</div>` +
+            data.tables.map((t) => `
+              <div style="font-size:11px;font-weight:600;color:var(--text,#d4d4d4);margin-top:4px">${escHtmlSimple(t.name)} <span style="color:var(--text-dim,#aaa);font-size:10px">(${escHtmlSimple(t.type)})</span></div>
+              <div style="font-size:10px;color:var(--text-dim,#aaa);padding-left:8px">${(t.columns||[]).map((c) => `${escHtmlSimple(c.name)} <span style="color:#888">${escHtmlSimple(c.type)}</span>${c.pk?" <b>PK</b>":""}${c.not_null?" NOT NULL":""}`).join(", ")}</div>
+            `).join("");
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-db-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/db/connection/${encodeURIComponent(btn.dataset.id)}`, { method: "DELETE" });
+          loadDatabasePanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
 
 })();
 

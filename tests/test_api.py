@@ -1825,3 +1825,132 @@ def test_deploy_history(client):
     r = client.get("/deploy/history")
     assert r.status_code == 200
     assert "history" in r.json()
+
+# ── Phase 26: Monitoring & Observability ─────────────────────────────────────
+def test_metrics_current(client):
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    data = r.json()
+    assert "cpu_load_percent" in data
+    assert "mem_percent" in data
+    assert "disk_percent" in data
+    assert "ts" in data
+
+def test_metrics_history(client):
+    client.get("/metrics")
+    r = client.get("/metrics/history")
+    assert r.status_code == 200
+    data = r.json()
+    assert "history" in data
+    assert isinstance(data["history"], list)
+
+def test_metrics_snapshot(client):
+    r = client.post("/metrics/snapshot")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["saved"] is True
+    assert "snapshot" in data
+
+def test_health_detailed(client):
+    r = client.get("/health/detailed")
+    assert r.status_code == 200
+    data = r.json()
+    assert "status" in data
+    assert "checks" in data
+    assert "api" in data["checks"]
+
+def test_metrics_alert_set(client):
+    r = client.post("/metrics/alert", json={"name": "high-cpu", "metric": "cpu_load_percent", "threshold": 80.0})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "high-cpu"
+
+def test_metrics_alerts_list(client):
+    client.post("/metrics/alert", json={"name": "high-mem", "metric": "mem_percent", "threshold": 85.0})
+    r = client.get("/metrics/alerts")
+    assert r.status_code == 200
+    data = r.json()
+    assert "alerts" in data
+    assert any(a["name"] == "high-mem" for a in data["alerts"])
+
+def test_metrics_alert_delete(client):
+    client.post("/metrics/alert", json={"name": "temp-alert", "metric": "disk_percent", "threshold": 90.0})
+    r = client.delete("/metrics/alert/temp-alert")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "temp-alert"
+
+# ── Phase 27: Database Management ────────────────────────────────────────────
+def test_db_connect(client, tmp_path):
+    import sqlite3, os
+    db_file = tmp_path / "test.sqlite"
+    sqlite3.connect(str(db_file)).close()
+    ws = os.path.join(os.getcwd(), "workspace", "test_phase27.sqlite")
+    import shutil
+    shutil.copy(str(db_file), ws)
+    try:
+        r = client.post("/db/connect", json={"path": "test_phase27.sqlite", "alias": "testdb"})
+        assert r.status_code == 200
+        data = r.json()
+        assert "id" in data
+        assert data["alias"] == "testdb"
+    finally:
+        os.unlink(ws)
+
+def test_db_connections_list(client):
+    r = client.get("/db/connections")
+    assert r.status_code == 200
+    assert "connections" in r.json()
+
+def test_db_connect_invalid_path(client):
+    r = client.post("/db/connect", json={"path": "../../etc/passwd"})
+    assert r.status_code == 403
+
+def test_db_query_not_found(client):
+    r = client.post("/db/query", json={"connection_id": "9999", "sql": "SELECT 1"})
+    assert r.status_code == 404
+
+def test_db_schema_not_found(client):
+    r = client.get("/db/schema/9999")
+    assert r.status_code == 404
+
+def test_db_connection_delete(client, tmp_path):
+    import sqlite3, os, shutil
+    db_file = tmp_path / "del_test.sqlite"
+    sqlite3.connect(str(db_file)).close()
+    ws = os.path.join(os.getcwd(), "workspace", "test_del.sqlite")
+    shutil.copy(str(db_file), ws)
+    try:
+        r1 = client.post("/db/connect", json={"path": "test_del.sqlite", "alias": "deldb"})
+        assert r1.status_code == 200
+        conn_id = r1.json()["id"]
+        r2 = client.delete(f"/db/connection/{conn_id}")
+        assert r2.status_code == 200
+        assert r2.json()["deleted"] == conn_id
+    finally:
+        os.unlink(ws)
+
+def test_db_query_and_schema(client, tmp_path):
+    import sqlite3, os, shutil
+    db_file = tmp_path / "schema_test.sqlite"
+    conn = sqlite3.connect(str(db_file))
+    conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+    conn.execute("INSERT INTO users (name) VALUES ('Alice')")
+    conn.commit()
+    conn.close()
+    ws = os.path.join(os.getcwd(), "workspace", "test_schema.sqlite")
+    shutil.copy(str(db_file), ws)
+    try:
+        r1 = client.post("/db/connect", json={"path": "test_schema.sqlite", "alias": "schemadb"})
+        assert r1.status_code == 200
+        conn_id = r1.json()["id"]
+        r2 = client.post("/db/query", json={"connection_id": conn_id, "sql": "SELECT * FROM users"})
+        assert r2.status_code == 200
+        qdata = r2.json()
+        assert "columns" in qdata
+        assert "name" in qdata["columns"]
+        assert any(r.get("name") == "Alice" for r in qdata["rows"])
+        r3 = client.get(f"/db/schema/{conn_id}")
+        assert r3.status_code == 200
+        sdata = r3.json()
+        assert any(t["name"] == "users" for t in sdata["tables"])
+    finally:
+        os.unlink(ws)
