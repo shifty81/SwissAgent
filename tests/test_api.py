@@ -2342,3 +2342,96 @@ def test_config_profile_delete(client):
     r = client.delete("/config/profile/del_prof")
     assert r.status_code == 200
     assert r.json()["deleted"] == "del_prof"
+
+# ── Phase 36: Notification Center ─────────────────────────────────────────────
+def test_notify_push(client):
+    r = client.post("/notify", json={"title": "Deploy done", "message": "All good", "level": "success"})
+    assert r.status_code == 200
+    assert "id" in r.json()
+
+def test_notify_no_title(client):
+    r = client.post("/notify", json={"title": "", "message": "oops"})
+    assert r.status_code == 400
+
+def test_notifications_list(client):
+    client.post("/notify", json={"title": "A", "level": "info"})
+    r = client.get("/notifications")
+    assert r.status_code == 200
+    data = r.json()
+    assert "notifications" in data
+    assert "unread" in data
+    assert data["unread"] >= 1
+
+def test_notification_get(client):
+    r1 = client.post("/notify", json={"title": "Get me", "level": "warn"})
+    nid = r1.json()["id"]
+    r = client.get(f"/notification/{nid}")
+    assert r.status_code == 200
+    assert r.json()["title"] == "Get me"
+
+def test_notifications_mark_read(client):
+    client.post("/notify", json={"title": "Unread", "level": "info"})
+    r = client.post("/notifications/mark-read")
+    assert r.status_code == 200
+    assert r.json()["marked"] >= 1
+
+def test_notifications_clear(client):
+    client.post("/notify", json={"title": "Clear me", "level": "info"})
+    r = client.delete("/notifications/clear")
+    assert r.status_code == 200
+    assert r.json()["cleared"] >= 1
+
+def test_notification_delete(client):
+    r1 = client.post("/notify", json={"title": "Del me", "level": "error"})
+    nid = r1.json()["id"]
+    r = client.delete(f"/notification/{nid}")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == nid
+
+# ── Phase 37: Task Queue ───────────────────────────────────────────────────────
+def test_queue_task_add(client):
+    r = client.post("/queue/task", json={"name": "build_image", "priority": 2})
+    assert r.status_code == 200
+    assert "id" in r.json()
+
+def test_queue_task_no_name(client):
+    r = client.post("/queue/task", json={"name": "", "priority": 1})
+    assert r.status_code == 400
+
+def test_queue_tasks_list(client):
+    client.post("/queue/task", json={"name": "list_task", "priority": 5})
+    r = client.get("/queue/tasks")
+    assert r.status_code == 200
+    data = r.json()
+    assert "tasks" in data
+    assert any(t["name"] == "list_task" for t in data["tasks"])
+
+def test_queue_task_get(client):
+    r1 = client.post("/queue/task", json={"name": "get_task", "priority": 3})
+    tid = r1.json()["id"]
+    r = client.get(f"/queue/task/{tid}")
+    assert r.status_code == 200
+    assert r.json()["name"] == "get_task"
+
+def test_queue_task_complete(client):
+    r1 = client.post("/queue/task", json={"name": "complete_task", "priority": 1})
+    tid = r1.json()["id"]
+    r = client.post(f"/queue/task/{tid}/complete")
+    assert r.status_code == 200
+    assert r.json()["status"] == "done"
+
+def test_queue_stats(client):
+    client.post("/queue/task", json={"name": "stats_task", "priority": 5})
+    r = client.get("/queue/stats")
+    assert r.status_code == 200
+    data = r.json()
+    assert "total" in data
+    assert "pending" in data
+    assert "done" in data
+
+def test_queue_task_delete(client):
+    r1 = client.post("/queue/task", json={"name": "del_task", "priority": 7})
+    tid = r1.json()["id"]
+    r = client.delete(f"/queue/task/{tid}")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == tid

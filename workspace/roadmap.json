@@ -1852,6 +1852,120 @@
           "description": "GUI panel with profile form, profiles table, activate/delete buttons, active values display"
         }
       ]
+    },
+    {
+      "id": "m36",
+      "title": "Phase 36 \u2014 Notification Center",
+      "description": "Push named notifications with level (info/warn/error/success), mark them read, clear all",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t36-1",
+          "title": "POST /notify \u2014 push a notification",
+          "status": "done",
+          "priority": "high",
+          "description": "Push a notification with title, message, and level"
+        },
+        {
+          "id": "t36-2",
+          "title": "GET /notifications \u2014 list all notifications",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all notifications with unread count"
+        },
+        {
+          "id": "t36-3",
+          "title": "GET /notification/{id} \u2014 get a notification",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch a specific notification by ID"
+        },
+        {
+          "id": "t36-4",
+          "title": "DELETE /notification/{id} \u2014 delete a notification",
+          "status": "done",
+          "priority": "medium",
+          "description": "Remove a specific notification"
+        },
+        {
+          "id": "t36-5",
+          "title": "POST /notifications/mark-read \u2014 mark all read",
+          "status": "done",
+          "priority": "high",
+          "description": "Mark all notifications as read"
+        },
+        {
+          "id": "t36-6",
+          "title": "DELETE /notifications/clear \u2014 clear all",
+          "status": "done",
+          "priority": "high",
+          "description": "Remove all notifications and reset counter"
+        },
+        {
+          "id": "t36-7",
+          "title": "Notification Center panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with send form, inbox list, mark-read/clear buttons"
+        }
+      ]
+    },
+    {
+      "id": "m37",
+      "title": "Phase 37 \u2014 Task Queue",
+      "description": "Enqueue named async tasks with priority, mark them complete, and get queue stats",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t37-1",
+          "title": "POST /queue/task \u2014 enqueue a task",
+          "status": "done",
+          "priority": "high",
+          "description": "Add a task with name, payload, and priority"
+        },
+        {
+          "id": "t37-2",
+          "title": "GET /queue/tasks \u2014 list tasks",
+          "status": "done",
+          "priority": "high",
+          "description": "Return tasks sorted by status then priority"
+        },
+        {
+          "id": "t37-3",
+          "title": "GET /queue/task/{id} \u2014 get a task",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch a specific task by ID"
+        },
+        {
+          "id": "t37-4",
+          "title": "DELETE /queue/task/{id} \u2014 delete a task",
+          "status": "done",
+          "priority": "medium",
+          "description": "Remove a task from the queue"
+        },
+        {
+          "id": "t37-5",
+          "title": "POST /queue/task/{id}/complete \u2014 mark task done",
+          "status": "done",
+          "priority": "high",
+          "description": "Mark a task as completed with timestamp"
+        },
+        {
+          "id": "t37-6",
+          "title": "GET /queue/stats \u2014 queue statistics",
+          "status": "done",
+          "priority": "high",
+          "description": "Return total/pending/done counts"
+        },
+        {
+          "id": "t37-7",
+          "title": "Task Queue panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with enqueue form, task table with complete/delete, stats bar"
+        }
+      ]
     }
   ]
 }

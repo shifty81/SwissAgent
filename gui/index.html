@@ -63,6 +63,8 @@
       <button class="ab-btn" data-panel="audit"     title="Audit Log (Phase 33)">📋</button>
       <button class="ab-btn" data-panel="flags"     title="Feature Flags (Phase 34)">🚩</button>
       <button class="ab-btn" data-panel="cfgprofile" title="Config Profiles (Phase 35)">⚙️</button>
+      <button class="ab-btn" data-panel="notify"    title="Notifications (Phase 36)">🔔</button>
+      <button class="ab-btn" data-panel="taskqueue" title="Task Queue (Phase 37)">📋</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -703,6 +705,34 @@
           </div>
         </div>
         <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="cfgprofile-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Notification Center (Phase 36) ─────────────────── -->
+      <div class="sb-panel" id="panel-notify">
+        <div class="sb-panel-header">
+          <span>🔔 Notifications</span>
+          <div>
+            <button id="btn-notify-mark-read" title="Mark all read" style="font-size:10px;padding:1px 5px">✓ all</button>
+            <button id="btn-notify-clear"     title="Clear all"     style="font-size:10px;padding:1px 5px">✕ all</button>
+            <button id="btn-notify-refresh"   title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="notify-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Task Queue (Phase 37) ──────────────────────────── -->
+      <div class="sb-panel" id="panel-taskqueue">
+        <div class="sb-panel-header">
+          <span>📋 Task Queue</span>
+          <div>
+            <button id="btn-taskqueue-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="taskqueue-panel-content">
           <div style="color:var(--text-dim);font-size:11px">Loading…</div>
         </div>
       </div>

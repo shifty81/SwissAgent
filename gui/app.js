@@ -2118,6 +2118,8 @@
       if (panel === "audit")     loadAuditPanel();
       if (panel === "flags")     loadFlagsPanel();
       if (panel === "cfgprofile") loadCfgProfilePanel();
+      if (panel === "notify")      loadNotifyPanel();
+      if (panel === "taskqueue") loadTaskQueuePanel();
     });
   });
 
@@ -5040,6 +5042,188 @@
         try {
           await fetch(`/config/profile/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
           loadCfgProfilePanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 36: Notification Center panel ──────────────────────────────────
+  async function loadNotifyPanel() {
+    const container = $("notify-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/notifications");
+      const data = await res.json();
+      renderNotifyPanel(data.notifications || [], data.unread || 0);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderNotifyPanel(notifications, unread) {
+    const container = $("notify-panel-content");
+    if (!container) return;
+
+    const levelColor = { info: "var(--info,#2196f3)", warn: "var(--warn,#ff9800)", error: "var(--danger,#f44336)", success: "var(--ok,#4caf50)" };
+
+    const rows = notifications.slice().reverse().map((n) => `
+      <div style="padding:6px 4px;border-bottom:1px solid var(--border,#333);opacity:${n.read ? "0.55" : "1"}">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:10px;font-weight:600;color:${levelColor[n.level] || "var(--text)"}">
+            [${escHtmlSimple((n.level || "info").toUpperCase())}] ${escHtmlSimple(n.title)}
+          </span>
+          <button class="btn-notify-del" data-id="${n.id}" style="font-size:10px;padding:0 4px;background:none;border:none;color:var(--text-dim);cursor:pointer" title="Delete">✕</button>
+        </div>
+        ${n.message ? `<div style="font-size:10px;color:var(--text-dim);margin-top:2px">${escHtmlSimple(n.message)}</div>` : ""}
+        <div style="font-size:9px;color:var(--text-dim);margin-top:2px">${escHtmlSimple(n.created_at || "")}</div>
+      </div>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">SEND NOTIFICATION</div>
+      <input id="notify-title"   style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="title" />
+      <input id="notify-message" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="message (optional)" />
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <select id="notify-level" style="font-size:11px;padding:2px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px">
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+          <option value="success">success</option>
+        </select>
+        <button id="btn-notify-send" style="font-size:11px;padding:3px 8px">Send</button>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">
+        INBOX <span style="font-size:10px;color:var(--info,#2196f3)">${unread} unread</span>
+      </div>
+      ${notifications.length ? rows : '<div style="font-size:11px;color:var(--text-dim)">No notifications.</div>'}
+    `;
+
+    $("btn-notify-refresh")?.addEventListener("click",   () => loadNotifyPanel());
+    $("btn-notify-mark-read")?.addEventListener("click", async () => {
+      await fetch("/notifications/mark-read", { method: "POST" });
+      loadNotifyPanel();
+    });
+    $("btn-notify-clear")?.addEventListener("click", async () => {
+      await fetch("/notifications/clear", { method: "DELETE" });
+      loadNotifyPanel();
+    });
+
+    $("btn-notify-send")?.addEventListener("click", async () => {
+      const title   = $("notify-title")?.value.trim();
+      const message = $("notify-message")?.value.trim();
+      const level   = $("notify-level")?.value || "info";
+      if (!title) return;
+      try {
+        const res = await fetch("/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, message, level }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadNotifyPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-notify-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/notification/${btn.dataset.id}`, { method: "DELETE" });
+          loadNotifyPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 37: Task Queue panel ────────────────────────────────────────────
+  async function loadTaskQueuePanel() {
+    const container = $("taskqueue-panel-content");
+    if (!container) return;
+    try {
+      const [tasksRes, statsRes] = await Promise.all([
+        fetch("/queue/tasks"),
+        fetch("/queue/stats"),
+      ]);
+      const tasksData = await tasksRes.json();
+      const statsData = await statsRes.json();
+      renderTaskQueuePanel(tasksData.tasks || [], statsData);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderTaskQueuePanel(tasks, stats) {
+    const container = $("taskqueue-panel-content");
+    if (!container) return;
+
+    const taskRows = tasks.map((t) => `
+      <tr style="opacity:${t.status === "done" ? "0.5" : "1"}">
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(t.name)}</td>
+        <td style="padding:2px 4px;font-size:10px;text-align:center">${t.priority}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${t.status === "pending" ? "var(--warn,#ff9800)" : "var(--ok,#4caf50)"}">${t.status}</td>
+        <td style="padding:2px 4px">
+          ${t.status === "pending" ? `<button class="btn-tq-complete" data-id="${t.id}" style="font-size:10px;padding:1px 4px" title="Mark done">✓</button>` : ""}
+          <button class="btn-tq-del" data-id="${t.id}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">ENQUEUE TASK</div>
+      <input id="tq-name"    style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="task name" />
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <label style="font-size:11px">Priority (1-10):</label>
+        <input id="tq-priority" type="number" min="1" max="10" value="5" style="width:48px;padding:2px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" />
+        <button id="btn-tq-add" style="font-size:11px;padding:3px 8px">Enqueue</button>
+      </div>
+
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">
+        📊 Total: <b>${stats.total || 0}</b> | Pending: <b style="color:var(--warn,#ff9800)">${stats.pending || 0}</b> | Done: <b style="color:var(--ok,#4caf50)">${stats.done || 0}</b>
+      </div>
+
+      ${tasks.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:center;padding:2px 4px;color:var(--text-muted,#888)">Pri</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Status</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${taskRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim)">Queue is empty.</div>'}
+    `;
+
+    $("btn-taskqueue-refresh")?.addEventListener("click", () => loadTaskQueuePanel());
+
+    $("btn-tq-add")?.addEventListener("click", async () => {
+      const name     = $("tq-name")?.value.trim();
+      const priority = parseInt($("tq-priority")?.value || "5", 10);
+      if (!name) return;
+      try {
+        const res = await fetch("/queue/task", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, priority }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadTaskQueuePanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-tq-complete").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/queue/task/${btn.dataset.id}/complete`, { method: "POST" });
+          loadTaskQueuePanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-tq-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/queue/task/${btn.dataset.id}`, { method: "DELETE" });
+          loadTaskQueuePanel();
         } catch (e) { /* ignore */ }
       });
     });

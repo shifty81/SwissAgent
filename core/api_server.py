@@ -592,6 +592,22 @@ class ConfigProfileRequest(BaseModel):
     description: str = ""
 
 
+# ── Phase 36: Notification Center request models ──────────────────────────────
+
+class NotificationRequest(BaseModel):
+    title: str
+    message: str = ""
+    level: str = "info"        # info | warn | error | success
+
+
+# ── Phase 37: Task Queue request models ───────────────────────────────────────
+
+class TaskQueueRequest(BaseModel):
+    name: str
+    payload: dict[str, Any] = {}
+    priority: int = 5          # 1 (highest) – 10 (lowest)
+
+
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
 # Context window sizes sent to the LLM.  Prefix is longer because the model
@@ -5171,6 +5187,109 @@ indent_style = tab
         profile = _config_profiles[_active_config_profile]
         return {"active": _active_config_profile, "values": profile.get("values", {})}
 
+    # ── Phase 36: Notification Center ────────────────────────────────────────
+
+    @app.post("/notify")
+    async def notify_push(req: NotificationRequest) -> dict[str, Any]:
+        global _notification_id_counter
+        if not req.title:
+            raise HTTPException(status_code=400, detail="title is required")
+        _notification_id_counter += 1
+        nid = _notification_id_counter
+        _notifications.append({
+            "id": nid,
+            "title": req.title,
+            "message": req.message,
+            "level": req.level,
+            "read": False,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        })
+        return {"id": nid}
+
+    @app.get("/notifications")
+    async def notifications_list() -> dict[str, Any]:
+        return {"notifications": list(_notifications), "unread": sum(1 for n in _notifications if not n["read"])}
+
+    @app.get("/notification/{nid}")
+    async def notification_get(nid: int) -> dict[str, Any]:
+        for n in _notifications:
+            if n["id"] == nid:
+                return n
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    @app.delete("/notification/{nid}")
+    async def notification_delete(nid: int) -> dict[str, Any]:
+        global _notifications
+        _notifications = [n for n in _notifications if n["id"] != nid]
+        return {"deleted": nid}
+
+    @app.post("/notifications/mark-read")
+    async def notifications_mark_read() -> dict[str, Any]:
+        for n in _notifications:
+            n["read"] = True
+        return {"marked": len(_notifications)}
+
+    @app.delete("/notifications/clear")
+    async def notifications_clear() -> dict[str, Any]:
+        global _notifications, _notification_id_counter
+        count = len(_notifications)
+        _notifications = []
+        _notification_id_counter = 0
+        return {"cleared": count}
+
+    # ── Phase 37: Task Queue ──────────────────────────────────────────────────
+
+    @app.post("/queue/task")
+    async def queue_task_add(req: TaskQueueRequest) -> dict[str, Any]:
+        global _task_queue_id_counter
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        _task_queue_id_counter += 1
+        tid = _task_queue_id_counter
+        _task_queue.append({
+            "id": tid,
+            "name": req.name,
+            "payload": req.payload,
+            "priority": req.priority,
+            "status": "pending",
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "completed_at": None,
+        })
+        return {"id": tid}
+
+    @app.get("/queue/tasks")
+    async def queue_tasks_list() -> dict[str, Any]:
+        sorted_tasks = sorted(_task_queue, key=lambda t: (t["status"] != "pending", t["priority"]))
+        return {"tasks": sorted_tasks}
+
+    @app.get("/queue/task/{tid}")
+    async def queue_task_get(tid: int) -> dict[str, Any]:
+        for t in _task_queue:
+            if t["id"] == tid:
+                return t
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    @app.delete("/queue/task/{tid}")
+    async def queue_task_delete(tid: int) -> dict[str, Any]:
+        global _task_queue
+        _task_queue = [t for t in _task_queue if t["id"] != tid]
+        return {"deleted": tid}
+
+    @app.post("/queue/task/{tid}/complete")
+    async def queue_task_complete(tid: int) -> dict[str, Any]:
+        for t in _task_queue:
+            if t["id"] == tid:
+                t["status"] = "done"
+                t["completed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                return {"id": tid, "status": "done"}
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    @app.get("/queue/stats")
+    async def queue_stats() -> dict[str, Any]:
+        pending = sum(1 for t in _task_queue if t["status"] == "pending")
+        done    = sum(1 for t in _task_queue if t["status"] == "done")
+        return {"total": len(_task_queue), "pending": pending, "done": done}
+
     return app
 
 
@@ -5317,3 +5436,11 @@ _feature_flags: dict[str, Any] = {}
 # ── Phase 35: Config Profiles ─────────────────────────────────────────────────
 _config_profiles: dict[str, Any] = {}
 _active_config_profile: str = ""
+
+# ── Phase 36: Notification Center ─────────────────────────────────────────────
+_notifications: list[dict[str, Any]] = []
+_notification_id_counter: int = 0
+
+# ── Phase 37: Task Queue ───────────────────────────────────────────────────────
+_task_queue: list[dict[str, Any]] = []
+_task_queue_id_counter: int = 0
