@@ -2106,6 +2106,8 @@
       if (panel === "aibackends") loadAIBackendsPanel();
       if (panel === "agents") loadAgentsPanel();
       if (panel === "ci")     loadCIPanel();
+      if (panel === "docker") loadDockerPanel();
+      if (panel === "deploy") loadDeployPanel();
     });
   });
 
@@ -3658,6 +3660,269 @@
   }
 
   $("btn-ci-refresh")?.addEventListener("click", () => loadCIPanel());
+
+  // ── Phase 24: Docker Management ──────────────────────────────────────────
+
+  async function loadDockerPanel() {
+    const container = $("docker-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/docker/containers");
+      const data = await res.json();
+      renderDockerPanel(data.containers || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderDockerPanel(containers) {
+    const container = $("docker-panel-content");
+    if (!container) return;
+
+    const rows = containers.map((c) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(c.id.slice(0, 12))}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(c.name)}</td>
+        <td style="padding:2px 4px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px" title="${escHtmlSimple(c.image)}">${escHtmlSimple(c.image)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${c.status.startsWith("Up") ? "var(--ok,#4caf50)" : "var(--text-dim)"}">${escHtmlSimple(c.status)}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-docker-stop" data-id="${escHtmlSimple(c.id)}" style="font-size:10px;padding:1px 4px">Stop</button>
+          <button class="btn-docker-logs" data-id="${escHtmlSimple(c.id)}" style="font-size:10px;padding:1px 4px">Logs</button>
+        </td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">BUILD IMAGE</div>
+      <div style="display:flex;gap:4px;margin-bottom:4px;flex-wrap:wrap">
+        <input id="docker-build-tag" style="flex:1;min-width:80px;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="image:tag" value="myapp:latest" />
+        <input id="docker-build-ctx" style="flex:1;min-width:60px;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="context (e.g. .)" value="." />
+        <button id="btn-docker-build" style="font-size:11px;padding:3px 6px">Build</button>
+      </div>
+      <div id="docker-build-output" style="font-size:10px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;overflow-y:auto;max-height:60px;white-space:pre-wrap;margin-bottom:8px;display:none"></div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">RUN CONTAINER</div>
+      <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">
+        <input id="docker-run-image" style="flex:1;min-width:80px;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="image" />
+        <input id="docker-run-ports" style="width:80px;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="8080:80" />
+        <button id="btn-docker-run" style="font-size:11px;padding:3px 6px">Run</button>
+      </div>
+      <div id="docker-run-output" style="font-size:10px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;overflow-y:auto;max-height:40px;white-space:pre-wrap;margin-bottom:8px;display:none"></div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">CONTAINERS</div>
+      ${containers.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">ID</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Image</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Status</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Actions</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No running containers.</div>'}
+      <div id="docker-logs-output" style="font-size:10px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;overflow-y:auto;max-height:100px;white-space:pre-wrap;margin-top:8px;display:none"></div>
+    `;
+
+    $("btn-docker-build")?.addEventListener("click", async () => {
+      const tag = $("docker-build-tag")?.value.trim() || "myapp:latest";
+      const ctx = $("docker-build-ctx")?.value.trim() || ".";
+      const outEl = $("docker-build-output");
+      if (outEl) { outEl.textContent = "Building…"; outEl.style.display = "block"; }
+      try {
+        const res = await fetch("/docker/build", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tag, context: ctx }),
+        });
+        const d = await res.json();
+        if (outEl) outEl.textContent = d.output || "(no output)";
+      } catch (e) {
+        if (outEl) outEl.textContent = `Error: ${e.message}`;
+      }
+    });
+
+    $("btn-docker-run")?.addEventListener("click", async () => {
+      const image = $("docker-run-image")?.value.trim();
+      const ports = $("docker-run-ports")?.value.trim();
+      if (!image) return;
+      const outEl = $("docker-run-output");
+      if (outEl) { outEl.textContent = "Starting…"; outEl.style.display = "block"; }
+      try {
+        const res = await fetch("/docker/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image, ports, detach: true }),
+        });
+        const d = await res.json();
+        if (outEl) outEl.textContent = d.output || d.container_id || "(done)";
+        loadDockerPanel();
+      } catch (e) {
+        if (outEl) outEl.textContent = `Error: ${e.message}`;
+      }
+    });
+
+    container.querySelectorAll(".btn-docker-stop").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/docker/stop/${encodeURIComponent(btn.dataset.id)}`, { method: "POST" });
+        } catch (_) {}
+        loadDockerPanel();
+      });
+    });
+
+    container.querySelectorAll(".btn-docker-logs").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const logEl = $("docker-logs-output");
+        if (!logEl) return;
+        logEl.style.display = "block";
+        logEl.textContent = "Loading…";
+        try {
+          const res = await fetch(`/docker/logs/${encodeURIComponent(btn.dataset.id)}`);
+          const d = await res.json();
+          logEl.textContent = d.output || "(no logs)";
+        } catch (e) {
+          logEl.textContent = `Error: ${e.message}`;
+        }
+      });
+    });
+  }
+
+  $("btn-docker-refresh")?.addEventListener("click", () => loadDockerPanel());
+
+  // ── Phase 25: Remote Deployment & SSH ────────────────────────────────────
+
+  async function loadDeployPanel() {
+    const container = $("deploy-panel-content");
+    if (!container) return;
+    try {
+      const [cfgRes, histRes] = await Promise.all([
+        fetch("/deploy/configs"),
+        fetch("/deploy/history"),
+      ]);
+      const cfgData = await cfgRes.json();
+      const histData = await histRes.json();
+      renderDeployPanel(cfgData.configs || [], histData.history || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderDeployPanel(configs, history) {
+    const container = $("deploy-panel-content");
+    if (!container) return;
+
+    const cfgOptions = configs.map((c) => `<option value="${escHtmlSimple(c.name)}">${escHtmlSimple(c.name)} (${escHtmlSimple(c.user)}@${escHtmlSimple(c.host)})</option>`).join("");
+    const cfgRows = configs.map((c) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(c.name)}</td>
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(c.user)}@${escHtmlSimple(c.host)}:${escHtmlSimple(String(c.port))}</td>
+        <td style="padding:2px 4px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px" title="${escHtmlSimple(c.command)}">${escHtmlSimple(c.command)}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-deploy-run" data-name="${escHtmlSimple(c.name)}" style="font-size:10px;padding:1px 4px">▶</button>
+          <button class="btn-deploy-del" data-name="${escHtmlSimple(c.name)}" style="font-size:10px;padding:1px 4px">✕</button>
+        </td>
+      </tr>
+    `).join("");
+    const histRows = history.slice().reverse().map((r) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(String(r.id))}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(r.config)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${r.exit_code === 0 ? "var(--ok,#4caf50)" : "var(--danger,#f44)"}">${escHtmlSimple(String(r.exit_code))}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple((r.started_at || "").slice(0, 16).replace("T", " "))}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">ADD CONFIG</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:4px">
+        <input id="deploy-cfg-name"    style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="config name" />
+        <input id="deploy-cfg-host"    style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="hostname/IP" />
+        <input id="deploy-cfg-user"    style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="user (root)" value="root" />
+        <input id="deploy-cfg-port"    style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="port (22)" value="22" />
+        <input id="deploy-cfg-command" style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;grid-column:span 2" placeholder="deploy command" />
+      </div>
+      <button id="btn-deploy-cfg-save" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Save Config</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">CONFIGS</div>
+      ${configs.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Target</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Command</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)"></th>
+          </tr></thead>
+          <tbody>${cfgRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No configs saved.</div>'}
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">LAST OUTPUT</div>
+      <pre id="deploy-last-output" style="font-size:10px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;overflow-y:auto;max-height:80px;white-space:pre-wrap;margin-bottom:8px">${history.length ? escHtmlSimple(history[history.length - 1].output || "") : "(no deployments yet)"}</pre>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">HISTORY</div>
+      ${history.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Config</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Exit</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Started</th>
+          </tr></thead>
+          <tbody>${histRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No deployments yet.</div>'}
+    `;
+
+    $("btn-deploy-cfg-save")?.addEventListener("click", async () => {
+      const name    = $("deploy-cfg-name")?.value.trim();
+      const host    = $("deploy-cfg-host")?.value.trim();
+      const user    = $("deploy-cfg-user")?.value.trim() || "root";
+      const port    = parseInt($("deploy-cfg-port")?.value.trim() || "22", 10);
+      const command = $("deploy-cfg-command")?.value.trim();
+      if (!name || !host || !command) return;
+      try {
+        await fetch("/deploy/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, host, user, port, command }),
+        });
+        loadDeployPanel();
+      } catch (e) {
+        alert(`Error: ${e.message}`);
+      }
+    });
+
+    container.querySelectorAll(".btn-deploy-run").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          const res = await fetch("/deploy/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ config_name: btn.dataset.name }),
+          });
+          const d = await res.json();
+          const outEl = $("deploy-last-output");
+          if (outEl) outEl.textContent = d.output || "";
+          loadDeployPanel();
+        } catch (e) {
+          alert(`Error: ${e.message}`);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    container.querySelectorAll(".btn-deploy-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/deploy/config/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+        } catch (_) {}
+        loadDeployPanel();
+      });
+    });
+  }
+
+  $("btn-deploy-refresh")?.addEventListener("click", () => loadDeployPanel());
 
 })();
 

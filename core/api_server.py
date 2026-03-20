@@ -463,6 +463,38 @@ class CIRunRequest(BaseModel):
     cwd: str = "."
 
 
+class DockerBuildRequest(BaseModel):
+    dockerfile: str = "Dockerfile"
+    tag: str = "swissagent-image:latest"
+    context: str = "."
+
+
+class DockerRunRequest(BaseModel):
+    image: str
+    name: str = ""
+    detach: bool = True
+    ports: str = ""
+    env: list[str] = []
+
+
+class DeployConfigRequest(BaseModel):
+    name: str
+    host: str
+    user: str = "root"
+    port: int = 22
+    command: str
+    key_path: str = ""
+
+
+class DeployRunRequest(BaseModel):
+    config_name: str = ""
+    host: str = ""
+    user: str = "root"
+    port: int = 22
+    command: str = ""
+    key_path: str = ""
+
+
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
 # Context window sizes sent to the LLM.  Prefix is longer because the model
@@ -4070,6 +4102,203 @@ indent_style = tab
         except Exception:
             pass
 
+    # ── Phase 24: Container & Docker Management ────────────────────────────────
+
+    def _run_docker(args: list[str]) -> tuple[int, str]:
+        """Run a docker CLI command and return (exit_code, combined_output)."""
+        try:
+            proc = subprocess.Popen(
+                ["docker"] + args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            output, _ = proc.communicate(timeout=_DOCKER_TIMEOUT)
+        except FileNotFoundError:
+            return -1, "[error] Docker CLI not found. Is Docker installed?"
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            return -1, f"[error] docker command timed out after {_DOCKER_TIMEOUT}s"
+        except Exception as exc:
+            return -1, str(exc)
+        if len(output) > _MAX_DOCKER_OUTPUT:
+            output = output[:_MAX_DOCKER_OUTPUT] + f"\n[truncated at {_MAX_DOCKER_OUTPUT} bytes]"
+        return proc.returncode, output
+
+    @app.post("/docker/build")
+    async def docker_build(req: DockerBuildRequest) -> dict[str, Any]:
+        args = ["build", "-f", req.dockerfile, "-t", req.tag, req.context]
+        exit_code, output = _run_docker(args)
+        return {"exit_code": exit_code, "output": output, "tag": req.tag}
+
+    @app.post("/docker/run")
+    async def docker_run(req: DockerRunRequest) -> dict[str, Any]:
+        args = ["run"]
+        if req.detach:
+            args.append("-d")
+        if req.name:
+            args += ["--name", req.name]
+        if req.ports:
+            args += ["-p", req.ports]
+        for e in req.env:
+            args += ["-e", e]
+        args.append(req.image)
+        exit_code, output = _run_docker(args)
+        container_id = output.strip().splitlines()[-1] if exit_code == 0 and output.strip() else ""
+        return {"exit_code": exit_code, "output": output, "container_id": container_id}
+
+    @app.get("/docker/containers")
+    async def docker_containers(all: bool = False) -> dict[str, Any]:
+        args = ["ps", "--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"]
+        if all:
+            args.append("-a")
+        exit_code, output = _run_docker(args)
+        containers = []
+        if exit_code == 0:
+            for line in output.splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 5:
+                    containers.append({
+                        "id": parts[0],
+                        "name": parts[1],
+                        "image": parts[2],
+                        "status": parts[3],
+                        "ports": parts[4],
+                    })
+        return {"containers": containers, "exit_code": exit_code}
+
+    @app.post("/docker/stop/{container_id}")
+    async def docker_stop(container_id: str) -> dict[str, Any]:
+        exit_code, output = _run_docker(["stop", container_id])
+        return {"exit_code": exit_code, "output": output, "container_id": container_id}
+
+    @app.get("/docker/logs/{container_id}")
+    async def docker_logs(container_id: str, tail: int = 100) -> dict[str, Any]:
+        exit_code, output = _run_docker(["logs", "--tail", str(tail), container_id])
+        return {"exit_code": exit_code, "output": output, "container_id": container_id}
+
+    @app.websocket("/ws/docker")
+    async def ws_docker(websocket: WebSocket) -> None:
+        await websocket.accept()
+        try:
+            exit_code, output = _run_docker(["events", "--since", "0s", "--until", "1s", "--format", "{{json .}}"])
+            for line in output.splitlines():
+                await websocket.send_text(json.dumps({"event": line}))
+            await websocket.send_text(json.dumps({"done": True}))
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
+    # ── Phase 25: Remote Deployment & SSH ─────────────────────────────────────
+
+    @app.post("/deploy/config")
+    async def deploy_config_create(req: DeployConfigRequest) -> dict[str, Any]:
+        _deploy_configs[req.name] = {
+            "name": req.name,
+            "host": req.host,
+            "user": req.user,
+            "port": req.port,
+            "command": req.command,
+            "key_path": req.key_path,
+        }
+        return {"saved": req.name}
+
+    @app.get("/deploy/configs")
+    async def deploy_configs_list() -> dict[str, Any]:
+        return {"configs": list(_deploy_configs.values())}
+
+    @app.delete("/deploy/config/{name}")
+    async def deploy_config_delete(name: str) -> dict[str, Any]:
+        _deploy_configs.pop(name, None)
+        return {"deleted": name}
+
+    @app.post("/deploy/run")
+    async def deploy_run(req: DeployRunRequest) -> dict[str, Any]:
+        global _deploy_run_counter
+        # Resolve config or use ad-hoc parameters
+        if req.config_name and req.config_name in _deploy_configs:
+            cfg = _deploy_configs[req.config_name]
+            host = cfg["host"]
+            user = cfg["user"]
+            port = cfg["port"]
+            command = cfg["command"]
+            key_path = cfg.get("key_path", "")
+        else:
+            host = req.host
+            user = req.user
+            port = req.port
+            command = req.command
+            key_path = req.key_path
+        if not host or not command:
+            raise HTTPException(status_code=400, detail="host and command are required")
+        ssh_args = [
+            "ssh",
+            # NOTE: StrictHostKeyChecking=no is intentional for ad-hoc deployment commands
+            # where known_hosts management is not feasible. Users should ensure they trust
+            # the target host before running deployments.
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "BatchMode=yes",
+            "-p", str(port),
+        ]
+        if key_path:
+            ssh_args += ["-i", key_path]
+        ssh_args.append(f"{user}@{host}")
+        ssh_args.append(command)
+        started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        try:
+            proc = subprocess.Popen(
+                ssh_args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            output, _ = proc.communicate(timeout=_DEPLOY_TIMEOUT)
+            exit_code = proc.returncode
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            output = f"[error] SSH command timed out after {_DEPLOY_TIMEOUT}s"
+            exit_code = -1
+        except Exception as exc:
+            output = str(exc)
+            exit_code = -1
+        finished_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _deploy_run_counter += 1
+        record: dict[str, Any] = {
+            "id": _deploy_run_counter,
+            "config": req.config_name or "(ad-hoc)",
+            "host": host,
+            "command": command,
+            "exit_code": exit_code,
+            "output": output,
+            "started_at": started_at,
+            "finished_at": finished_at,
+        }
+        _deploy_history.append(record)
+        if len(_deploy_history) > _MAX_DEPLOY_RUNS:
+            _deploy_history[:] = _deploy_history[-_MAX_DEPLOY_RUNS:]
+        return record
+
+    @app.get("/deploy/history")
+    async def deploy_history() -> dict[str, Any]:
+        return {"history": _deploy_history[-20:]}
+
+    @app.websocket("/ws/deploy")
+    async def ws_deploy(websocket: WebSocket) -> None:
+        await websocket.accept()
+        try:
+            if _deploy_history:
+                last = _deploy_history[-1]
+                for line in (last.get("output") or "").splitlines():
+                    await websocket.send_text(json.dumps({"line": line}))
+            await websocket.send_text(json.dumps({"done": True}))
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
     return app
 
 
@@ -4155,3 +4384,14 @@ _CI_BLOCKED_PATTERNS = (
     "> /dev/",
     ":(){ :|:& };:",
 )
+
+# ── Phase 24: Container & Docker Management ────────────────────────────────────
+_DOCKER_TIMEOUT = 120  # seconds
+_MAX_DOCKER_OUTPUT = 500_000  # 500 KB per command output
+
+# ── Phase 25: Remote Deployment & SSH ────────────────────────────────────────
+_deploy_configs: dict[str, Any] = {}
+_deploy_history: list[dict[str, Any]] = []
+_MAX_DEPLOY_RUNS = 50
+_DEPLOY_TIMEOUT = 120  # seconds
+_deploy_run_counter: int = 0
