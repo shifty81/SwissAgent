@@ -14,6 +14,11 @@ import sys
 import tempfile
 import threading
 import time
+try:
+    import toml as _toml
+    _HAS_TOML = True
+except ImportError:
+    _HAS_TOML = False
 from pathlib import Path
 from typing import Any, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -33,6 +38,19 @@ logger = get_logger(__name__)
 
 # Directories the GUI file browser is allowed to expose.
 _BROWSER_ROOTS = {"workspace", "projects", "plugins", "templates"}
+
+# Directories skipped when scanning a project for AI analysis.
+_SCAN_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv",
+                   "build", "dist", "target", "bin", "obj", ".dart_tool"}
+# Key files to read verbatim for AI project context.
+_SCAN_KEY_FILES = frozenset({
+    "README.md", "README.txt", "readme.md",
+    "package.json", "requirements.txt", "pyproject.toml", "setup.py",
+    "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "CMakeLists.txt",
+    "composer.json", "Gemfile", "pubspec.yaml", "Makefile",
+    ".gitignore", ".editorconfig", "Dockerfile", "docker-compose.yml",
+})
+_SCAN_MAX_FILE_CHARS = 8_000
 
 # Directories allowed as working directories for terminal/build commands.
 _BUILD_ROOTS = {"workspace", "projects"}
@@ -428,6 +446,13 @@ class BackendTestRequest(BaseModel):
 
 class BackendSwitchRequest(BaseModel):
     backend: str
+
+
+class BackendConfigureRequest(BaseModel):
+    backend: str
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
 
 
 class ProjectInitRequest(BaseModel):
@@ -1144,10 +1169,23 @@ def create_app(config_dir: str = "configs") -> FastAPI:
                     pass
 
     # ── Roadmap API ─────────────────────────────────────────────────────────
+    def _resolve_roadmap_file(path: Optional[str]) -> Path:
+        """Return the roadmap.json to use: project-specific if it exists, else global."""
+        if path:
+            top = Path(path).parts[0] if Path(path).parts else ""
+            if top in _BROWSER_ROOTS:
+                try:
+                    project_roadmap = _safe_path(base_dir, path) / "roadmap.json"
+                    if project_roadmap.is_file():
+                        return project_roadmap
+                except Exception:
+                    pass
+        return base_dir / "workspace" / "roadmap.json"
+
     @app.get("/roadmap")
-    async def get_roadmap() -> dict[str, Any]:
+    async def get_roadmap(path: Optional[str] = Query(default=None)) -> dict[str, Any]:
         """Return the full roadmap with milestones and tasks."""
-        roadmap_file = base_dir / "workspace" / "roadmap.json"
+        roadmap_file = _resolve_roadmap_file(path)
         if not roadmap_file.is_file():
             raise HTTPException(status_code=404, detail="roadmap.json not found")
         try:
@@ -1157,7 +1195,7 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         return data
 
     @app.patch("/roadmap/task/{task_id}")
-    async def update_roadmap_task(task_id: str, req: RoadmapTaskUpdate) -> dict[str, Any]:
+    async def update_roadmap_task(task_id: str, req: RoadmapTaskUpdate, path: Optional[str] = Query(default=None)) -> dict[str, Any]:
         """Update a task's status in the roadmap."""
         valid_statuses = {"pending", "in_progress", "done"}
         if req.status not in valid_statuses:
@@ -1165,7 +1203,7 @@ def create_app(config_dir: str = "configs") -> FastAPI:
                 status_code=400,
                 detail=f"Invalid status '{req.status}'. Must be one of {sorted(valid_statuses)}",
             )
-        roadmap_file = base_dir / "workspace" / "roadmap.json"
+        roadmap_file = _resolve_roadmap_file(path)
         if not roadmap_file.is_file():
             raise HTTPException(status_code=404, detail="roadmap.json not found")
         try:
@@ -1211,9 +1249,9 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         return {"status": "ok", "task_id": task_id, "new_status": req.status}
 
     @app.get("/roadmap/next")
-    async def get_next_roadmap_task() -> dict[str, Any]:
+    async def get_next_roadmap_task(path: Optional[str] = Query(default=None)) -> dict[str, Any]:
         """Return the next pending (or in_progress) task from the roadmap."""
-        roadmap_file = base_dir / "workspace" / "roadmap.json"
+        roadmap_file = _resolve_roadmap_file(path)
         if not roadmap_file.is_file():
             raise HTTPException(status_code=404, detail="roadmap.json not found")
         data = json.loads(roadmap_file.read_text(encoding="utf-8"))
@@ -3783,6 +3821,84 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             raise HTTPException(status_code=400, detail=f"Unknown backend '{name}'")
         config.set("agent.default_llm_backend", name)
         return {"ok": True, "backend": name}
+
+    def _save_config_toml() -> None:
+        """Persist in-memory config back to configs/config.toml."""
+        config_path = base_dir / "configs" / "config.toml"
+        try:
+            if _HAS_TOML:
+                config_path.write_text(_toml.dumps(config.data), encoding="utf-8")
+            else:
+                logger.warning("toml not available; config.toml not updated")
+        except Exception as exc:
+            logger.warning("Could not save config.toml: %s", exc)
+
+    @app.post("/ai/backends/configure")
+    async def configure_ai_backend(req: BackendConfigureRequest) -> dict[str, Any]:
+        """Save URL, API key and model for a backend to config.toml."""
+        name = req.backend.lower()
+        known_names = {b["name"] for b in _KNOWN_BACKENDS}
+        if name not in known_names:
+            raise HTTPException(status_code=400, detail=f"Unknown backend '{name}'")
+        if req.base_url:
+            config.set(f"llm.{name}.base_url", req.base_url)
+        if req.api_key:
+            config.set(f"llm.{name}.key", req.api_key)
+        if req.model:
+            config.set(f"llm.{name}.model", req.model)
+        await asyncio.get_event_loop().run_in_executor(None, _save_config_toml)
+        return {"ok": True, "backend": name}
+
+    # ── Project Init Scan (AI-powered analysis context) ───────────────────
+    @app.get("/project/init/scan")
+    async def project_init_scan(path: str = Query(...)) -> dict[str, Any]:
+        """Scan a project directory and return a context summary for AI analysis."""
+        top = Path(path).parts[0] if Path(path).parts else ""
+        if top not in _BROWSER_ROOTS:
+            raise HTTPException(status_code=403, detail=f"Root '{top}' not accessible")
+        project_dir = _safe_path(base_dir, path)
+        if not project_dir.is_dir():
+            raise HTTPException(status_code=404, detail="Directory not found")
+
+        # Build tree listing (max 3 levels deep)
+        lines: list[str] = [f"Project: {path}"]
+        try:
+            for root, dirs, files in os.walk(str(project_dir)):
+                dirs[:] = [d for d in sorted(dirs) if d not in _SCAN_SKIP_DIRS]
+                rel = Path(root).relative_to(project_dir)
+                depth = len(rel.parts)
+                if depth > 3:
+                    dirs.clear()
+                    continue
+                indent = "  " * depth
+                if depth > 0:
+                    lines.append(f"{indent}📁 {rel.name}/")
+                for f in sorted(files):
+                    marker = "⭐" if f in _SCAN_KEY_FILES else "📄"
+                    lines.append(f"{'  ' * (depth + 1)}{marker} {f}")
+        except Exception:
+            pass
+
+        tree_text = "\n".join(lines[:200])
+
+        # Read key files
+        key_contents: list[str] = []
+        for fname in _SCAN_KEY_FILES:
+            fpath = project_dir / fname
+            if fpath.is_file():
+                try:
+                    content = fpath.read_text(encoding="utf-8", errors="replace")
+                    if len(content) > _SCAN_MAX_FILE_CHARS:
+                        content = content[:_SCAN_MAX_FILE_CHARS] + "\n… (truncated)"
+                    key_contents.append(f"=== {fname} ===\n{content}")
+                except Exception:
+                    pass
+
+        context = f"Project file tree:\n{tree_text}"
+        if key_contents:
+            context += "\n\nKey file contents:\n\n" + "\n\n".join(key_contents)
+
+        return {"path": path, "context": context}
 
     # ── Project Initialization Wizard (Phase 21) ──────────────────────────
 
