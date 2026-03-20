@@ -21,10 +21,16 @@
         <input type="checkbox" id="chk-auto-rebuild" /> Auto-rebuild
       </label>
       <select id="llm-backend-select" title="LLM backend">
-        <option value="ollama">Ollama (local)</option>
-        <option value="openwebui">Open WebUI (local)</option>
-        <option value="api">OpenAI API</option>
-        <option value="local">Local GGUF</option>
+        <option value="ollama">🟢 Ollama (local/free)</option>
+        <option value="openwebui">🟢 Open WebUI (local/free)</option>
+        <option value="lmstudio">🟢 LM Studio (local/free)</option>
+        <option value="llamacpp">🟢 llama.cpp (local/free)</option>
+        <option value="localai">🟢 LocalAI (local/free)</option>
+        <option value="tabby">🟢 Tabby (local/free)</option>
+        <option value="gemini">🔵 Gemini (free tier)</option>
+        <option value="api">🔑 OpenAI API</option>
+        <option value="anthropic">🔑 Anthropic</option>
+        <option value="local">⚙ Local stub</option>
       </select>
       <span id="status-indicator" class="status-idle">● Idle</span>
     </div>
@@ -35,36 +41,103 @@
 
     <!-- ── Activity bar ──────────────────────────────────────────── -->
     <div id="activity-bar">
-      <button class="ab-btn active" data-panel="explorer" title="Explorer (files)">📁</button>
-      <button class="ab-btn" data-panel="search"   title="Search">🔍</button>
-      <button class="ab-btn" data-panel="git"      title="Git">⎇</button>
-      <button class="ab-btn" data-panel="knowledge" title="Knowledge & Profile">📚</button>
-      <button class="ab-btn" data-panel="roadmap"  title="Roadmap">🗺</button>
-      <button class="ab-btn" data-panel="plugins"  title="Plugins">🔌</button>
-      <button class="ab-btn" data-panel="scaffold" title="Scaffold">⚡</button>
-      <button class="ab-btn" data-panel="models"   title="Model Downloads">📥</button>
-      <button class="ab-btn" data-panel="quality"  title="Code Quality">🔬</button>
-      <button class="ab-btn" data-panel="templates" title="Templates & Toolchain">🧩</button>
-      <button class="ab-btn" data-panel="utilities" title="Utilities (Phase 16)">⚙️</button>
-      <button class="ab-btn" data-panel="notes"     title="Notes &amp; Tasks (Phase 17)">📝</button>
-      <button class="ab-btn" data-panel="refactor"  title="Refactor (Phase 19)">🔧</button>
-      <button class="ab-btn" data-panel="aibackends" title="AI Backends (Phase 20)">🤖</button>
-      <button class="ab-btn" data-panel="agents"    title="Multi-Agent Orchestration (Phase 22)">🕹</button>
-      <button class="ab-btn" data-panel="ci"        title="CI/CD Pipeline (Phase 23)">🔁</button>
-      <button class="ab-btn" data-panel="docker"    title="Docker Management (Phase 24)">🐳</button>
-      <button class="ab-btn" data-panel="deploy"    title="Remote Deployment (Phase 25)">🚀</button>
-      <button class="ab-btn" data-panel="monitor"   title="Monitoring & Observability (Phase 26)">📊</button>
-      <button class="ab-btn" data-panel="database"  title="Database Management (Phase 27)">🗄️</button>
-      <button class="ab-btn" data-panel="vault"     title="Secret Vault (Phase 28)">🔐</button>
-      <button class="ab-btn" data-panel="webhooks"  title="WebHook Manager (Phase 29)">🪝</button>
-      <button class="ab-btn" data-panel="ratelimit"  title="Rate Limits (Phase 30)">⏱</button>
-      <button class="ab-btn" data-panel="events"    title="Event Bus (Phase 31)">📡</button>
-      <button class="ab-btn" data-panel="cron"      title="Cron Jobs (Phase 32)">🕐</button>
-      <button class="ab-btn" data-panel="audit"     title="Audit Log (Phase 33)">📋</button>
-      <button class="ab-btn" data-panel="flags"     title="Feature Flags (Phase 34)">🚩</button>
-      <button class="ab-btn" data-panel="cfgprofile" title="Config Profiles (Phase 35)">⚙️</button>
-      <button class="ab-btn" data-panel="notify"    title="Notifications (Phase 36)">🔔</button>
-      <button class="ab-btn" data-panel="taskqueue" title="Task Queue (Phase 37)">📋</button>
+
+      <!-- Group: Files -->
+      <div class="ab-group open" id="abg-files">
+        <button class="ab-group-hdr" data-group="files">
+          <span class="ab-group-icon">📁</span>
+          <span class="ab-group-label">Files</span>
+          <span class="ab-group-arrow">▾</span>
+        </button>
+        <div class="ab-group-items">
+          <button class="ab-btn active" data-panel="explorer" title="Explorer">📁</button>
+          <button class="ab-btn" data-panel="search"   title="Search">🔍</button>
+          <button class="ab-btn" data-panel="git"      title="Git">⎇</button>
+        </div>
+      </div>
+
+      <!-- Group: AI -->
+      <div class="ab-group open" id="abg-ai">
+        <button class="ab-group-hdr" data-group="ai">
+          <span class="ab-group-icon">🤖</span>
+          <span class="ab-group-label">AI</span>
+          <span class="ab-group-arrow">▾</span>
+        </button>
+        <div class="ab-group-items">
+          <button class="ab-btn" data-panel="aibackends" title="AI Backends">🤖</button>
+          <button class="ab-btn" data-panel="knowledge"  title="Knowledge &amp; Profile">📚</button>
+          <button class="ab-btn" data-panel="models"     title="Model Downloads">📥</button>
+          <button class="ab-btn" data-panel="agents"     title="Multi-Agent">🕹</button>
+          <button class="ab-btn" data-panel="refactor"   title="Refactor">🔧</button>
+        </div>
+      </div>
+
+      <!-- Group: Code -->
+      <div class="ab-group" id="abg-code">
+        <button class="ab-group-hdr" data-group="code">
+          <span class="ab-group-icon">⚡</span>
+          <span class="ab-group-label">Code</span>
+          <span class="ab-group-arrow">▾</span>
+        </button>
+        <div class="ab-group-items">
+          <button class="ab-btn" data-panel="scaffold"  title="Scaffold">⚡</button>
+          <button class="ab-btn" data-panel="quality"   title="Code Quality">🔬</button>
+          <button class="ab-btn" data-panel="templates" title="Templates &amp; Toolchain">🧩</button>
+          <button class="ab-btn" data-panel="utilities" title="Utilities">⚙️</button>
+        </div>
+      </div>
+
+      <!-- Group: Project -->
+      <div class="ab-group" id="abg-project">
+        <button class="ab-group-hdr" data-group="project">
+          <span class="ab-group-icon">📋</span>
+          <span class="ab-group-label">Project</span>
+          <span class="ab-group-arrow">▾</span>
+        </button>
+        <div class="ab-group-items">
+          <button class="ab-btn" data-panel="notes"   title="Notes &amp; Tasks">📝</button>
+          <button class="ab-btn" data-panel="roadmap" title="Roadmap">🗺</button>
+          <button class="ab-btn" data-panel="plugins" title="Plugins">🔌</button>
+        </div>
+      </div>
+
+      <!-- Group: DevOps -->
+      <div class="ab-group" id="abg-devops">
+        <button class="ab-group-hdr" data-group="devops">
+          <span class="ab-group-icon">🚀</span>
+          <span class="ab-group-label">DevOps</span>
+          <span class="ab-group-arrow">▾</span>
+        </button>
+        <div class="ab-group-items">
+          <button class="ab-btn" data-panel="ci"     title="CI/CD Pipeline">🔁</button>
+          <button class="ab-btn" data-panel="docker" title="Docker">🐳</button>
+          <button class="ab-btn" data-panel="deploy" title="Remote Deploy">🚀</button>
+        </div>
+      </div>
+
+      <!-- Group: Ops -->
+      <div class="ab-group" id="abg-ops">
+        <button class="ab-group-hdr" data-group="ops">
+          <span class="ab-group-icon">⚙</span>
+          <span class="ab-group-label">Ops</span>
+          <span class="ab-group-arrow">▾</span>
+        </button>
+        <div class="ab-group-items">
+          <button class="ab-btn" data-panel="monitor"   title="Monitoring">📊</button>
+          <button class="ab-btn" data-panel="database"  title="Database">🗄️</button>
+          <button class="ab-btn" data-panel="vault"     title="Secret Vault">🔐</button>
+          <button class="ab-btn" data-panel="webhooks"  title="Webhooks">🪝</button>
+          <button class="ab-btn" data-panel="ratelimit" title="Rate Limits">⏱</button>
+          <button class="ab-btn" data-panel="events"    title="Event Bus">📡</button>
+          <button class="ab-btn" data-panel="cron"      title="Cron Jobs">🕐</button>
+          <button class="ab-btn" data-panel="audit"     title="Audit Log">📋</button>
+          <button class="ab-btn" data-panel="flags"     title="Feature Flags">🚩</button>
+          <button class="ab-btn" data-panel="cfgprofile" title="Config Profiles">⚙️</button>
+          <button class="ab-btn" data-panel="notify"    title="Notifications">🔔</button>
+          <button class="ab-btn" data-panel="taskqueue" title="Task Queue">📬</button>
+        </div>
+      </div>
+
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -903,13 +976,13 @@
   <!-- ── Project Init Wizard ──────────────────────────────────────────────── -->
   <div id="init-wizard" class="modal-overlay hidden">
     <div class="modal-box" style="min-width:480px;max-width:600px">
-      <h3>🚀 Initialize Project?</h3>
-      <p id="init-wizard-detect-summary" style="margin:8px 0;color:var(--fg-muted)">Detecting project type…</p>
-      <div id="init-wizard-steps" style="margin:12px 0"></div>
+      <h3>🤖 Analyze Project with AI</h3>
+      <p id="init-wizard-detect-summary" style="margin:8px 0;color:var(--fg-muted)">Scanning project…</p>
+      <div id="init-wizard-steps" style="margin:12px 0;font-size:13px;color:var(--text-dim);line-height:1.6"></div>
       <div id="init-wizard-progress" class="hidden" style="margin:12px 0;font-family:monospace;font-size:12px;max-height:180px;overflow-y:auto;background:var(--bg-3);padding:8px;border-radius:4px"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
         <button id="btn-init-skip" class="btn-secondary">Skip</button>
-        <button id="btn-init-run" class="btn-primary">Initialize</button>
+        <button id="btn-init-run" class="btn-primary">🤖 Analyze with AI</button>
       </div>
     </div>
   </div>
