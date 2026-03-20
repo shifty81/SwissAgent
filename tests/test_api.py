@@ -1682,3 +1682,54 @@ def test_project_init_detect_unknown(client):
     finally:
         import shutil
         shutil.rmtree(test_dir, ignore_errors=True)
+
+
+# ── Phase 22: Multi-Agent Orchestration ──────────────────────────────────────
+def test_agents_spawn(client):
+    r = client.post("/agents/spawn", json={"name": "dev", "role": "developer", "model": "default"})
+    assert r.status_code == 200
+    assert r.json()["name"] == "dev"
+
+def test_agents_list(client):
+    client.post("/agents/spawn", json={"name": "qa", "role": "tester", "model": "default"})
+    r = client.get("/agents")
+    assert r.status_code == 200
+    agents = r.json()["agents"]
+    assert any(a["name"] == "qa" for a in agents)
+
+def test_agents_run(client):
+    client.post("/agents/spawn", json={"name": "runner", "role": "coder", "model": "default"})
+    r = client.post("/agents/runner/run", json={"task": "say hello"})
+    assert r.status_code == 200
+    assert "result" in r.json()
+
+def test_agents_run_not_found(client):
+    r = client.post("/agents/nonexistent/run", json={"task": "test"})
+    assert r.status_code == 404
+
+def test_agents_delete(client):
+    client.post("/agents/spawn", json={"name": "temp", "role": "helper", "model": "default"})
+    r = client.delete("/agents/temp")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "temp"
+
+# ── Phase 23: CI/CD Pipeline Integration ─────────────────────────────────────
+def test_ci_run(client):
+    r = client.post("/ci/run", json={"command": "echo hello"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["exit_code"] == 0
+    assert "hello" in data["output"]
+
+def test_ci_status(client):
+    client.post("/ci/run", json={"command": "echo status_test"})
+    r = client.get("/ci/status")
+    assert r.status_code == 200
+    data = r.json()
+    assert "command" in data or data.get("status") == "no runs"
+
+def test_ci_runs_list(client):
+    client.post("/ci/run", json={"command": "echo list_test"})
+    r = client.get("/ci/runs")
+    assert r.status_code == 200
+    assert "runs" in r.json()
