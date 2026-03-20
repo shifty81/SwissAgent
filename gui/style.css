@@ -1505,3 +1505,15 @@ body {
   font-size: 9px; padding: 1px 5px; border-radius: 3px;
   background: var(--accent); color: #fff; margin-left: 4px;
 }
+/* ── Phase 38: Brainstorm Mode ───────────────────────────────────────── */
+#bs-messages .bs-msg-user {
+  align-self: flex-end;
+}
+#bs-messages .bs-msg-ai {
+  align-self: flex-start;
+}
+
+/* ── Phase 39: Web Search ────────────────────────────────────────────── */
+#ws-results a:hover {
+  text-decoration: underline;
+}

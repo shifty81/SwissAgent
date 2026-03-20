@@ -2159,6 +2159,8 @@
       if (panel === "cfgprofile") loadCfgProfilePanel();
       if (panel === "notify")      loadNotifyPanel();
       if (panel === "taskqueue") loadTaskQueuePanel();
+      if (panel === "brainstorm") loadBrainstormPanel();
+      if (panel === "websearch")  { /* panel is self-contained */ }
     });
   });
 
@@ -5341,6 +5343,237 @@
       });
     });
   }
+
+  // ── Phase 38: Brainstorm Mode panel ──────────────────────────────────────
+  let _bsActiveSessionId = null;
+
+  async function loadBrainstormPanel() {
+    const container = $("bs-sessions-container");
+    if (!container) return;
+    try {
+      const res  = await fetch("/brainstorm/sessions");
+      const data = await res.json();
+      const sessions = data.sessions || [];
+      if (!sessions.length) {
+        container.innerHTML = `<div style="color:var(--text-dim);font-size:11px;padding:4px">
+          No sessions yet. Click <b>+</b> to start a new brainstorm.
+        </div>`;
+        return;
+      }
+      container.innerHTML = sessions.map(s => `
+        <div class="bs-session-card" data-id="${s.id}"
+          style="padding:8px;border-radius:5px;border:1px solid var(--border);cursor:pointer;
+                 margin-bottom:6px;background:var(--surface);transition:background .15s">
+          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px">${escHtmlSimple(s.title)}</div>
+          <div style="font-size:10px;color:var(--text-dim)">${s.messages.length} message${s.messages.length !== 1 ? "s" : ""}
+            · ${s.created_at.slice(0,10)}</div>
+        </div>
+      `).join("");
+      container.querySelectorAll(".bs-session-card").forEach(card => {
+        card.addEventListener("mouseenter", () => card.style.background = "var(--surface2)");
+        card.addEventListener("mouseleave", () => card.style.background = "var(--surface)");
+        card.addEventListener("click", () => openBrainstormSession(Number(card.dataset.id)));
+      });
+    } catch (e) {
+      if (container) container.innerHTML = `<div style="color:var(--danger);font-size:11px">${e.message}</div>`;
+    }
+  }
+
+  async function openBrainstormSession(id) {
+    _bsActiveSessionId = id;
+    try {
+      const res  = await fetch(`/brainstorm/session/${id}`);
+      const s    = await res.json();
+      const title = $("bs-session-title");
+      if (title) title.textContent = s.title;
+      _renderBrainstormMessages(s.messages);
+      $("bs-session-list-view")?.classList.add("hidden");
+      $("bs-session-view")?.classList.remove("hidden");
+      $("bs-input")?.focus();
+    } catch (e) {
+      appendOutput(`Brainstorm load error: ${e.message}\n`);
+    }
+  }
+
+  function _renderBrainstormMessages(messages) {
+    const container = $("bs-messages");
+    if (!container) return;
+    container.innerHTML = messages.map(m => {
+      const isUser = m.role === "user";
+      const bg     = isUser ? "var(--surface2)" : "rgba(124,106,247,0.1)";
+      const align  = isUser ? "flex-end" : "flex-start";
+      const label  = isUser ? "You" : "AI";
+      const ts     = (m.timestamp || "").slice(0,16).replace("T"," ");
+      return `
+        <div style="display:flex;flex-direction:column;align-items:${align};gap:2px">
+          <div style="font-size:9px;color:var(--text-dim);padding:0 4px">${label} · ${escHtmlSimple(ts)}</div>
+          <div style="max-width:90%;background:${bg};border-radius:6px;padding:7px 10px;
+                      font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word">
+            ${escHtmlSimple(m.content)}
+          </div>
+        </div>`;
+    }).join("");
+    container.scrollTop = container.scrollHeight;
+  }
+
+  async function _bsSendMessage() {
+    const input = $("bs-input");
+    if (!input || !_bsActiveSessionId) return;
+    const content = input.value.trim();
+    if (!content) return;
+    input.value = "";
+    input.disabled = true;
+    const sendBtn = $("btn-bs-send");
+    if (sendBtn) sendBtn.disabled = true;
+
+    // Optimistically render user message
+    const msgs = $("bs-messages");
+    if (msgs) {
+      msgs.innerHTML += `
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+          <div style="font-size:9px;color:var(--text-dim);padding:0 4px">You · now</div>
+          <div style="max-width:90%;background:var(--surface2);border-radius:6px;padding:7px 10px;
+                      font-size:12px;line-height:1.5;white-space:pre-wrap">${escHtmlSimple(content)}</div>
+        </div>
+        <div id="bs-thinking" style="display:flex;align-items:flex-start;gap:2px">
+          <div style="font-size:9px;color:var(--text-dim);padding:0 4px">AI</div>
+          <div style="font-size:12px;color:var(--text-dim);font-style:italic;padding:7px 10px">Thinking…</div>
+        </div>`;
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    try {
+      const res = await fetch(`/brainstorm/session/${_bsActiveSessionId}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "user", content }),
+      });
+      const data = await res.json();
+      // Re-fetch the full session to render complete history
+      const sRes = await fetch(`/brainstorm/session/${_bsActiveSessionId}`);
+      const s    = await sRes.json();
+      _renderBrainstormMessages(s.messages);
+    } catch (e) {
+      const thinking = $("bs-thinking");
+      if (thinking) thinking.remove();
+      appendOutput(`Brainstorm send error: ${e.message}\n`);
+    } finally {
+      input.disabled = false;
+      if (sendBtn) sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  $("btn-bs-new")?.addEventListener("click", async () => {
+    const title = prompt("Session title:", "New Brainstorm");
+    if (!title) return;
+    const desc = prompt("Short description (optional):", "") || "";
+    try {
+      const res  = await fetch("/brainstorm/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description: desc }),
+      });
+      const s = await res.json();
+      await openBrainstormSession(s.id);
+    } catch (e) { alert(`Error: ${e.message}`); }
+  });
+
+  $("btn-bs-refresh")?.addEventListener("click", () => {
+    $("bs-session-view")?.classList.add("hidden");
+    $("bs-session-list-view")?.classList.remove("hidden");
+    loadBrainstormPanel();
+  });
+
+  $("btn-bs-back")?.addEventListener("click", () => {
+    _bsActiveSessionId = null;
+    $("bs-session-view")?.classList.add("hidden");
+    $("bs-session-list-view")?.classList.remove("hidden");
+    loadBrainstormPanel();
+  });
+
+  $("btn-bs-send")?.addEventListener("click", _bsSendMessage);
+
+  $("bs-input")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      _bsSendMessage();
+    }
+  });
+
+  $("btn-bs-export")?.addEventListener("click", async () => {
+    if (!_bsActiveSessionId) return;
+    try {
+      const res  = await fetch(`/brainstorm/session/${_bsActiveSessionId}/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ format: "markdown" }),
+      });
+      const data = await res.json();
+      const blob = new Blob([data.content], { type: "text/markdown" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href = url; a.download = `brainstorm-${_bsActiveSessionId}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { alert(`Export error: ${e.message}`); }
+  });
+
+  $("btn-bs-to-project")?.addEventListener("click", async () => {
+    if (!_bsActiveSessionId) return;
+    const name = prompt("New project name:");
+    if (!name) return;
+    try {
+      const res = await fetch(`/brainstorm/session/${_bsActiveSessionId}/to-project`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_name: name }),
+      });
+      if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+      const data = await res.json();
+      alert(`Project created at ${data.project_path}`);
+      // Refresh file tree
+      loadFileTree?.();
+    } catch (e) { alert(`Error: ${e.message}`); }
+  });
+
+  // ── Phase 39: Web Search panel ────────────────────────────────────────────
+
+  async function _runWebSearch() {
+    const input   = $("ws-query-input");
+    const results = $("ws-results");
+    if (!input || !results) return;
+    const q = input.value.trim();
+    if (!q) return;
+    results.innerHTML = `<div style="color:var(--text-dim);font-size:11px">Searching…</div>`;
+    try {
+      const res  = await fetch(`/search/web?q=${encodeURIComponent(q)}&max_results=8`);
+      const data = await res.json();
+      if (!data.results || !data.results.length) {
+        results.innerHTML = `<div style="color:var(--text-dim);font-size:11px">No results found.</div>`;
+        return;
+      }
+      results.innerHTML = data.results.map(r => `
+        <div style="padding:8px;border-radius:5px;border:1px solid var(--border);background:var(--surface);
+                    display:flex;flex-direction:column;gap:3px">
+          <a href="${escHtmlSimple(r.url)}" target="_blank" rel="noopener"
+             style="color:var(--accent);font-size:12px;font-weight:600;
+                    text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+             title="${escHtmlSimple(r.url)}">${escHtmlSimple(r.title)}</a>
+          <div style="font-size:10px;color:var(--text-dim);overflow:hidden;
+                      text-overflow:ellipsis;white-space:nowrap">${escHtmlSimple(r.url)}</div>
+          ${r.snippet ? `<div style="font-size:11px;color:var(--text);line-height:1.4">${escHtmlSimple(r.snippet)}</div>` : ""}
+        </div>
+      `).join("");
+    } catch (e) {
+      results.innerHTML = `<div style="color:var(--danger);font-size:11px">Error: ${escHtmlSimple(e.message)}</div>`;
+    }
+  }
+
+  $("btn-ws-search")?.addEventListener("click", _runWebSearch);
+  $("ws-query-input")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") _runWebSearch();
+  });
 
 })();
 

@@ -1,18 +1,19 @@
 /**
- * SwissAgent Desktop — Electron main process (t10-3)
+ * SwissAgent Desktop — Electron main process
  *
- * Wraps the SwissAgent web IDE as a native desktop application.
- * On startup it:
- *   1. Launches the SwissAgent FastAPI backend (python -m uvicorn …)
- *   2. Waits until the server is ready (health-check loop)
- *   3. Opens a BrowserWindow pointing at http://localhost:8000
- *   4. Shows a system-tray icon so the app can be minimised to tray
- *   5. On quit, terminates the backend process
+ * Startup flow:
+ *   1. Launches the SwissAgent FastAPI backend
+ *   2. Shows a small loading splash while the backend boots
+ *   3. Once the backend is healthy, shows the Launcher window
+ *   4. From the Launcher the user picks New Project / Open / Brainstorm / IDE
+ *   5. The main IDE BrowserWindow opens on user action
+ *   6. System-tray icon keeps the app alive when windows are closed
+ *   7. On quit, terminates the backend process
  */
 
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, dialog, ipcMain } = require('electron');
 const path  = require('path');
 const http  = require('http');
 const { spawn } = require('child_process');
@@ -21,26 +22,26 @@ const { spawn } = require('child_process');
 const BACKEND_PORT   = 8000;
 const BACKEND_URL    = `http://localhost:${BACKEND_PORT}`;
 const HEALTH_URL     = `${BACKEND_URL}/health`;
-const HEALTH_RETRIES = 30;   // max attempts × 1 s interval = 30 s timeout
-const WINDOW_W       = 1400;
-const WINDOW_H       = 900;
+const HEALTH_RETRIES = 30;
+const LAUNCHER_W     = 720;
+const LAUNCHER_H     = 480;
+const WINDOW_W       = 1440;
+const WINDOW_H       = 920;
 
 // ── State ────────────────────────────────────────────────────────────────────
-let mainWindow   = null;
-let tray         = null;
-let backendProc  = null;
-let serverReady  = false;
+let mainWindow     = null;
+let launcherWindow = null;
+let tray           = null;
+let backendProc    = null;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function projectRoot() {
-  // When packaged the backend lives next to the app; in dev it's two levels up.
   return app.isPackaged
     ? path.join(process.resourcesPath, 'backend')
     : path.join(__dirname, '..');
 }
 
 function pythonExe() {
-  // Respect SWISSAGENT_PYTHON env var; fall back to common names.
   return process.env.SWISSAGENT_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
 }
 
@@ -85,51 +86,71 @@ function waitForBackend(attempt, resolve, reject) {
     return reject(new Error(`Backend did not start after ${HEALTH_RETRIES} s`));
   }
   http.get(HEALTH_URL, (res) => {
-    if (res.statusCode === 200) {
-      console.log('[electron] backend ready');
-      resolve();
-    } else {
-      setTimeout(() => waitForBackend(attempt + 1, resolve, reject), 1000);
-    }
+    if (res.statusCode === 200) { console.log('[electron] backend ready'); resolve(); }
+    else { setTimeout(() => waitForBackend(attempt + 1, resolve, reject), 1000); }
   }).on('error', () => {
     setTimeout(() => waitForBackend(attempt + 1, resolve, reject), 1000);
   });
 }
 
-// ── Window ────────────────────────────────────────────────────────────────────
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width:           WINDOW_W,
-    height:          WINDOW_H,
-    title:           'SwissAgent',
-    backgroundColor: '#1e1e1e',
-    webPreferences:  {
-      preload:            path.join(__dirname, 'preload.js'),
-      contextIsolation:   true,
-      nodeIntegration:    false,
-      sandbox:            true,
+// ── Launcher window ───────────────────────────────────────────────────────────
+function createLauncher() {
+  launcherWindow = new BrowserWindow({
+    width: LAUNCHER_W,
+    height: LAUNCHER_H,
+    title: 'SwissAgent',
+    backgroundColor: '#1e1e2e',
+    resizable: false,
+    frame: false,
+    webPreferences: {
+      preload:          path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration:  false,
+      sandbox:          false,   // needed so preload can use __dirname
     },
   });
 
-  // Open external links in the system browser instead of Electron.
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+  launcherWindow.loadFile(path.join(__dirname, 'launcher.html'));
+
+  launcherWindow.on('closed', () => { launcherWindow = null; });
+}
+
+// ── Main IDE window ───────────────────────────────────────────────────────────
+function createIDEWindow(url) {
+  // Close launcher if still open
+  if (launcherWindow) { launcherWindow.close(); launcherWindow = null; }
+
+  if (mainWindow) { mainWindow.show(); mainWindow.focus(); mainWindow.loadURL(url); return; }
+
+  mainWindow = new BrowserWindow({
+    width: WINDOW_W,
+    height: WINDOW_H,
+    title: 'SwissAgent',
+    backgroundColor: '#1e1e2e',
+    webPreferences: {
+      preload:          path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration:  false,
+      sandbox:          false,
+    },
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url: u }) => {
+    shell.openExternal(u);
     return { action: 'deny' };
   });
 
   mainWindow.on('close', (ev) => {
-    if (tray) {
-      ev.preventDefault();
-      mainWindow.hide();
-    }
+    if (tray) { ev.preventDefault(); mainWindow.hide(); }
   });
 
-  mainWindow.loadURL(BACKEND_URL);
+  mainWindow.on('closed', () => { mainWindow = null; });
+
+  mainWindow.loadURL(url);
 }
 
 // ── Tray ──────────────────────────────────────────────────────────────────────
 function createTray() {
-  // Use a blank 16×16 icon if the real icon is not present.
   const iconPath = path.join(__dirname, 'assets', 'icon.png');
   const icon = nativeImage.createFromPath(iconPath).isEmpty()
     ? nativeImage.createEmpty()
@@ -138,34 +159,76 @@ function createTray() {
   tray = new Tray(icon);
   tray.setToolTip('SwissAgent');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Show SwissAgent', click: () => { mainWindow.show(); mainWindow.focus(); } },
+    {
+      label: 'Show Launcher',
+      click: () => {
+        if (launcherWindow) { launcherWindow.show(); launcherWindow.focus(); }
+        else createLauncher();
+      },
+    },
+    {
+      label: 'Open IDE',
+      click: () => {
+        if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
+        else createIDEWindow(BACKEND_URL);
+      },
+    },
     { label: 'Open in Browser', click: () => shell.openExternal(BACKEND_URL) },
     { type: 'separator' },
     { label: 'Quit', click: () => { tray = null; app.quit(); } },
   ]));
-  tray.on('double-click', () => { mainWindow.show(); mainWindow.focus(); });
+  tray.on('double-click', () => {
+    const w = mainWindow || launcherWindow;
+    if (w) { w.show(); w.focus(); }
+  });
 }
+
+// ── IPC handlers (called from preload/renderer) ───────────────────────────────
+ipcMain.handle('launcher:openIDE', (_event, url) => {
+  createIDEWindow(url || BACKEND_URL);
+});
+
+ipcMain.handle('launcher:close', () => {
+  if (launcherWindow) launcherWindow.close();
+});
+
+ipcMain.handle('launcher:pickFolder', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Open Project Folder',
+    properties: ['openDirectory'],
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  const p = result.filePaths[0];
+  return { path: p, name: path.basename(p) };
+});
+
+ipcMain.on('app:quit',     () => { tray = null; app.quit(); });
+ipcMain.on('app:minimize', (e) => { BrowserWindow.fromWebContents(e.sender)?.minimize(); });
+ipcMain.on('app:maximize', (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (w) { w.isMaximized() ? w.unmaximize() : w.maximize(); }
+});
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   startBackend();
 
-  // Show a loading window while we wait for the backend.
-  mainWindow = new BrowserWindow({
-    width: 480, height: 300,
+  // Splash while backend boots
+  const splash = new BrowserWindow({
+    width: 360, height: 240,
     title: 'SwissAgent — Starting…',
-    backgroundColor: '#1e1e1e',
+    backgroundColor: '#1e1e2e',
     resizable: false,
     frame: false,
     webPreferences: { contextIsolation: true },
   });
-  mainWindow.loadURL(`data:text/html,
-    <html><body style="background:#1e1e1e;color:#ccc;font-family:sans-serif;
+  splash.loadURL(`data:text/html,
+    <html><body style="background:#1e1e2e;color:#cdd6f4;font-family:sans-serif;
       display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
       <div style="text-align:center">
-        <div style="font-size:48px;margin-bottom:16px">🛠️</div>
-        <div style="font-size:20px;font-weight:bold;color:#4fc3f7">SwissAgent</div>
-        <div style="margin-top:8px;color:#888">Starting backend…</div>
+        <div style="font-size:44px;margin-bottom:12px">🛠️</div>
+        <div style="font-size:18px;font-weight:700;color:#7c6af7">SwissAgent</div>
+        <div style="margin-top:8px;font-size:12px;color:#7f849c">Starting backend…</div>
       </div>
     </body></html>`);
 
@@ -173,26 +236,27 @@ app.whenReady().then(async () => {
     await new Promise((resolve, reject) => waitForBackend(0, resolve, reject));
   } catch (err) {
     dialog.showErrorBox('SwissAgent — Startup Error',
-      `Could not start the backend server.\n\n${err.message}\n\n` +
-      `Make sure Python 3.10+ and uvicorn are installed, then try again.`);
+      `Could not start the backend server.\n\n${err.message}`);
     app.quit();
     return;
   }
 
-  mainWindow.close();
-  mainWindow = null;
-  createWindow();
+  splash.close();
+  createLauncher();
   createTray();
 
   app.on('activate', () => {
-    if (mainWindow === null) createWindow();
-    else { mainWindow.show(); mainWindow.focus(); }
+    if (!launcherWindow && !mainWindow) createLauncher();
+    else {
+      const w = launcherWindow || mainWindow;
+      if (w) { w.show(); w.focus(); }
+    }
   });
 });
 
 app.on('window-all-closed', () => {
-  // On macOS keep app running in tray; on other platforms quit.
   if (process.platform !== 'darwin' && !tray) app.quit();
 });
 
 app.on('before-quit', stopBackend);
+

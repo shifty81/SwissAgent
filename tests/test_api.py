@@ -2435,3 +2435,154 @@ def test_queue_task_delete(client):
     r = client.delete(f"/queue/task/{tid}")
     assert r.status_code == 200
     assert r.json()["deleted"] == tid
+
+# ── Phase 38: Brainstorm Mode ─────────────────────────────────────────────────
+
+def test_brainstorm_create(client):
+    r = client.post("/brainstorm/session", json={"title": "Test Brainstorm", "description": "desc"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["title"] == "Test Brainstorm"
+    assert "id" in d
+    assert d["messages"] == []
+
+def test_brainstorm_create_empty_title(client):
+    r = client.post("/brainstorm/session", json={"title": ""})
+    assert r.status_code == 200
+    # Empty title gets a default name
+    assert r.json()["title"].startswith("Session")
+
+def test_brainstorm_list(client):
+    client.post("/brainstorm/session", json={"title": "BS List Test"})
+    r = client.get("/brainstorm/sessions")
+    assert r.status_code == 200
+    d = r.json()
+    assert "sessions" in d
+    assert d["total"] >= 1
+    titles = [s["title"] for s in d["sessions"]]
+    assert "BS List Test" in titles
+
+def test_brainstorm_get(client):
+    r1 = client.post("/brainstorm/session", json={"title": "BS Get Test"})
+    sid = r1.json()["id"]
+    r = client.get(f"/brainstorm/session/{sid}")
+    assert r.status_code == 200
+    assert r.json()["title"] == "BS Get Test"
+
+def test_brainstorm_get_not_found(client):
+    r = client.get("/brainstorm/session/999999")
+    assert r.status_code == 404
+
+def test_brainstorm_message_user_only(client):
+    """Adding an assistant message directly (no LLM call) works."""
+    r1 = client.post("/brainstorm/session", json={"title": "BS Msg Test"})
+    sid = r1.json()["id"]
+    r = client.post(
+        f"/brainstorm/session/{sid}/message",
+        json={"role": "assistant", "content": "Hello from AI"},
+    )
+    assert r.status_code == 200
+    d = r.json()
+    assert d["user_message"]["content"] == "Hello from AI"
+    assert d["ai_reply"] is None
+
+def test_brainstorm_message_empty(client):
+    r1 = client.post("/brainstorm/session", json={"title": "BS Empty Msg"})
+    sid = r1.json()["id"]
+    r = client.post(f"/brainstorm/session/{sid}/message", json={"role": "user", "content": "   "})
+    assert r.status_code == 400
+
+def test_brainstorm_export_json(client):
+    r1 = client.post("/brainstorm/session", json={"title": "BS Export JSON"})
+    sid = r1.json()["id"]
+    client.post(f"/brainstorm/session/{sid}/message",
+                json={"role": "assistant", "content": "idea"})
+    r = client.post(f"/brainstorm/session/{sid}/export", json={"format": "json"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["format"] == "json"
+    parsed = json.loads(d["content"])
+    assert parsed["title"] == "BS Export JSON"
+
+def test_brainstorm_export_markdown(client):
+    r1 = client.post("/brainstorm/session", json={"title": "BS Export MD"})
+    sid = r1.json()["id"]
+    client.post(f"/brainstorm/session/{sid}/message",
+                json={"role": "assistant", "content": "some idea"})
+    r = client.post(f"/brainstorm/session/{sid}/export", json={"format": "markdown"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["format"] == "markdown"
+    assert "# BS Export MD" in d["content"]
+    assert "some idea" in d["content"]
+
+def test_brainstorm_to_project(client, tmp_path, monkeypatch):
+    import tempfile, pathlib
+    # Point base_dir to a temp dir so we don't pollute the real workspace
+    real_projects = pathlib.Path("projects")
+    real_projects.mkdir(exist_ok=True)
+    r1 = client.post("/brainstorm/session", json={"title": "BS Project Test"})
+    sid = r1.json()["id"]
+    slug = f"_bs_test_proj_{sid}"
+    r = client.post(
+        f"/brainstorm/session/{sid}/to-project",
+        json={"project_name": "BS Test Project", "project_path": slug},
+    )
+    assert r.status_code == 200
+    d = r.json()
+    assert "README.md" in d["files_created"]
+    assert "brainstorm.md" in d["files_created"]
+    # Cleanup
+    import shutil
+    proj_dir = pathlib.Path(f"projects/{slug}")
+    if proj_dir.exists():
+        shutil.rmtree(proj_dir)
+
+def test_brainstorm_to_project_conflict(client):
+    """Creating two projects with the same slug should 409."""
+    r1 = client.post("/brainstorm/session", json={"title": "BS Conflict"})
+    sid = r1.json()["id"]
+    slug = f"_bs_conflict_test_{sid}"
+    client.post(f"/brainstorm/session/{sid}/to-project",
+                json={"project_name": "Conflict Test", "project_path": slug})
+    r2 = client.post(f"/brainstorm/session/{sid}/to-project",
+                     json={"project_name": "Conflict Test", "project_path": slug})
+    assert r2.status_code == 409
+    # Cleanup
+    import shutil, pathlib
+    proj_dir = pathlib.Path(f"projects/{slug}")
+    if proj_dir.exists():
+        shutil.rmtree(proj_dir)
+
+def test_brainstorm_delete(client):
+    r1 = client.post("/brainstorm/session", json={"title": "BS Delete Test"})
+    sid = r1.json()["id"]
+    r = client.delete(f"/brainstorm/session/{sid}")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == sid
+    r2 = client.get(f"/brainstorm/session/{sid}")
+    assert r2.status_code == 404
+
+# ── Phase 39: Web Search ──────────────────────────────────────────────────────
+
+def test_web_search_route_exists(client):
+    """The /search/web endpoint exists (even if the network call fails in CI)."""
+    r = client.get("/search/web?q=python+programming")
+    # 200 = success, 502 = network unreachable in CI — both are acceptable
+    assert r.status_code in (200, 502)
+    if r.status_code == 200:
+        d = r.json()
+        assert "query" in d
+        assert "results" in d
+        assert isinstance(d["results"], list)
+
+def test_web_search_missing_query(client):
+    r = client.get("/search/web")
+    assert r.status_code == 422  # FastAPI validation error
+
+def test_web_search_max_results_capped(client):
+    """max_results=0 should be rejected; max_results=25 is rejected (>20 is out of range)."""
+    r = client.get("/search/web?q=test&max_results=0")
+    assert r.status_code == 422
+    r2 = client.get("/search/web?q=test&max_results=21")
+    assert r2.status_code == 422

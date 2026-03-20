@@ -9,6 +9,7 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
+// ── IDE window bridge (used in the main IDE web app) ─────────────────────────
 contextBridge.exposeInMainWorld('swissagentDesktop', {
   /** True when running inside the Electron wrapper. */
   isDesktop: true,
@@ -26,4 +27,22 @@ contextBridge.exposeInMainWorld('swissagentDesktop', {
       ipcRenderer.on(channel, (_event, ...args) => callback(...args));
     }
   },
+});
+
+// ── Launcher window bridge ────────────────────────────────────────────────────
+contextBridge.exposeInMainWorld('swissagentLauncher', {
+  /**
+   * Ask the main process to open the IDE window at the given URL.
+   * @param {string} url
+   */
+  openIDE: (url) => ipcRenderer.invoke('launcher:openIDE', url),
+
+  /** Close the launcher window. */
+  close: () => ipcRenderer.invoke('launcher:close'),
+
+  /**
+   * Show a native folder-picker dialog.
+   * @returns {Promise<{path: string, name: string} | null>}
+   */
+  pickFolder: () => ipcRenderer.invoke('launcher:pickFolder'),
 });

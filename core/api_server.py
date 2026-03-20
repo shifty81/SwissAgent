@@ -633,6 +633,29 @@ class TaskQueueRequest(BaseModel):
     priority: int = 5          # 1 (highest) – 10 (lowest)
 
 
+# ── Phase 38: Brainstorm Mode request models ──────────────────────────────────
+
+class BrainstormSessionRequest(BaseModel):
+    title: str
+    description: str = ""
+    llm_backend: str = ""
+
+
+class BrainstormMessageRequest(BaseModel):
+    role: str = "user"         # user | assistant
+    content: str
+    llm_backend: str = ""      # if role==user, AI reply is generated using this
+
+
+class BrainstormExportRequest(BaseModel):
+    format: str = "markdown"   # markdown | json
+
+
+class BrainstormToProjectRequest(BaseModel):
+    project_name: str
+    project_path: str = ""     # relative under projects/; defaults to slugified title
+
+
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
 # Context window sizes sent to the LLM.  Prefix is longer because the model
@@ -5406,6 +5429,263 @@ indent_style = tab
         done    = sum(1 for t in _task_queue if t["status"] == "done")
         return {"total": len(_task_queue), "pending": pending, "done": done}
 
+    # ── Phase 38: Brainstorm Mode ─────────────────────────────────────────────
+
+    def _bs_slug(text: str) -> str:
+        """Convert a title to a filesystem-safe slug."""
+        return re.sub(r"[^a-z0-9_-]", "_", text.lower().strip())[:40]
+
+    @app.post("/brainstorm/session")
+    async def brainstorm_create(req: BrainstormSessionRequest) -> dict[str, Any]:
+        """Create a new brainstorm session."""
+        global _brainstorm_id_counter
+        _brainstorm_id_counter += 1
+        sid = _brainstorm_id_counter
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        session: dict[str, Any] = {
+            "id": sid,
+            "title": req.title.strip() or f"Session {sid}",
+            "description": req.description,
+            "created_at": now,
+            "updated_at": now,
+            "messages": [],
+            "tags": [],
+            "llm_backend": req.llm_backend,
+        }
+        _brainstorm_sessions[str(sid)] = session
+        return session
+
+    @app.get("/brainstorm/sessions")
+    async def brainstorm_list() -> dict[str, Any]:
+        """List all brainstorm sessions (newest first)."""
+        sessions = sorted(
+            _brainstorm_sessions.values(),
+            key=lambda s: s["created_at"],
+            reverse=True,
+        )
+        return {"sessions": sessions, "total": len(sessions)}
+
+    @app.get("/brainstorm/session/{sid}")
+    async def brainstorm_get(sid: int) -> dict[str, Any]:
+        """Get a specific brainstorm session."""
+        s = _brainstorm_sessions.get(str(sid))
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return s
+
+    @app.delete("/brainstorm/session/{sid}")
+    async def brainstorm_delete(sid: int) -> dict[str, Any]:
+        """Delete a brainstorm session."""
+        if str(sid) not in _brainstorm_sessions:
+            raise HTTPException(status_code=404, detail="Session not found")
+        del _brainstorm_sessions[str(sid)]
+        return {"deleted": sid}
+
+    @app.post("/brainstorm/session/{sid}/message")
+    async def brainstorm_message(sid: int, req: BrainstormMessageRequest) -> dict[str, Any]:
+        """Add a message to a brainstorm session.
+
+        If ``role`` is ``"user"``, an AI reply is automatically generated and
+        appended using the configured LLM backend.
+        """
+        s = _brainstorm_sessions.get(str(sid))
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if not req.content.strip():
+            raise HTTPException(status_code=400, detail="Message content is empty")
+
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        user_msg: dict[str, Any] = {
+            "role": req.role,
+            "content": req.content.strip(),
+            "timestamp": now,
+        }
+        s["messages"].append(user_msg)
+        s["updated_at"] = now
+        ai_reply: dict[str, Any] | None = None
+
+        if req.role == "user":
+            # Build LLM conversation from session history
+            system_prompt = (
+                "You are a creative brainstorming partner for software development. "
+                "Help the user explore ideas, evaluate approaches, identify requirements, "
+                "and turn concepts into actionable plans. "
+                "Use markdown for structure when helpful (lists, headers, code blocks). "
+                f"[Session title: {s['title'][:80]}] "
+                + (f"[Session description: {s['description'][:200]}] " if s["description"] else "")
+            )
+            history_msgs: list[dict[str, str]] = [
+                {"role": "system", "content": system_prompt}
+            ]
+            for m in s["messages"]:
+                history_msgs.append({"role": m["role"], "content": m["content"]})
+
+            backend = req.llm_backend or s.get("llm_backend") or config.get("agent.default_llm_backend", "ollama")
+            try:
+                from llm.factory import create_llm
+                llm = create_llm(backend, config)
+                reply_text = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: llm.chat(history_msgs),
+                )
+            except Exception as exc:
+                logger.warning("Brainstorm LLM error: %s", exc)
+                reply_text = (
+                    "_AI is not available right now — check your LLM backend configuration._"
+                )
+
+            ai_reply = {
+                "role": "assistant",
+                "content": reply_text.strip(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+            s["messages"].append(ai_reply)
+            s["updated_at"] = ai_reply["timestamp"]
+
+        return {"session_id": sid, "user_message": user_msg, "ai_reply": ai_reply}
+
+    @app.post("/brainstorm/session/{sid}/export")
+    async def brainstorm_export(sid: int, req: BrainstormExportRequest) -> dict[str, Any]:
+        """Export a brainstorm session as markdown or JSON."""
+        s = _brainstorm_sessions.get(str(sid))
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        if req.format == "json":
+            return {"format": "json", "content": json.dumps(s, indent=2)}
+
+        # Build markdown export
+        lines: list[str] = [
+            f"# {s['title']}",
+            "",
+            f"> Created: {s['created_at'][:10]}",
+        ]
+        if s["description"]:
+            lines += ["", s["description"]]
+        lines += ["", "---", ""]
+        for m in s["messages"]:
+            speaker = "**You**" if m["role"] == "user" else "**AI**"
+            ts = m.get("timestamp", "")[:16].replace("T", " ")
+            lines.append(f"### {speaker}  _{ts}_")
+            lines.append("")
+            lines.append(m["content"])
+            lines.append("")
+        content = "\n".join(lines)
+        return {"format": "markdown", "content": content}
+
+    @app.post("/brainstorm/session/{sid}/to-project")
+    async def brainstorm_to_project(sid: int, req: BrainstormToProjectRequest) -> dict[str, Any]:
+        """Create a new project stub from a brainstorm session.
+
+        Writes ``README.md`` with the session export and a starter ``brainstorm.md``
+        under ``projects/<project_path>/``.
+        """
+        s = _brainstorm_sessions.get(str(sid))
+        if not s:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if not req.project_name.strip():
+            raise HTTPException(status_code=400, detail="project_name is required")
+
+        slug = req.project_path.strip() or _bs_slug(req.project_name)
+        target = _safe_path(base_dir, f"projects/{slug}")
+        if target.exists():
+            raise HTTPException(status_code=409, detail=f"Project '{slug}' already exists")
+        target.mkdir(parents=True, exist_ok=True)
+
+        # Write README
+        readme_lines = [
+            f"# {req.project_name}",
+            "",
+            f"_Generated from brainstorm session: {s['title']}_",
+            "",
+            "## Overview",
+            "",
+            s["description"] or "_(add project description here)_",
+            "",
+            "## Getting Started",
+            "",
+            "_(fill in setup instructions)_",
+            "",
+        ]
+        (target / "README.md").write_text("\n".join(readme_lines), encoding="utf-8")
+
+        # Write brainstorm log
+        export_result = await brainstorm_export(sid, BrainstormExportRequest(format="markdown"))
+        (target / "brainstorm.md").write_text(export_result["content"], encoding="utf-8")
+
+        return {
+            "project_path": f"projects/{slug}",
+            "files_created": ["README.md", "brainstorm.md"],
+        }
+
+    # ── Phase 39: Web Search ──────────────────────────────────────────────────
+
+    @app.get("/search/web")
+    async def search_web(
+        q: str = Query(..., min_length=1, description="Search query"),
+        max_results: int = Query(default=5, ge=1, le=20),
+    ) -> dict[str, Any]:
+        """Search the web via DuckDuckGo (no API key required).
+
+        Returns a list of ``{title, url, snippet}`` objects.
+        """
+        import html as _html
+        import urllib.parse
+
+        encoded = urllib.parse.quote_plus(q)
+        url = f"https://html.duckduckgo.com/html/?q={encoded}"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+        try:
+            resp = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: requests.get(url, headers=headers, timeout=_WEB_SEARCH_TIMEOUT),
+            )
+            resp.raise_for_status()
+            raw_html = resp.text
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Web search request failed: {exc}")
+
+        # Parse results from DuckDuckGo HTML response
+        results: list[dict[str, str]] = []
+        try:
+            # Extract result blocks: <div class="result__body"> … </div>
+            # We use simple regex to avoid a BS4 dependency
+            block_pat = re.compile(
+                r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>'
+                r'.*?<a[^>]+class="result__snippet"[^>]*>(.*?)</a>',
+                re.DOTALL,
+            )
+            for m in block_pat.finditer(raw_html):
+                href, title_raw, snippet_raw = m.group(1), m.group(2), m.group(3)
+                # Clean HTML entities and inline tags
+                def _clean(s: str) -> str:
+                    s = re.sub(r"<[^>]+>", "", s)
+                    return _html.unescape(s).strip()
+
+                title   = _clean(title_raw)
+                snippet = _clean(snippet_raw)
+                link    = href
+                # DuckDuckGo redirects via //duckduckgo.com/l/?uddg=<encoded_url>
+                uddg = re.search(r"uddg=([^&]+)", href)
+                if uddg:
+                    link = urllib.parse.unquote(uddg.group(1))
+                if title and link:
+                    results.append({"title": title, "url": link, "snippet": snippet})
+                if len(results) >= max_results:
+                    break
+        except Exception as exc:
+            logger.warning("Web search parse error: %s", exc)
+
+        return {"query": q, "results": results, "total": len(results)}
+
     return app
 
 
@@ -5560,3 +5840,10 @@ _notification_id_counter: int = 0
 # ── Phase 37: Task Queue ───────────────────────────────────────────────────────
 _task_queue: list[dict[str, Any]] = []
 _task_queue_id_counter: int = 0
+
+# ── Phase 38: Brainstorm Mode ──────────────────────────────────────────────────
+_brainstorm_sessions: dict[str, Any] = {}
+_brainstorm_id_counter: int = 0
+
+# ── Phase 39: Web Search ───────────────────────────────────────────────────────
+_WEB_SEARCH_TIMEOUT = 8  # seconds
