@@ -3572,7 +3572,8 @@
         try {
           await fetch(`/agents/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
         } catch (e) {
-          alert(`Failed to terminate agent: ${e.message}`);
+          const resultEl = $("agent-run-result");
+          if (resultEl) resultEl.textContent = `Error: ${e.message}`;
         }
         loadAgentsPanel();
       });
@@ -3615,6 +3616,7 @@
         <input id="ci-command-input" style="flex:1;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="e.g. echo hello" />
         <button id="btn-ci-run" style="font-size:11px;padding:3px 6px">Run</button>
       </div>
+      <div id="ci-run-error" style="font-size:11px;color:var(--error,#ef4444);margin-bottom:4px;display:none"></div>
       <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">LAST OUTPUT</div>
       <pre id="ci-last-output" style="font-size:10px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;overflow-y:auto;max-height:100px;white-space:pre-wrap;margin-bottom:8px">${last ? escHtmlSimple(last.output || "") : "(no runs yet)"}</pre>
       <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RUN HISTORY</div>
@@ -3647,7 +3649,8 @@
         if ($("ci-command-input")) $("ci-command-input").value = "";
         loadCIPanel();
       } catch (e) {
-        alert(`CI run failed: ${e.message}`);
+        const errEl = $("ci-run-error");
+        if (errEl) { errEl.textContent = `Error: ${e.message}`; errEl.style.display = "block"; }
       } finally {
         if (btn) btn.disabled = false;
       }

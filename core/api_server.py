@@ -3973,8 +3973,8 @@ indent_style = tab
         try:
             from core.agent import AgentRunner  # type: ignore[attr-defined]
             result = AgentRunner(req.task).run()
-        except Exception:
-            result = f"Agent ran: {req.task}"
+        except Exception as exc:
+            result = f"[error] AgentRunner unavailable: {exc}"
         _agents[name]["status"] = "idle"
         _agents[name]["last_result"] = result
         return {"name": name, "task": req.task, "result": result}
@@ -4003,6 +4003,10 @@ indent_style = tab
         import shlex as _shlex
         if not isinstance(req.command, str) or not req.command.strip():
             raise HTTPException(status_code=400, detail="command must be a non-empty string")
+        cmd_lower = req.command.lower()
+        for blocked in _CI_BLOCKED_PATTERNS:
+            if blocked in cmd_lower:
+                raise HTTPException(status_code=400, detail=f"command contains blocked pattern: {blocked}")
         started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         try:
             proc = subprocess.Popen(
@@ -4012,13 +4016,22 @@ indent_style = tab
                 stderr=subprocess.STDOUT,
                 text=True,
             )
-            output, _ = proc.communicate()
+            output, _ = proc.communicate(timeout=_CI_TIMEOUT)
             exit_code = proc.returncode
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            output = f"[error] command timed out after {_CI_TIMEOUT}s"
+            exit_code = -1
         except Exception as exc:
             output = str(exc)
             exit_code = -1
+        if len(output) > _MAX_CI_OUTPUT:
+            output = output[:_MAX_CI_OUTPUT] + f"\n[truncated at {_MAX_CI_OUTPUT} bytes]"
         finished_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        run_id = len(_ci_runs) + 1
+        global _ci_run_counter
+        _ci_run_counter += 1
+        run_id = _ci_run_counter
         record: dict[str, Any] = {
             "id": run_id,
             "command": req.command,
@@ -4132,3 +4145,13 @@ _agents: dict[str, Any] = {}
 # ── Phase 23: CI/CD Pipeline Integration ─────────────────────────────────────
 _ci_runs: list[dict[str, Any]] = []
 _MAX_CI_RUNS = 50
+_ci_run_counter: int = 0
+_MAX_CI_OUTPUT = 1_000_000  # 1 MB per run output
+_CI_TIMEOUT = 300  # seconds
+_CI_BLOCKED_PATTERNS = (
+    "rm -rf /",
+    "mkfs",
+    "dd if=",
+    "> /dev/",
+    ":(){ :|:& };:",
+)
