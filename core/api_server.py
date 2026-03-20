@@ -499,7 +499,7 @@ class DeployRunRequest(BaseModel):
 
 class MetricsAlertRequest(BaseModel):
     name: str
-    metric: str          # "cpu_load" | "mem_percent" | "disk_percent"
+    metric: str          # "cpu_load_percent" | "mem_percent" | "disk_percent"
     threshold: float     # alert when value >= threshold
     enabled: bool = True
 
