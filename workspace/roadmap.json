@@ -1503,6 +1503,127 @@
           "description": "GUI panel with webhook registration, delivery, and history"
         }
       ]
+    },
+    {
+      "id": "m30",
+      "title": "Phase 30 \u2014 API Rate Limiting & Quota",
+      "description": "Define named rate-limit rules with sliding-window counters, check quota, and reset from IDE or API",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t30-1",
+          "title": "POST /ratelimit/rule \u2014 create/update a rule",
+          "status": "done",
+          "priority": "high",
+          "description": "Define a named rule with limit and window"
+        },
+        {
+          "id": "t30-2",
+          "title": "GET /ratelimit/rules \u2014 list rules",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all defined rules"
+        },
+        {
+          "id": "t30-3",
+          "title": "DELETE /ratelimit/rule/{name} \u2014 remove rule",
+          "status": "done",
+          "priority": "medium",
+          "description": "Delete a named rule"
+        },
+        {
+          "id": "t30-4",
+          "title": "GET /ratelimit/status \u2014 usage overview",
+          "status": "done",
+          "priority": "high",
+          "description": "Return per-rule usage and remaining quota"
+        },
+        {
+          "id": "t30-5",
+          "title": "POST /ratelimit/check/{name} \u2014 consume a call",
+          "status": "done",
+          "priority": "high",
+          "description": "Consume one call unit and return allowed/throttled"
+        },
+        {
+          "id": "t30-6",
+          "title": "POST /ratelimit/reset/{name} \u2014 reset counter",
+          "status": "done",
+          "priority": "medium",
+          "description": "Clear usage history for a rule"
+        },
+        {
+          "id": "t30-7",
+          "title": "Rate Limits panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with rule management, usage bars, check/reset buttons"
+        }
+      ]
+    },
+    {
+      "id": "m31",
+      "title": "Phase 31 \u2014 Event Bus & Pub/Sub",
+      "description": "Publish events to topics, subscribe to topics, broadcast to WebSocket clients, and browse event history",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t31-1",
+          "title": "POST /events/publish \u2014 publish an event",
+          "status": "done",
+          "priority": "high",
+          "description": "Publish a topic event and broadcast to WS clients"
+        },
+        {
+          "id": "t31-2",
+          "title": "POST /events/subscribe \u2014 register a subscription",
+          "status": "done",
+          "priority": "high",
+          "description": "Register topic interest with a friendly name"
+        },
+        {
+          "id": "t31-3",
+          "title": "GET /events/subscriptions \u2014 list subscriptions",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return all active subscriptions"
+        },
+        {
+          "id": "t31-4",
+          "title": "DELETE /events/subscription/{id} \u2014 remove subscription",
+          "status": "done",
+          "priority": "medium",
+          "description": "Unsubscribe from topics"
+        },
+        {
+          "id": "t31-5",
+          "title": "GET /events/history \u2014 full event log",
+          "status": "done",
+          "priority": "high",
+          "description": "Return recent published events"
+        },
+        {
+          "id": "t31-6",
+          "title": "GET /events/history/{topic} \u2014 filtered log",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return events for a specific topic"
+        },
+        {
+          "id": "t31-7",
+          "title": "/ws/events \u2014 WebSocket live stream",
+          "status": "done",
+          "priority": "high",
+          "description": "Stream published events to WebSocket subscribers"
+        },
+        {
+          "id": "t31-8",
+          "title": "Events panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with publish form, subscriptions table, event history"
+        }
+      ]
     }
   ]
 }

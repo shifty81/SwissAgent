@@ -2112,6 +2112,8 @@
       if (panel === "database")  loadDatabasePanel();
       if (panel === "vault")     loadVaultPanel();
       if (panel === "webhooks") loadWebhooksPanel();
+      if (panel === "ratelimit") loadRatelimitPanel();
+      if (panel === "events")    loadEventsPanel();
     });
   });
 
@@ -4382,6 +4384,242 @@
         try {
           await fetch(`/webhook/${encodeURIComponent(btn.dataset.id)}`, { method: "DELETE" });
           loadWebhooksPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 30: API Rate Limiting & Quota panel ────────────────────────────
+  async function loadRatelimitPanel() {
+    const container = $("ratelimit-panel-content");
+    if (!container) return;
+    try {
+      const [rulesRes, statusRes] = await Promise.all([
+        fetch("/ratelimit/rules"),
+        fetch("/ratelimit/status"),
+      ]);
+      const rulesData  = await rulesRes.json();
+      const statusData = await statusRes.json();
+      const statusMap  = {};
+      (statusData.status || []).forEach((s) => { statusMap[s.name] = s; });
+      renderRatelimitPanel(rulesData.rules || [], statusMap);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderRatelimitPanel(rules, statusMap) {
+    const container = $("ratelimit-panel-content");
+    if (!container) return;
+
+    const ruleRows = rules.map((r) => {
+      const s = statusMap[r.name] || {};
+      const pct = r.limit > 0 ? Math.round(((s.used || 0) / r.limit) * 100) : 0;
+      const color = s.throttled ? "var(--danger,#f44)" : pct >= 80 ? "var(--warn,#fc0)" : "var(--ok,#4caf50)";
+      return `
+        <tr>
+          <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(r.name)}</td>
+          <td style="padding:2px 4px;font-size:10px;color:${color}">${s.used ?? "?"} / ${r.limit}</td>
+          <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${r.window_seconds}s</td>
+          <td style="padding:2px 4px">
+            <button class="btn-rl-check" data-name="${escHtmlSimple(r.name)}" style="font-size:10px;padding:1px 4px" title="Check (consumes 1 call)">▶</button>
+            <button class="btn-rl-reset" data-name="${escHtmlSimple(r.name)}" style="font-size:10px;padding:1px 4px" title="Reset counter">↺</button>
+            <button class="btn-rl-del"   data-name="${escHtmlSimple(r.name)}" style="font-size:10px;padding:1px 4px" title="Delete rule">✕</button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">ADD RULE</div>
+      <input id="rl-name"    style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="rule name" />
+      <div style="display:flex;gap:4px;margin-bottom:4px">
+        <input id="rl-limit"  type="number" min="1" value="100" style="width:50%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="limit" />
+        <input id="rl-window" type="number" min="1" value="60"  style="width:50%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="window (s)" />
+      </div>
+      <button id="btn-rl-add" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Add Rule</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RULES</div>
+      ${rules.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:4px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Rule</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Used</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Window</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)"></th>
+          </tr></thead>
+          <tbody>${ruleRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No rules defined.</div>'}
+      <div id="rl-result" style="font-size:11px;color:var(--text-muted);min-height:18px;margin-top:4px"></div>
+    `;
+
+    $("btn-ratelimit-refresh")?.addEventListener("click", () => loadRatelimitPanel());
+
+    $("btn-rl-add")?.addEventListener("click", async () => {
+      const name   = $("rl-name")?.value.trim();
+      const limit  = parseInt($("rl-limit")?.value || "100", 10);
+      const window_ = parseInt($("rl-window")?.value || "60", 10);
+      if (!name) return;
+      try {
+        const res = await fetch("/ratelimit/rule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, limit, window_seconds: window_ }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadRatelimitPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-rl-check").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          const res  = await fetch(`/ratelimit/check/${encodeURIComponent(btn.dataset.name)}`, { method: "POST" });
+          const data = await res.json();
+          const result = $("rl-result");
+          if (result) result.textContent = `${data.rule}: ${data.allowed ? "✅ allowed" : "🚫 throttled"} (${data.used}/${data.used + data.remaining} used)`;
+          loadRatelimitPanel();
+        } catch (e) { alert(`Error: ${e.message}`); }
+      });
+    });
+
+    container.querySelectorAll(".btn-rl-reset").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/ratelimit/reset/${encodeURIComponent(btn.dataset.name)}`, { method: "POST" });
+          loadRatelimitPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-rl-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/ratelimit/rule/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+          loadRatelimitPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 31: Event Bus & Pub/Sub panel ──────────────────────────────────
+  async function loadEventsPanel() {
+    const container = $("events-panel-content");
+    if (!container) return;
+    try {
+      const [subRes, histRes] = await Promise.all([
+        fetch("/events/subscriptions"),
+        fetch("/events/history"),
+      ]);
+      const subData  = await subRes.json();
+      const histData = await histRes.json();
+      renderEventsPanel(subData.subscriptions || [], histData.events || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderEventsPanel(subscriptions, events) {
+    const container = $("events-panel-content");
+    if (!container) return;
+
+    const subRows = subscriptions.map((s) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(s.id)}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(s.name || "(unnamed)")}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple((s.topics || []).join(", "))}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-ev-unsub" data-id="${escHtmlSimple(s.id)}" style="font-size:10px;padding:1px 4px" title="Unsubscribe">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    const evRows = events.slice().reverse().slice(0, 15).map((e) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(String(e.id))}</td>
+        <td style="padding:2px 4px;font-size:10px;font-weight:600">${escHtmlSimple(e.topic)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(e.source || "—")}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple((e.ts || "").slice(11, 19))}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">PUBLISH EVENT</div>
+      <input id="ev-topic"   style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="topic name" />
+      <input id="ev-source"  style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="source (optional)" />
+      <textarea id="ev-payload" rows="2" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px;resize:vertical;font-family:var(--font-mono,monospace)" placeholder='{"key":"value"}'></textarea>
+      <button id="btn-ev-publish" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Publish</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">SUBSCRIBE</div>
+      <input id="ev-sub-topics" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="topics (comma-separated)" />
+      <input id="ev-sub-name"   style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="subscriber name (optional)" />
+      <button id="btn-ev-subscribe" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Subscribe</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">SUBSCRIPTIONS</div>
+      ${subscriptions.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Topics</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${subRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No subscriptions.</div>'}
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RECENT EVENTS</div>
+      ${events.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Topic</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Source</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Time</th>
+          </tr></thead>
+          <tbody>${evRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No events published yet.</div>'}
+    `;
+
+    $("btn-events-refresh")?.addEventListener("click", () => loadEventsPanel());
+
+    $("btn-ev-publish")?.addEventListener("click", async () => {
+      const topic   = $("ev-topic")?.value.trim();
+      const source  = $("ev-source")?.value.trim();
+      let payload   = {};
+      try { payload = JSON.parse($("ev-payload")?.value || "{}"); } catch { payload = {}; }
+      if (!topic) return;
+      try {
+        const res = await fetch("/events/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topic, source, payload }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadEventsPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    $("btn-ev-subscribe")?.addEventListener("click", async () => {
+      const topicsRaw = $("ev-sub-topics")?.value.trim();
+      const name      = $("ev-sub-name")?.value.trim();
+      const topics    = topicsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+      if (!topics.length) return;
+      try {
+        const res = await fetch("/events/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topics, name }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadEventsPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-ev-unsub").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/events/subscription/${encodeURIComponent(btn.dataset.id)}`, { method: "DELETE" });
+          loadEventsPanel();
         } catch (e) { /* ignore */ }
       });
     });

@@ -2053,3 +2053,107 @@ def test_webhook_delete(client):
     r2 = client.delete(f"/webhook/{wid}")
     assert r2.status_code == 200
     assert r2.json()["deleted"] == wid
+
+# ── Phase 30: API Rate Limiting & Quota ───────────────────────────────────────
+def test_ratelimit_rule_set(client):
+    r = client.post("/ratelimit/rule", json={"name": "api", "limit": 10, "window_seconds": 60})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "api"
+
+def test_ratelimit_rules_list(client):
+    client.post("/ratelimit/rule", json={"name": "list_rule", "limit": 5, "window_seconds": 30})
+    r = client.get("/ratelimit/rules")
+    assert r.status_code == 200
+    data = r.json()
+    assert "rules" in data
+    assert any(ru["name"] == "list_rule" for ru in data["rules"])
+
+def test_ratelimit_rule_bad_limit(client):
+    r = client.post("/ratelimit/rule", json={"name": "bad", "limit": 0})
+    assert r.status_code == 400
+
+def test_ratelimit_check_allowed(client):
+    client.post("/ratelimit/rule", json={"name": "check_rule", "limit": 100, "window_seconds": 60})
+    r = client.post("/ratelimit/check/check_rule")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["allowed"] is True
+    assert data["used"] == 1
+
+def test_ratelimit_check_throttled(client):
+    client.post("/ratelimit/rule", json={"name": "tight_rule", "limit": 2, "window_seconds": 60})
+    client.post("/ratelimit/check/tight_rule")
+    client.post("/ratelimit/check/tight_rule")
+    r = client.post("/ratelimit/check/tight_rule")
+    assert r.status_code == 200
+    assert r.json()["throttled"] is True
+
+def test_ratelimit_reset(client):
+    client.post("/ratelimit/rule", json={"name": "reset_rule", "limit": 2, "window_seconds": 60})
+    client.post("/ratelimit/check/reset_rule")
+    client.post("/ratelimit/check/reset_rule")
+    r = client.post("/ratelimit/reset/reset_rule")
+    assert r.status_code == 200
+    # After reset, should be allowed again
+    r2 = client.post("/ratelimit/check/reset_rule")
+    assert r2.json()["allowed"] is True
+
+def test_ratelimit_delete(client):
+    client.post("/ratelimit/rule", json={"name": "del_rule", "limit": 10, "window_seconds": 60})
+    r = client.delete("/ratelimit/rule/del_rule")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "del_rule"
+
+# ── Phase 31: Event Bus & Pub/Sub ─────────────────────────────────────────────
+def test_events_publish(client):
+    r = client.post("/events/publish", json={"topic": "build.done", "payload": {"status": "ok"}, "source": "ci"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["topic"] == "build.done"
+    assert "id" in data
+
+def test_events_publish_no_topic(client):
+    r = client.post("/events/publish", json={"topic": "", "payload": {}})
+    assert r.status_code == 400
+
+def test_events_history(client):
+    client.post("/events/publish", json={"topic": "test.event", "payload": {}})
+    r = client.get("/events/history")
+    assert r.status_code == 200
+    data = r.json()
+    assert "events" in data
+    assert any(e["topic"] == "test.event" for e in data["events"])
+
+def test_events_history_by_topic(client):
+    client.post("/events/publish", json={"topic": "specific.topic", "payload": {"x": 1}})
+    r = client.get("/events/history/specific.topic")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["topic"] == "specific.topic"
+    assert len(data["events"]) >= 1
+
+def test_events_subscribe(client):
+    r = client.post("/events/subscribe", json={"topics": ["build.*", "deploy.*"], "name": "listener"})
+    assert r.status_code == 200
+    data = r.json()
+    assert "id" in data
+    assert "build.*" in data["topics"]
+
+def test_events_subscribe_empty_topics(client):
+    r = client.post("/events/subscribe", json={"topics": []})
+    assert r.status_code == 400
+
+def test_events_subscriptions_list(client):
+    client.post("/events/subscribe", json={"topics": ["ci.run"], "name": "ci-watcher"})
+    r = client.get("/events/subscriptions")
+    assert r.status_code == 200
+    data = r.json()
+    assert "subscriptions" in data
+    assert any(s["name"] == "ci-watcher" for s in data["subscriptions"])
+
+def test_events_subscription_delete(client):
+    r = client.post("/events/subscribe", json={"topics": ["x.y"], "name": "temp"})
+    sub_id = r.json()["id"]
+    r2 = client.delete(f"/events/subscription/{sub_id}")
+    assert r2.status_code == 200
+    assert r2.json()["deleted"] == sub_id

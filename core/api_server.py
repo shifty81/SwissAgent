@@ -539,6 +539,25 @@ class WebhookDeliverRequest(BaseModel):
     event: str = "manual"
     payload: dict[str, Any] = {}
 
+# ── Phase 30: API Rate Limiting & Quota request models ────────────────────────
+
+class RateLimitRuleRequest(BaseModel):
+    name: str
+    limit: int          # max requests per window
+    window_seconds: int = 60
+    description: str = ""
+
+# ── Phase 31: Event Bus & Pub/Sub request models ──────────────────────────────
+
+class EventPublishRequest(BaseModel):
+    topic: str
+    payload: dict[str, Any] = {}
+    source: str = ""
+
+class EventSubscribeRequest(BaseModel):
+    topics: list[str]           # list of topic patterns to subscribe to
+    name: str = ""              # friendly subscriber name
+
 
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
@@ -4711,6 +4730,159 @@ indent_style = tab
                 return d
         raise HTTPException(status_code=404, detail="Delivery not found")
 
+    # ── Phase 30: API Rate Limiting & Quota ──────────────────────────────────
+
+    @app.post("/ratelimit/rule")
+    async def ratelimit_rule_set(req: RateLimitRuleRequest) -> dict[str, Any]:
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        if req.limit < 1:
+            raise HTTPException(status_code=400, detail="limit must be >= 1")
+        _ratelimit_rules[req.name] = {
+            "name": req.name,
+            "limit": req.limit,
+            "window_seconds": req.window_seconds,
+            "description": req.description,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _ratelimit_usage.setdefault(req.name, [])
+        return {"saved": req.name}
+
+    @app.get("/ratelimit/rules")
+    async def ratelimit_rules_list() -> dict[str, Any]:
+        return {"rules": list(_ratelimit_rules.values())}
+
+    @app.delete("/ratelimit/rule/{rule_name}")
+    async def ratelimit_rule_delete(rule_name: str) -> dict[str, Any]:
+        _ratelimit_rules.pop(rule_name, None)
+        _ratelimit_usage.pop(rule_name, None)
+        return {"deleted": rule_name}
+
+    @app.get("/ratelimit/status")
+    async def ratelimit_status() -> dict[str, Any]:
+        import time as _time
+        now = _time.time()
+        result = []
+        for name, rule in _ratelimit_rules.items():
+            window = rule["window_seconds"]
+            calls = _ratelimit_usage.get(name, [])
+            recent = [t for t in calls if now - t < window]
+            _ratelimit_usage[name] = recent
+            result.append({
+                "name": name,
+                "limit": rule["limit"],
+                "window_seconds": window,
+                "used": len(recent),
+                "remaining": max(0, rule["limit"] - len(recent)),
+                "throttled": len(recent) >= rule["limit"],
+            })
+        return {"status": result}
+
+    @app.post("/ratelimit/check/{rule_name}")
+    async def ratelimit_check(rule_name: str) -> dict[str, Any]:
+        import time as _time
+        if rule_name not in _ratelimit_rules:
+            raise HTTPException(status_code=404, detail="Rule not found")
+        rule = _ratelimit_rules[rule_name]
+        now = _time.time()
+        window = rule["window_seconds"]
+        calls = _ratelimit_usage.get(rule_name, [])
+        recent = [t for t in calls if now - t < window]
+        allowed = len(recent) < rule["limit"]
+        if allowed:
+            recent.append(now)
+        _ratelimit_usage[rule_name] = recent
+        return {
+            "rule": rule_name,
+            "allowed": allowed,
+            "used": len(recent),
+            "remaining": max(0, rule["limit"] - len(recent)),
+            "throttled": not allowed,
+        }
+
+    @app.post("/ratelimit/reset/{rule_name}")
+    async def ratelimit_reset(rule_name: str) -> dict[str, Any]:
+        if rule_name not in _ratelimit_rules:
+            raise HTTPException(status_code=404, detail="Rule not found")
+        _ratelimit_usage[rule_name] = []
+        return {"reset": rule_name}
+
+    # ── Phase 31: Event Bus & Pub/Sub ────────────────────────────────────────
+
+    @app.post("/events/publish")
+    async def events_publish(req: EventPublishRequest) -> dict[str, Any]:
+        global _event_id_counter
+        if not req.topic:
+            raise HTTPException(status_code=400, detail="topic is required")
+        _event_id_counter += 1
+        event: dict[str, Any] = {
+            "id": _event_id_counter,
+            "topic": req.topic,
+            "payload": req.payload,
+            "source": req.source,
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _event_history.append(event)
+        if len(_event_history) > _MAX_EVENT_HISTORY:
+            _event_history[:] = _event_history[-_MAX_EVENT_HISTORY:]
+        # broadcast to WS subscribers
+        dead: list[Any] = []
+        for ws in list(_event_ws_clients):
+            try:
+                await ws.send_json(event)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            if ws in _event_ws_clients:
+                _event_ws_clients.remove(ws)
+        return event
+
+    @app.post("/events/subscribe")
+    async def events_subscribe(req: EventSubscribeRequest) -> dict[str, Any]:
+        global _event_sub_counter
+        if not req.topics:
+            raise HTTPException(status_code=400, detail="topics list is required")
+        _event_sub_counter += 1
+        sub_id = str(_event_sub_counter)
+        _event_subscriptions[sub_id] = {
+            "id": sub_id,
+            "name": req.name,
+            "topics": req.topics,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        return {"id": sub_id, "topics": req.topics}
+
+    @app.get("/events/subscriptions")
+    async def events_subscriptions_list() -> dict[str, Any]:
+        return {"subscriptions": list(_event_subscriptions.values())}
+
+    @app.delete("/events/subscription/{sub_id}")
+    async def events_subscription_delete(sub_id: str) -> dict[str, Any]:
+        _event_subscriptions.pop(sub_id, None)
+        return {"deleted": sub_id}
+
+    @app.get("/events/history")
+    async def events_history(limit: int = 50) -> dict[str, Any]:
+        return {"events": _event_history[-limit:]}
+
+    @app.get("/events/history/{topic}")
+    async def events_history_topic(topic: str, limit: int = 50) -> dict[str, Any]:
+        filtered = [e for e in _event_history if e["topic"] == topic]
+        return {"topic": topic, "events": filtered[-limit:]}
+
+    @app.websocket("/ws/events")
+    async def ws_events(websocket: WebSocket):
+        await websocket.accept()
+        _event_ws_clients.append(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except Exception:
+            pass
+        finally:
+            if websocket in _event_ws_clients:
+                _event_ws_clients.remove(websocket)
+
     return app
 
 
@@ -4827,3 +4999,15 @@ _webhook_deliveries: list[dict[str, Any]] = []
 _MAX_WEBHOOK_DELIVERIES = 100
 _webhook_id_counter: int = 0
 _webhook_delivery_counter: int = 0
+
+# ── Phase 30: API Rate Limiting & Quota ───────────────────────────────────────
+_ratelimit_rules: dict[str, Any] = {}
+_ratelimit_usage: dict[str, list[float]] = {}   # name → list of timestamps
+
+# ── Phase 31: Event Bus & Pub/Sub ─────────────────────────────────────────────
+_event_history: list[dict[str, Any]] = []
+_MAX_EVENT_HISTORY = 200
+_event_subscriptions: dict[str, Any] = {}
+_event_sub_counter: int = 0
+_event_ws_clients: list[Any] = []
+_event_id_counter: int = 0

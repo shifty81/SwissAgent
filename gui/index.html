@@ -57,6 +57,8 @@
       <button class="ab-btn" data-panel="database"  title="Database Management (Phase 27)">🗄️</button>
       <button class="ab-btn" data-panel="vault"     title="Secret Vault (Phase 28)">🔐</button>
       <button class="ab-btn" data-panel="webhooks"  title="WebHook Manager (Phase 29)">🪝</button>
+      <button class="ab-btn" data-panel="ratelimit"  title="Rate Limits (Phase 30)">⏱</button>
+      <button class="ab-btn" data-panel="events"    title="Event Bus (Phase 31)">📡</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -619,6 +621,32 @@
           </div>
         </div>
         <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="webhooks-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: API Rate Limiting & Quota (Phase 30) ───────────── -->
+      <div class="sb-panel" id="panel-ratelimit">
+        <div class="sb-panel-header">
+          <span>⏱ Rate Limits</span>
+          <div>
+            <button id="btn-ratelimit-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="ratelimit-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Event Bus & Pub/Sub (Phase 31) ─────────────────── -->
+      <div class="sb-panel" id="panel-events">
+        <div class="sb-panel-header">
+          <span>📡 Events</span>
+          <div>
+            <button id="btn-events-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="events-panel-content">
           <div style="color:var(--text-dim);font-size:11px">Loading…</div>
         </div>
       </div>
