@@ -444,6 +444,25 @@ class ProjectInitDetectResult(BaseModel):
     recommended_steps: list[str]
 
 
+# ── Phase 22: Multi-Agent Orchestration request models ────────────────────────
+
+class AgentSpawnRequest(BaseModel):
+    name: str
+    role: str = "assistant"
+    model: str = "default"
+
+
+class AgentRunRequest(BaseModel):
+    task: str
+
+
+# ── Phase 23: CI/CD Pipeline Integration request models ───────────────────────
+
+class CIRunRequest(BaseModel):
+    command: str
+    cwd: str = "."
+
+
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
 # Context window sizes sent to the LLM.  Prefix is longer because the model
@@ -3926,6 +3945,118 @@ indent_style = tab
             except Exception:
                 pass
 
+    # ── Phase 22: Multi-Agent Orchestration ───────────────────────────────────
+
+    @app.post("/agents/spawn")
+    async def agents_spawn(req: AgentSpawnRequest) -> dict[str, Any]:
+        _agents[req.name] = {
+            "name": req.name,
+            "role": req.role,
+            "model": req.model,
+            "status": "idle",
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "last_task": None,
+            "last_result": None,
+        }
+        return {"name": req.name, "role": req.role, "model": req.model, "status": "idle"}
+
+    @app.get("/agents")
+    async def agents_list() -> dict[str, Any]:
+        return {"agents": list(_agents.values())}
+
+    @app.post("/agents/{name}/run")
+    async def agents_run(name: str, req: AgentRunRequest) -> dict[str, Any]:
+        if name not in _agents:
+            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+        _agents[name]["status"] = "running"
+        _agents[name]["last_task"] = req.task
+        try:
+            from core.agent import AgentRunner  # type: ignore[attr-defined]
+            result = AgentRunner(req.task).run()
+        except Exception:
+            result = f"Agent ran: {req.task}"
+        _agents[name]["status"] = "idle"
+        _agents[name]["last_result"] = result
+        return {"name": name, "task": req.task, "result": result}
+
+    @app.delete("/agents/{name}")
+    async def agents_delete(name: str) -> dict[str, Any]:
+        _agents.pop(name, None)
+        return {"deleted": name}
+
+    @app.websocket("/ws/agents")
+    async def ws_agents(websocket: WebSocket) -> None:
+        await websocket.accept()
+        try:
+            while True:
+                await websocket.send_text(json.dumps({"agents": list(_agents.values())}))
+                await asyncio.sleep(2)
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
+    # ── Phase 23: CI/CD Pipeline Integration ──────────────────────────────────
+
+    @app.post("/ci/run")
+    async def ci_run(req: CIRunRequest) -> dict[str, Any]:
+        import shlex as _shlex
+        if not isinstance(req.command, str) or not req.command.strip():
+            raise HTTPException(status_code=400, detail="command must be a non-empty string")
+        started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        try:
+            proc = subprocess.Popen(
+                _shlex.split(req.command),
+                cwd=req.cwd or ".",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            output, _ = proc.communicate()
+            exit_code = proc.returncode
+        except Exception as exc:
+            output = str(exc)
+            exit_code = -1
+        finished_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        run_id = len(_ci_runs) + 1
+        record: dict[str, Any] = {
+            "id": run_id,
+            "command": req.command,
+            "cwd": req.cwd or ".",
+            "exit_code": exit_code,
+            "output": output,
+            "started_at": started_at,
+            "finished_at": finished_at,
+        }
+        _ci_runs.append(record)
+        if len(_ci_runs) > _MAX_CI_RUNS:
+            del _ci_runs[:-_MAX_CI_RUNS]
+        return record
+
+    @app.get("/ci/status")
+    async def ci_status() -> dict[str, Any]:
+        if not _ci_runs:
+            return {"status": "no runs"}
+        return _ci_runs[-1]
+
+    @app.get("/ci/runs")
+    async def ci_runs_list() -> dict[str, Any]:
+        return {"runs": _ci_runs[-20:]}
+
+    @app.websocket("/ws/ci")
+    async def ws_ci(websocket: WebSocket) -> None:
+        await websocket.accept()
+        try:
+            if _ci_runs:
+                last = _ci_runs[-1]
+                for line in (last.get("output") or "").splitlines():
+                    await websocket.send_text(json.dumps({"line": line}))
+            await websocket.send_text(json.dumps({"done": True}))
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
     return app
 
 
@@ -3994,3 +4125,10 @@ _ide_pending_pushes: list[str] = []
 
 # In-process store for model download jobs
 _model_download_jobs: dict[str, Any] = {}
+
+# ── Phase 22: Multi-Agent Orchestration ──────────────────────────────────────
+_agents: dict[str, Any] = {}
+
+# ── Phase 23: CI/CD Pipeline Integration ─────────────────────────────────────
+_ci_runs: list[dict[str, Any]] = []
+_MAX_CI_RUNS = 50

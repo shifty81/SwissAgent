@@ -1054,6 +1054,99 @@
           "description": "showInitWizard() called automatically after successful doImport() and doClone()"
         }
       ]
+    },
+    {
+      "id": "m22",
+      "title": "Phase 22 \u2014 Multi-Agent Orchestration",
+      "description": "Spawn and manage multiple named sub-agents, run tasks on them, and stream their activity via WebSocket",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t22-1",
+          "title": "POST /agents/spawn \u2014 create a named sub-agent",
+          "status": "done",
+          "priority": "high",
+          "description": "Create a named sub-agent with role and model"
+        },
+        {
+          "id": "t22-2",
+          "title": "GET /agents \u2014 list active agents",
+          "status": "done",
+          "priority": "high",
+          "description": "Return list of all active agents"
+        },
+        {
+          "id": "t22-3",
+          "title": "POST /agents/{name}/run \u2014 run a task on a specific agent",
+          "status": "done",
+          "priority": "high",
+          "description": "Run a task on a named agent"
+        },
+        {
+          "id": "t22-4",
+          "title": "DELETE /agents/{name} \u2014 terminate a sub-agent",
+          "status": "done",
+          "priority": "high",
+          "description": "Remove a named agent"
+        },
+        {
+          "id": "t22-5",
+          "title": "WebSocket /ws/agents \u2014 stream agent activity",
+          "status": "done",
+          "priority": "medium",
+          "description": "Stream agent state changes over WebSocket"
+        },
+        {
+          "id": "t22-6",
+          "title": "Multi-agent panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel to spawn, run, and manage agents"
+        }
+      ]
+    },
+    {
+      "id": "m23",
+      "title": "Phase 23 \u2014 CI/CD Pipeline Integration",
+      "description": "Run local CI commands, track run history, and stream output via WebSocket",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t23-1",
+          "title": "POST /ci/run \u2014 run a local CI command",
+          "status": "done",
+          "priority": "high",
+          "description": "Execute a CI command and capture output"
+        },
+        {
+          "id": "t23-2",
+          "title": "GET /ci/status \u2014 latest run status",
+          "status": "done",
+          "priority": "high",
+          "description": "Return the most recent CI run"
+        },
+        {
+          "id": "t23-3",
+          "title": "GET /ci/runs \u2014 list past CI runs",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return list of past CI runs"
+        },
+        {
+          "id": "t23-4",
+          "title": "WebSocket /ws/ci \u2014 stream CI output",
+          "status": "done",
+          "priority": "medium",
+          "description": "Stream CI output in real-time"
+        },
+        {
+          "id": "t23-5",
+          "title": "CI/CD panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel to run CI commands and view history"
+        }
+      ]
     }
   ]
 }

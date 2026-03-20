@@ -49,6 +49,8 @@
       <button class="ab-btn" data-panel="notes"     title="Notes &amp; Tasks (Phase 17)">📝</button>
       <button class="ab-btn" data-panel="refactor"  title="Refactor (Phase 19)">🔧</button>
       <button class="ab-btn" data-panel="aibackends" title="AI Backends (Phase 20)">🤖</button>
+      <button class="ab-btn" data-panel="agents"    title="Multi-Agent Orchestration (Phase 22)">🕹</button>
+      <button class="ab-btn" data-panel="ci"        title="CI/CD Pipeline (Phase 23)">🔁</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -507,6 +509,32 @@
           <span>🤖 AI Backends</span>
         </div>
         <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="aibackends-panel-content">
+          <div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Multi-Agent Orchestration (Phase 22) ───────────── -->
+      <div class="sb-panel" id="panel-agents">
+        <div class="sidebar-header">
+          <span>🕹 Agents</span>
+          <div class="sidebar-buttons">
+            <button id="btn-agents-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="agents-panel-content">
+          <div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: CI/CD Pipeline (Phase 23) ─────────────────────── -->
+      <div class="sb-panel" id="panel-ci">
+        <div class="sidebar-header">
+          <span>🔁 CI/CD</span>
+          <div class="sidebar-buttons">
+            <button id="btn-ci-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="ci-panel-content">
           <div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>
         </div>
       </div>

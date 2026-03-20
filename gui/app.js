@@ -2104,6 +2104,8 @@
       if (panel === "search") setTimeout(() => $("sb-search-input")?.focus(), 50);
       if (panel === "notes")   loadNotesPanel();
       if (panel === "aibackends") loadAIBackendsPanel();
+      if (panel === "agents") loadAgentsPanel();
+      if (panel === "ci")     loadCIPanel();
     });
   });
 
@@ -3472,6 +3474,187 @@
       });
     });
   }
+
+  // ── Phase 22: Multi-Agent Orchestration ──────────────────────────────────
+
+  async function loadAgentsPanel() {
+    const container = $("agents-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/agents");
+      const data = await res.json();
+      renderAgentsPanel(data.agents || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderAgentsPanel(agents) {
+    const container = $("agents-panel-content");
+    if (!container) return;
+
+    const rows = agents.map((a) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:11px">${escHtmlSimple(a.name)}</td>
+        <td style="padding:2px 4px;font-size:11px">${escHtmlSimple(a.role)}</td>
+        <td style="padding:2px 4px;font-size:11px">${escHtmlSimple(a.status)}</td>
+        <td style="padding:2px 4px">
+          <input class="agent-task-input" data-name="${escHtmlSimple(a.name)}" style="width:80px;padding:2px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:10px" placeholder="task…" />
+          <button class="btn-agent-run" data-name="${escHtmlSimple(a.name)}" style="font-size:10px;padding:1px 4px">▶</button>
+          <button class="btn-agent-kill" data-name="${escHtmlSimple(a.name)}" style="font-size:10px;padding:1px 4px;margin-left:2px">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">SPAWN AGENT</div>
+      <div style="display:flex;flex-direction:column;gap:3px;margin-bottom:8px">
+        <input id="agent-new-name"  style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Name…" />
+        <input id="agent-new-role"  style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Role…" />
+        <input id="agent-new-model" style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="Model (default)…" />
+        <button id="btn-agent-spawn" style="font-size:11px;padding:3px">Spawn</button>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">ACTIVE AGENTS</div>
+      ${agents.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Role</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Status</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Actions</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No agents yet.</div>'}
+      <div id="agent-run-result" style="font-size:10px;margin-top:6px;font-family:var(--font-mono,monospace);white-space:pre-wrap;background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;min-height:20px"></div>
+    `;
+
+    $("btn-agent-spawn")?.addEventListener("click", async () => {
+      const name  = $("agent-new-name")?.value.trim();
+      const role  = $("agent-new-role")?.value.trim() || "assistant";
+      const model = $("agent-new-model")?.value.trim() || "default";
+      if (!name) return;
+      await fetch("/agents/spawn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, role, model }),
+      });
+      if ($("agent-new-name")) $("agent-new-name").value = "";
+      if ($("agent-new-role")) $("agent-new-role").value = "";
+      if ($("agent-new-model")) $("agent-new-model").value = "";
+      loadAgentsPanel();
+    });
+
+    container.querySelectorAll(".btn-agent-run").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.name;
+        const input = container.querySelector(`.agent-task-input[data-name="${CSS.escape(name)}"]`);
+        const task = input ? input.value.trim() : "";
+        if (!task) return;
+        try {
+          const res = await fetch(`/agents/${encodeURIComponent(name)}/run`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ task }),
+          });
+          const d = await res.json();
+          const resultEl = $("agent-run-result");
+          if (resultEl) resultEl.textContent = d.result || d.detail || "";
+        } catch (e) {
+          const resultEl = $("agent-run-result");
+          if (resultEl) resultEl.textContent = `Error: ${e.message}`;
+        }
+        loadAgentsPanel();
+      });
+    });
+
+    container.querySelectorAll(".btn-agent-kill").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/agents/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+        } catch (e) {
+          alert(`Failed to terminate agent: ${e.message}`);
+        }
+        loadAgentsPanel();
+      });
+    });
+  }
+
+  $("btn-agents-refresh")?.addEventListener("click", () => loadAgentsPanel());
+
+  // ── Phase 23: CI/CD Pipeline Integration ─────────────────────────────────
+
+  async function loadCIPanel() {
+    const container = $("ci-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/ci/runs");
+      const data = await res.json();
+      renderCIPanel(data.runs || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderCIPanel(runs) {
+    const container = $("ci-panel-content");
+    if (!container) return;
+    const last = runs.length ? runs[runs.length - 1] : null;
+
+    const rows = runs.map((r) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(String(r.id))}</td>
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px" title="${escHtmlSimple(r.command)}">${escHtmlSimple(r.command)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${r.exit_code === 0 ? "var(--ok,#4caf50)" : "var(--danger,#f44)"}">${escHtmlSimple(String(r.exit_code))}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple((r.started_at || "").slice(0, 16).replace("T", " "))}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">RUN COMMAND</div>
+      <div style="display:flex;gap:4px;margin-bottom:8px">
+        <input id="ci-command-input" style="flex:1;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="e.g. echo hello" />
+        <button id="btn-ci-run" style="font-size:11px;padding:3px 6px">Run</button>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">LAST OUTPUT</div>
+      <pre id="ci-last-output" style="font-size:10px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;overflow-y:auto;max-height:100px;white-space:pre-wrap;margin-bottom:8px">${last ? escHtmlSimple(last.output || "") : "(no runs yet)"}</pre>
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RUN HISTORY</div>
+      ${runs.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Command</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Exit</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Started</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No runs yet.</div>'}
+    `;
+
+    $("btn-ci-run")?.addEventListener("click", async () => {
+      const cmd = $("ci-command-input")?.value.trim();
+      if (!cmd) return;
+      const btn = $("btn-ci-run");
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch("/ci/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command: cmd }),
+        });
+        const d = await res.json();
+        const outEl = $("ci-last-output");
+        if (outEl) outEl.textContent = d.output || "";
+        if ($("ci-command-input")) $("ci-command-input").value = "";
+        loadCIPanel();
+      } catch (e) {
+        alert(`CI run failed: ${e.message}`);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+  }
+
+  $("btn-ci-refresh")?.addEventListener("click", () => loadCIPanel());
 
 })();
 
