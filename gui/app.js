@@ -16,6 +16,7 @@
   const state = {
     openFiles: {},        // path → { content, language, modified, model }
     activeFile: null,     // currently visible path
+    activeProject: "",    // currently active project path
     editor: null,         // Monaco editor instance
     editorMode: null,     // "monaco" | "fallback" | null
     ws: null,             // active WebSocket for /ws/run
@@ -208,6 +209,11 @@
   // ── File tree ──────────────────────────────────────────────────────────────
   async function loadFileTree(node = null, parentEl = null) {
     const url = node ? `/files?path=${encodeURIComponent(node)}` : "/files";
+    // If loading a top-level project path (not a sub-directory), track it as active project
+    if (node && !parentEl) {
+      state.activeProject = node;
+      _roadmapCache.data = null;
+    }
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(await res.text());
@@ -429,6 +435,8 @@
     document.querySelectorAll(".tree-item.file").forEach((t) => t.classList.toggle("active", t.dataset.path === path));
     if (state.editorMode === "monaco" && state.editor && state.openFiles[path]) {
       state.editor.setModel(state.openFiles[path].model);
+      // Force layout so Monaco fills its container correctly
+      requestAnimationFrame(() => state.editor.layout());
     } else if (state.editorMode === "fallback" && state.openFiles[path]) {
       $("fallback-editor").value = state.openFiles[path]?.content ?? "";
       $("fallback-editor").classList.remove("hidden");
@@ -451,7 +459,10 @@
       if (remaining.length > 0) activateTab(remaining[remaining.length - 1]);
       else {
         state.activeFile = null;
-        if (state.editorMode === "monaco" && state.editor) state.editor.setModel(null);
+        if (state.editorMode === "monaco" && state.editor) {
+          state.editor.setModel(null);
+          $("editor-welcome").classList.remove("hidden");
+        }
         if (state.editorMode === "fallback") {
           $("fallback-editor").value = "";
           $("fallback-editor").classList.add("hidden");
@@ -791,7 +802,7 @@
       try { ws = new WebSocket(wsUrl); }
       catch { reject(new Error("WebSocket unavailable")); return; }
 
-      ws.onopen = () => ws.send(JSON.stringify({ prompt, llm_backend: backend }));
+      ws.onopen = () => ws.send(JSON.stringify({ prompt, llm_backend: backend, project_path: state.activeProject }));
 
       ws.onmessage = (ev) => {
         try {
@@ -823,7 +834,7 @@
       const res = await fetch("/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, llm_backend: backend }),
+        body: JSON.stringify({ prompt, llm_backend: backend, project_path: state.activeProject }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -1444,74 +1455,79 @@
     }
   }
 
-  // ── Project Init Wizard ────────────────────────────────────────────────────
+  // ── Project Init Wizard (AI-powered) ──────────────────────────────────────
   async function showInitWizard(projectPath) {
     $("init-wizard").classList.remove("hidden");
-    $("init-wizard-detect-summary").textContent = "Detecting project type…";
-    $("init-wizard-steps").innerHTML = "";
+    $("init-wizard-detect-summary").textContent = "Scanning project…";
+    $("init-wizard-steps").innerHTML = '<span style="color:var(--text-dim)">⟳ Detecting project type…</span>';
     $("init-wizard-progress").classList.add("hidden");
-    $("btn-init-run").disabled = false;
+    $("btn-init-run").disabled = true;
+    $("btn-init-run").dataset.path = projectPath;
 
     try {
       const res = await fetch(`/project/init/detect?path=${encodeURIComponent(projectPath)}`);
       const data = await res.json();
-
       const lang = data.language || "unknown";
       const fw = data.framework ? ` / ${data.framework}` : "";
-      $("init-wizard-detect-summary").textContent =
-        `Detected: ${lang}${fw}. Choose setup steps:`;
+      const pm = data.package_manager ? ` (${data.package_manager})` : "";
+      $("init-wizard-detect-summary").textContent = `Detected: ${lang}${fw}${pm}`;
 
-      const steps = data.recommended_steps || [];
-      const stepLabels = {
-        install_deps: "Install dependencies",
-        create_gitignore: "Create .gitignore",
-        create_editorconfig: "Create .editorconfig",
-        create_env_example: "Create .env.example",
-      };
-      $("init-wizard-steps").innerHTML = steps.map(s =>
-        `<label style="display:block;margin:4px 0">
-          <input type="checkbox" value="${s}" checked> ${stepLabels[s] || s}
-        </label>`
-      ).join("") || '<em style="color:var(--fg-muted)">No setup steps detected.</em>';
+      const keyFiles = (data.detected_files || []).join(", ") || "none detected";
+      $("init-wizard-steps").innerHTML =
+        `<div style="line-height:1.7">` +
+        `<strong>Language:</strong> ${escHtmlSimple(lang)}${escHtmlSimple(fw)}<br>` +
+        (data.package_manager ? `<strong>Package manager:</strong> ${escHtmlSimple(data.package_manager)}<br>` : "") +
+        `<strong>Key files:</strong> ${escHtmlSimple(keyFiles)}<br>` +
+        `<br><span style="color:var(--text-dim);font-size:12px">` +
+        `The AI will scan all project files, understand the codebase, ` +
+        `create a setup plan, and execute it using available tools ` +
+        `(read files, write config files, create .gitignore, etc.)` +
+        `</span></div>`;
 
-      $("btn-init-run").dataset.path = projectPath;
-      if (!steps.length) $("btn-init-run").disabled = true;
+      $("btn-init-run").disabled = false;
     } catch (e) {
-      $("init-wizard-detect-summary").textContent = `Could not detect project type: ${e.message}`;
+      $("init-wizard-detect-summary").textContent = "Ready to analyze";
+      $("init-wizard-steps").innerHTML =
+        `<span style="color:var(--text-dim);font-size:12px">` +
+        `The AI will scan the project and create a setup plan.</span>`;
+      $("btn-init-run").disabled = false;
     }
   }
 
   async function runInitWizard() {
-    const projectPath = $("btn-init-run").dataset.path;
-    const checked = [...$("init-wizard-steps").querySelectorAll("input:checked")].map(c => c.value);
-    if (!checked.length) { $("init-wizard").classList.add("hidden"); return; }
-
+    const projectPath = $("btn-init-run").dataset.path || state.activeProject;
     $("btn-init-run").disabled = true;
     $("btn-init-skip").disabled = true;
-    const progress = $("init-wizard-progress");
-    progress.classList.remove("hidden");
-    progress.textContent = "";
 
-    const wsProto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${wsProto}://${location.host}/ws/project-init`);
+    // Close the wizard immediately and run in the chat panel
+    $("init-wizard").classList.add("hidden");
+    $("btn-init-skip").disabled = false;
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ project_path: projectPath, steps: checked }));
-    };
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        const icon = msg.status === "ok" ? "✓" : msg.status === "error" ? "✗" : "⟳";
-        progress.textContent += `${icon} [${msg.step}] ${msg.output || ""}\n`;
-        progress.scrollTop = progress.scrollHeight;
-      } catch { progress.textContent += e.data + "\n"; }
-    };
-    ws.onclose = () => {
-      progress.textContent += "\n✓ Done!\n";
-      $("btn-init-skip").textContent = "Close";
-      $("btn-init-skip").disabled = false;
-      $("btn-init-run").disabled = true;
-    };
+    // Fetch the project scan for context
+    let scanContext = "";
+    try {
+      const scanRes = await fetch(`/project/init/scan?path=${encodeURIComponent(projectPath)}`);
+      if (scanRes.ok) {
+        const scanData = await scanRes.json();
+        scanContext = scanData.context || "";
+      }
+    } catch { /* scan is best-effort */ }
+
+    // Build a rich AI prompt
+    const prompt =
+      `You are an expert developer assistant. A project has just been loaded at: ${projectPath}\n\n` +
+      (scanContext ? `${scanContext}\n\n` : "") +
+      `Please do the following:\n` +
+      `1. Use the list_directory and read_file tools to explore the project structure\n` +
+      `2. Read key files (README, package.json/requirements.txt/CMakeLists.txt, main entry points)\n` +
+      `3. Understand what the project does and its tech stack\n` +
+      `4. Create a brief analysis: purpose, structure, how to build/run it\n` +
+      `5. Identify any missing setup files (.gitignore, .editorconfig, etc.) and create them\n` +
+      `6. Suggest next steps for development\n\n` +
+      `Be concise and practical. Use your tools to read and write files directly.`;
+
+    switchOutputTab("output");
+    sendPrompt(prompt);
   }
 
   // ── Project switcher ───────────────────────────────────────────────────────
@@ -1545,6 +1561,8 @@
   $("project-switcher").addEventListener("change", async (e) => {
     const path = e.target.value;
     if (!path) return;
+    state.activeProject = path;
+    _roadmapCache.data = null;  // invalidate roadmap cache for new project
     // Load the file tree rooted at this project dir
     await loadFileTree(path);
     e.target.value = "";  // reset so it can be re-selected
@@ -1655,7 +1673,8 @@
   async function loadRoadmapPanel() {
     const container = $("roadmap-content");
     try {
-      const res = await fetch("/roadmap");
+      const pathParam = state.activeProject ? `?path=${encodeURIComponent(state.activeProject)}` : "";
+      const res = await fetch(`/roadmap${pathParam}`);
       if (!res.ok) throw new Error("Roadmap not found");
       const data = await res.json();
       _roadmapCache.data = data;
@@ -1767,7 +1786,8 @@
       `create any new files needed, and explain what you did.`;
     sendPrompt(prompt);
     // Mark task in_progress
-    fetch(`/roadmap/task/${taskId}`, {
+    const pathSuffix = state.activeProject ? `?path=${encodeURIComponent(state.activeProject)}` : "";
+    fetch(`/roadmap/task/${taskId}${pathSuffix}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "in_progress" }),
@@ -2079,6 +2099,14 @@
       if (_palette.visible) closePalette();
       else openPalette("files");
     }
+  });
+
+  // ── Activity bar group toggle ─────────────────────────────────────────────
+  document.querySelectorAll(".ab-group-hdr").forEach((hdr) => {
+    hdr.addEventListener("click", () => {
+      const group = hdr.closest(".ab-group");
+      if (group) group.classList.toggle("open");
+    });
   });
 
   // ── Activity bar panel switching ──────────────────────────────────────────
@@ -2554,7 +2582,8 @@
     const container = $("roadmap-sidebar-content");
     container.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:4px">Loading…</div>';
     try {
-      const res = await fetch("/roadmap");
+      const pathParam = state.activeProject ? `?path=${encodeURIComponent(state.activeProject)}` : "";
+      const res = await fetch(`/roadmap${pathParam}`);
       const data = await res.json();
       const statusIcon = { done: "✅", in_progress: "🔄", pending: "⬜", blocked: "🚫" };
       let html = "";
@@ -3415,10 +3444,32 @@
     const active = data.active || "";
     const backends = data.backends || [];
 
+    const LOCAL_BACKENDS = new Set(["ollama", "openwebui", "lmstudio", "llamacpp", "localai", "tabby", "local"]);
+    const FREE_BACKENDS  = new Set(["gemini"]);
+
     const statusDot = (s) => {
       if (s === "ok") return '<span class="backend-dot backend-dot-ok"></span>';
       if (s === "no_key") return '<span class="backend-dot backend-dot-warn"></span>';
       return '<span class="backend-dot backend-dot-off"></span>';
+    };
+
+    const localBadge = (name) => LOCAL_BACKENDS.has(name)
+      ? '<span class="backend-badge-local">🟢 LOCAL</span>' : "";
+    const freeBadge = (name) => FREE_BACKENDS.has(name)
+      ? '<span class="backend-badge-free">🔵 FREE</span>' : "";
+
+    // Fields to configure per backend
+    const configFields = (b) => {
+      const hasUrl = !["anthropic", "gemini"].includes(b.name) && b.name !== "local";
+      const hasKey = ["api", "openwebui", "anthropic", "gemini", "tabby", "localai"].includes(b.name);
+      const hasModel = b.name !== "local";
+      return `<div class="backend-configure-form" id="cfg-form-${b.name}">
+        ${hasUrl ? `<label>Base URL</label><input id="cfg-url-${b.name}" placeholder="${b.base_url || "http://..."}" value="${escHtmlSimple(b.base_url || "")}" />` : ""}
+        ${hasKey ? `<label>API Key</label><input id="cfg-key-${b.name}" type="password" placeholder="sk-…" />` : ""}
+        ${hasModel ? `<label>Model</label><input id="cfg-model-${b.name}" placeholder="e.g. llama3, gpt-4o…" value="${escHtmlSimple(b.model || "")}" />` : ""}
+        <button class="backend-configure-save" data-backend="${b.name}">💾 Save</button>
+        <div id="cfg-result-${b.name}" style="font-size:10px;min-height:14px"></div>
+      </div>`;
     };
 
     const cards = backends.map((b) => `
@@ -3427,23 +3478,34 @@
           ${statusDot(b.status)}
           <span class="backend-card-name">${escHtmlSimple(b.display_name)}</span>
           ${b.name === active ? '<span class="backend-active-badge">active</span>' : ""}
+          ${localBadge(b.name)}${freeBadge(b.name)}
         </div>
         <div class="backend-card-meta">${escHtmlSimple(b.description)}</div>
         ${b.model ? `<div class="backend-card-model">Model: ${escHtmlSimple(b.model)}</div>` : ""}
         <div class="backend-card-actions">
-          <button class="backend-btn" data-action="test" data-backend="${escHtmlSimple(b.name)}">Test</button>
+          <button class="backend-btn" data-action="test"      data-backend="${escHtmlSimple(b.name)}">Test</button>
           <button class="backend-btn backend-btn-switch" data-action="switch" data-backend="${escHtmlSimple(b.name)}"${b.name === active ? " disabled" : ""}>Switch</button>
+          <button class="backend-btn" data-action="configure" data-backend="${escHtmlSimple(b.name)}">⚙ Config</button>
         </div>
         <div class="backend-test-result" id="backend-result-${escHtmlSimple(b.name)}"></div>
+        ${configFields(b)}
       </div>
     `).join("");
 
     container.innerHTML = `
-      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:8px">AI BACKENDS</div>
-      <div style="font-size:11px;margin-bottom:10px;color:var(--text-dim,#999)">Active: <strong style="color:var(--accent)">${escHtmlSimple(active)}</strong></div>
+      <div style="font-size:11px;margin-bottom:8px;color:var(--text-dim,#999)">
+        Active: <strong style="color:var(--accent)">${escHtmlSimple(active)}</strong>
+        &nbsp;·&nbsp; 🟢 = local/free &nbsp;·&nbsp; 🔵 = free tier
+      </div>
       ${cards}
     `;
 
+    // Hide all configure forms initially
+    container.querySelectorAll(".backend-configure-form").forEach((f) => {
+      f.style.display = "none";
+    });
+
+    // Test buttons
     container.querySelectorAll(".backend-btn[data-action='test']").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const name = btn.dataset.backend;
@@ -3467,6 +3529,7 @@
       });
     });
 
+    // Switch buttons
     container.querySelectorAll(".backend-btn[data-action='switch']").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const name = btn.dataset.backend;
@@ -3478,12 +3541,51 @@
           });
           const d = await res.json();
           if (d.ok) {
+            // Also update the topbar selector
+            const sel = $("llm-backend-select");
+            if (sel) sel.value = name;
             await loadAIBackendsPanel();
-            const llmSel = $("llm-select");
-            if (llmSel) llmSel.value = name;
           }
         } catch (e) {
           alert(`Switch failed: ${e.message}`);
+        }
+      });
+    });
+
+    // Configure toggle buttons
+    container.querySelectorAll(".backend-btn[data-action='configure']").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const name = btn.dataset.backend;
+        const form = document.getElementById(`cfg-form-${name}`);
+        if (form) form.style.display = form.style.display === "none" ? "flex" : "none";
+      });
+    });
+
+    // Save config buttons
+    container.querySelectorAll(".backend-configure-save").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.backend;
+        const urlEl   = document.getElementById(`cfg-url-${name}`);
+        const keyEl   = document.getElementById(`cfg-key-${name}`);
+        const modelEl = document.getElementById(`cfg-model-${name}`);
+        const resultEl = document.getElementById(`cfg-result-${name}`);
+        const payload = {
+          backend: name,
+          base_url: urlEl?.value.trim() || "",
+          api_key:  keyEl?.value.trim() || "",
+          model:    modelEl?.value.trim() || "",
+        };
+        try {
+          const res = await fetch("/ai/backends/configure", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const d = await res.json();
+          if (resultEl) resultEl.textContent = d.ok ? "✅ Saved" : `❌ ${d.detail || "Error"}`;
+          if (d.ok) setTimeout(() => loadAIBackendsPanel(), 800);
+        } catch (e) {
+          if (resultEl) resultEl.textContent = `❌ ${e.message}`;
         }
       });
     });
