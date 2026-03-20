@@ -4502,6 +4502,8 @@ indent_style = tab
             for name, ttype in cur.fetchall():
                 try:
                     cur2 = conn.cursor()
+                    # Table name from sqlite_master (trusted DB catalog, not user input).
+                    # Standard SQLite identifier quoting: double-quote with "" escaping.
                     quoted = name.replace('"', '""')
                     cur2.execute(f'PRAGMA table_info("{quoted}")')
                     cols = [{"name": r[1], "type": r[2], "not_null": bool(r[3]), "pk": bool(r[5])} for r in cur2.fetchall()]
