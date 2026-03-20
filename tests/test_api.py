@@ -1825,3 +1825,613 @@ def test_deploy_history(client):
     r = client.get("/deploy/history")
     assert r.status_code == 200
     assert "history" in r.json()
+
+# ── Phase 26: Monitoring & Observability ─────────────────────────────────────
+def test_metrics_current(client):
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    data = r.json()
+    assert "cpu_load_percent" in data
+    assert "mem_percent" in data
+    assert "disk_percent" in data
+    assert "ts" in data
+
+def test_metrics_history(client):
+    client.get("/metrics")
+    r = client.get("/metrics/history")
+    assert r.status_code == 200
+    data = r.json()
+    assert "history" in data
+    assert isinstance(data["history"], list)
+
+def test_metrics_snapshot(client):
+    r = client.post("/metrics/snapshot")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["saved"] is True
+    assert "snapshot" in data
+
+def test_health_detailed(client):
+    r = client.get("/health/detailed")
+    assert r.status_code == 200
+    data = r.json()
+    assert "status" in data
+    assert "checks" in data
+    assert "api" in data["checks"]
+
+def test_metrics_alert_set(client):
+    r = client.post("/metrics/alert", json={"name": "high-cpu", "metric": "cpu_load_percent", "threshold": 80.0})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "high-cpu"
+
+def test_metrics_alerts_list(client):
+    client.post("/metrics/alert", json={"name": "high-mem", "metric": "mem_percent", "threshold": 85.0})
+    r = client.get("/metrics/alerts")
+    assert r.status_code == 200
+    data = r.json()
+    assert "alerts" in data
+    assert any(a["name"] == "high-mem" for a in data["alerts"])
+
+def test_metrics_alert_delete(client):
+    client.post("/metrics/alert", json={"name": "temp-alert", "metric": "disk_percent", "threshold": 90.0})
+    r = client.delete("/metrics/alert/temp-alert")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "temp-alert"
+
+# ── Phase 27: Database Management ────────────────────────────────────────────
+def test_db_connect(client, tmp_path):
+    import sqlite3, os
+    db_file = tmp_path / "test.sqlite"
+    sqlite3.connect(str(db_file)).close()
+    ws = os.path.join(os.getcwd(), "workspace", "test_phase27.sqlite")
+    import shutil
+    shutil.copy(str(db_file), ws)
+    try:
+        r = client.post("/db/connect", json={"path": "test_phase27.sqlite", "alias": "testdb"})
+        assert r.status_code == 200
+        data = r.json()
+        assert "id" in data
+        assert data["alias"] == "testdb"
+    finally:
+        os.unlink(ws)
+
+def test_db_connections_list(client):
+    r = client.get("/db/connections")
+    assert r.status_code == 200
+    assert "connections" in r.json()
+
+def test_db_connect_invalid_path(client):
+    r = client.post("/db/connect", json={"path": "../../etc/passwd"})
+    assert r.status_code == 403
+
+def test_db_query_not_found(client):
+    r = client.post("/db/query", json={"connection_id": "9999", "sql": "SELECT 1"})
+    assert r.status_code == 404
+
+def test_db_schema_not_found(client):
+    r = client.get("/db/schema/9999")
+    assert r.status_code == 404
+
+def test_db_connection_delete(client, tmp_path):
+    import sqlite3, os, shutil
+    db_file = tmp_path / "del_test.sqlite"
+    sqlite3.connect(str(db_file)).close()
+    ws = os.path.join(os.getcwd(), "workspace", "test_del.sqlite")
+    shutil.copy(str(db_file), ws)
+    try:
+        r1 = client.post("/db/connect", json={"path": "test_del.sqlite", "alias": "deldb"})
+        assert r1.status_code == 200
+        conn_id = r1.json()["id"]
+        r2 = client.delete(f"/db/connection/{conn_id}")
+        assert r2.status_code == 200
+        assert r2.json()["deleted"] == conn_id
+    finally:
+        os.unlink(ws)
+
+def test_db_query_and_schema(client, tmp_path):
+    import sqlite3, os, shutil
+    db_file = tmp_path / "schema_test.sqlite"
+    conn = sqlite3.connect(str(db_file))
+    conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+    conn.execute("INSERT INTO users (name) VALUES ('Alice')")
+    conn.commit()
+    conn.close()
+    ws = os.path.join(os.getcwd(), "workspace", "test_schema.sqlite")
+    shutil.copy(str(db_file), ws)
+    try:
+        r1 = client.post("/db/connect", json={"path": "test_schema.sqlite", "alias": "schemadb"})
+        assert r1.status_code == 200
+        conn_id = r1.json()["id"]
+        r2 = client.post("/db/query", json={"connection_id": conn_id, "sql": "SELECT * FROM users"})
+        assert r2.status_code == 200
+        qdata = r2.json()
+        assert "columns" in qdata
+        assert "name" in qdata["columns"]
+        assert any(r.get("name") == "Alice" for r in qdata["rows"])
+        r3 = client.get(f"/db/schema/{conn_id}")
+        assert r3.status_code == 200
+        sdata = r3.json()
+        assert any(t["name"] == "users" for t in sdata["tables"])
+    finally:
+        os.unlink(ws)
+
+# ── Phase 28: Secret & Environment Vault ─────────────────────────────────────
+def test_vault_set(client):
+    r = client.post("/vault/set", json={"key": "MY_API_KEY", "value": "super-secret", "description": "test key"})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "MY_API_KEY"
+
+def test_vault_keys_hides_values(client):
+    client.post("/vault/set", json={"key": "DB_PASSWORD", "value": "hunter2"})
+    r = client.get("/vault/keys")
+    assert r.status_code == 200
+    data = r.json()
+    assert "keys" in data
+    assert any(k["key"] == "DB_PASSWORD" for k in data["keys"])
+    # values must NOT appear in the keys listing
+    assert not any("hunter2" in str(k) for k in data["keys"])
+
+def test_vault_get(client):
+    client.post("/vault/set", json={"key": "TOKEN", "value": "abc123"})
+    r = client.get("/vault/get/TOKEN")
+    assert r.status_code == 200
+    assert r.json()["value"] == "abc123"
+
+def test_vault_get_not_found(client):
+    r = client.get("/vault/get/NONEXISTENT_KEY_XYZ")
+    assert r.status_code == 404
+
+def test_vault_delete(client):
+    client.post("/vault/set", json={"key": "TEMP_KEY", "value": "temp"})
+    r = client.delete("/vault/key/TEMP_KEY")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "TEMP_KEY"
+
+def test_vault_export_env(client):
+    client.post("/vault/set", json={"key": "EXPORT_KEY", "value": "export_val"})
+    r = client.post("/vault/export", json={"keys": ["EXPORT_KEY"], "format": "env"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["format"] == "env"
+    assert "EXPORT_KEY=export_val" in data["data"]
+
+def test_vault_import(client):
+    r = client.post("/vault/import", json={"IMPORT_A": "val_a", "IMPORT_B": "val_b"})
+    assert r.status_code == 200
+    imported = r.json()["imported"]
+    assert "IMPORT_A" in imported
+    assert "IMPORT_B" in imported
+
+# ── Phase 29: WebHook Manager ─────────────────────────────────────────────────
+def test_webhook_register(client):
+    r = client.post("/webhook/register", json={"name": "test-hook", "url": "http://localhost:9999/hook"})
+    assert r.status_code == 200
+    data = r.json()
+    assert "id" in data
+    assert data["name"] == "test-hook"
+
+def test_webhooks_list(client):
+    client.post("/webhook/register", json={"name": "list-hook", "url": "http://localhost:9999/list"})
+    r = client.get("/webhooks")
+    assert r.status_code == 200
+    data = r.json()
+    assert "webhooks" in data
+    assert any(w["name"] == "list-hook" for w in data["webhooks"])
+
+def test_webhooks_list_hides_secret(client):
+    client.post("/webhook/register", json={"name": "secret-hook", "url": "http://localhost:9999/s", "secret": "mysecret"})
+    r = client.get("/webhooks")
+    assert r.status_code == 200
+    for wh in r.json()["webhooks"]:
+        assert "secret" not in wh
+
+def test_webhook_register_missing_url(client):
+    r = client.post("/webhook/register", json={"name": "no-url", "url": ""})
+    assert r.status_code == 400
+
+def test_webhook_deliver_not_found(client):
+    r = client.post("/webhook/deliver/99999", json={"event": "test"})
+    assert r.status_code == 404
+
+def test_webhook_deliver_connection_error(client):
+    r = client.post("/webhook/register", json={"name": "fail-hook", "url": "http://localhost:19999/nope"})
+    wid = r.json()["id"]
+    r2 = client.post(f"/webhook/deliver/{wid}", json={"event": "test", "payload": {"x": 1}})
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["status_code"] == -1   # connection refused → error
+    assert "webhook_id" in data
+
+def test_webhook_deliveries_list(client):
+    r = client.get("/webhook/deliveries")
+    assert r.status_code == 200
+    assert "deliveries" in r.json()
+
+def test_webhook_delete(client):
+    r = client.post("/webhook/register", json={"name": "del-hook", "url": "http://localhost:9999/del"})
+    wid = r.json()["id"]
+    r2 = client.delete(f"/webhook/{wid}")
+    assert r2.status_code == 200
+    assert r2.json()["deleted"] == wid
+
+# ── Phase 30: API Rate Limiting & Quota ───────────────────────────────────────
+def test_ratelimit_rule_set(client):
+    r = client.post("/ratelimit/rule", json={"name": "api", "limit": 10, "window_seconds": 60})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "api"
+
+def test_ratelimit_rules_list(client):
+    client.post("/ratelimit/rule", json={"name": "list_rule", "limit": 5, "window_seconds": 30})
+    r = client.get("/ratelimit/rules")
+    assert r.status_code == 200
+    data = r.json()
+    assert "rules" in data
+    assert any(ru["name"] == "list_rule" for ru in data["rules"])
+
+def test_ratelimit_rule_bad_limit(client):
+    r = client.post("/ratelimit/rule", json={"name": "bad", "limit": 0})
+    assert r.status_code == 400
+
+def test_ratelimit_check_allowed(client):
+    client.post("/ratelimit/rule", json={"name": "check_rule", "limit": 100, "window_seconds": 60})
+    r = client.post("/ratelimit/check/check_rule")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["allowed"] is True
+    assert data["used"] == 1
+
+def test_ratelimit_check_throttled(client):
+    client.post("/ratelimit/rule", json={"name": "tight_rule", "limit": 2, "window_seconds": 60})
+    client.post("/ratelimit/check/tight_rule")
+    client.post("/ratelimit/check/tight_rule")
+    r = client.post("/ratelimit/check/tight_rule")
+    assert r.status_code == 200
+    assert r.json()["throttled"] is True
+
+def test_ratelimit_reset(client):
+    client.post("/ratelimit/rule", json={"name": "reset_rule", "limit": 2, "window_seconds": 60})
+    client.post("/ratelimit/check/reset_rule")
+    client.post("/ratelimit/check/reset_rule")
+    r = client.post("/ratelimit/reset/reset_rule")
+    assert r.status_code == 200
+    # After reset, should be allowed again
+    r2 = client.post("/ratelimit/check/reset_rule")
+    assert r2.json()["allowed"] is True
+
+def test_ratelimit_delete(client):
+    client.post("/ratelimit/rule", json={"name": "del_rule", "limit": 10, "window_seconds": 60})
+    r = client.delete("/ratelimit/rule/del_rule")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "del_rule"
+
+# ── Phase 31: Event Bus & Pub/Sub ─────────────────────────────────────────────
+def test_events_publish(client):
+    r = client.post("/events/publish", json={"topic": "build.done", "payload": {"status": "ok"}, "source": "ci"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["topic"] == "build.done"
+    assert "id" in data
+
+def test_events_publish_no_topic(client):
+    r = client.post("/events/publish", json={"topic": "", "payload": {}})
+    assert r.status_code == 400
+
+def test_events_history(client):
+    client.post("/events/publish", json={"topic": "test.event", "payload": {}})
+    r = client.get("/events/history")
+    assert r.status_code == 200
+    data = r.json()
+    assert "events" in data
+    assert any(e["topic"] == "test.event" for e in data["events"])
+
+def test_events_history_by_topic(client):
+    client.post("/events/publish", json={"topic": "specific.topic", "payload": {"x": 1}})
+    r = client.get("/events/history/specific.topic")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["topic"] == "specific.topic"
+    assert len(data["events"]) >= 1
+
+def test_events_subscribe(client):
+    r = client.post("/events/subscribe", json={"topics": ["build.*", "deploy.*"], "name": "listener"})
+    assert r.status_code == 200
+    data = r.json()
+    assert "id" in data
+    assert "build.*" in data["topics"]
+
+def test_events_subscribe_empty_topics(client):
+    r = client.post("/events/subscribe", json={"topics": []})
+    assert r.status_code == 400
+
+def test_events_subscriptions_list(client):
+    client.post("/events/subscribe", json={"topics": ["ci.run"], "name": "ci-watcher"})
+    r = client.get("/events/subscriptions")
+    assert r.status_code == 200
+    data = r.json()
+    assert "subscriptions" in data
+    assert any(s["name"] == "ci-watcher" for s in data["subscriptions"])
+
+def test_events_subscription_delete(client):
+    r = client.post("/events/subscribe", json={"topics": ["x.y"], "name": "temp"})
+    sub_id = r.json()["id"]
+    r2 = client.delete(f"/events/subscription/{sub_id}")
+    assert r2.status_code == 200
+    assert r2.json()["deleted"] == sub_id
+
+# ── Phase 32: Cron Job Scheduler ──────────────────────────────────────────────
+def test_cron_job_set(client):
+    r = client.post("/cron/job", json={"name": "hello", "schedule": "every 60s", "command": "echo hi"})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "hello"
+
+def test_cron_jobs_list(client):
+    client.post("/cron/job", json={"name": "list_job", "schedule": "every 30s", "command": "echo list"})
+    r = client.get("/cron/jobs")
+    assert r.status_code == 200
+    data = r.json()
+    assert "jobs" in data
+    assert any(j["name"] == "list_job" for j in data["jobs"])
+
+def test_cron_job_no_command(client):
+    r = client.post("/cron/job", json={"name": "bad", "schedule": "every 60s", "command": ""})
+    assert r.status_code == 400
+
+def test_cron_job_run(client):
+    client.post("/cron/job", json={"name": "run_job", "schedule": "manual", "command": "echo running"})
+    r = client.post("/cron/job/run_job/run")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["job"] == "run_job"
+    assert "exit_code" in data
+
+def test_cron_job_history(client):
+    client.post("/cron/job", json={"name": "hist_job", "schedule": "manual", "command": "echo hist"})
+    client.post("/cron/job/hist_job/run")
+    r = client.get("/cron/job/hist_job/history")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["job"] == "hist_job"
+    assert len(data["history"]) >= 1
+
+def test_cron_history_all(client):
+    r = client.get("/cron/history")
+    assert r.status_code == 200
+    assert "history" in r.json()
+
+def test_cron_job_delete(client):
+    client.post("/cron/job", json={"name": "del_cron", "schedule": "manual", "command": "true"})
+    r = client.delete("/cron/job/del_cron")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "del_cron"
+
+# ── Phase 33: Audit Log ───────────────────────────────────────────────────────
+def test_audit_log_append(client):
+    r = client.post("/audit/log", json={"action": "login", "actor": "admin", "level": "info"})
+    assert r.status_code == 200
+    assert r.json()["logged"] == "login"
+
+def test_audit_log_no_action(client):
+    r = client.post("/audit/log", json={"action": "", "actor": "admin"})
+    assert r.status_code == 400
+
+def test_audit_log_list(client):
+    client.post("/audit/log", json={"action": "file.edit", "actor": "user1", "level": "info"})
+    r = client.get("/audit/log")
+    assert r.status_code == 200
+    data = r.json()
+    assert "entries" in data
+    assert any(e["action"] == "file.edit" for e in data["entries"])
+
+def test_audit_log_get(client):
+    r = client.post("/audit/log", json={"action": "get.test", "actor": "test"})
+    entry_id = r.json()["id"]
+    r2 = client.get(f"/audit/log/{entry_id}")
+    assert r2.status_code == 200
+    assert r2.json()["action"] == "get.test"
+
+def test_audit_stats(client):
+    client.post("/audit/log", json={"action": "stats.test", "level": "info"})
+    r = client.get("/audit/stats")
+    assert r.status_code == 200
+    data = r.json()
+    assert "total" in data
+    assert data["total"] >= 1
+
+def test_audit_log_filter_level(client):
+    client.post("/audit/log", json={"action": "warn.action", "level": "warn"})
+    r = client.get("/audit/log?level=warn")
+    assert r.status_code == 200
+    entries = r.json()["entries"]
+    assert all(e["level"] == "warn" for e in entries)
+
+def test_audit_log_clear(client):
+    client.post("/audit/log", json={"action": "pre.clear", "level": "info"})
+    r = client.delete("/audit/log/clear")
+    assert r.status_code == 200
+    assert "cleared" in r.json()
+    r2 = client.get("/audit/log")
+    assert len(r2.json()["entries"]) == 0
+
+# ── Phase 34: Feature Flags ───────────────────────────────────────────────────
+def test_flag_set(client):
+    r = client.post("/flags/flag", json={"name": "dark_mode", "enabled": True, "variant": "v2"})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "dark_mode"
+
+def test_flag_no_name(client):
+    r = client.post("/flags/flag", json={"name": "", "enabled": True})
+    assert r.status_code == 400
+
+def test_flags_list(client):
+    client.post("/flags/flag", json={"name": "list_flag", "enabled": False})
+    r = client.get("/flags")
+    assert r.status_code == 200
+    data = r.json()
+    assert "flags" in data
+    assert any(f["name"] == "list_flag" for f in data["flags"])
+
+def test_flag_get(client):
+    client.post("/flags/flag", json={"name": "get_flag", "enabled": True, "variant": "beta"})
+    r = client.get("/flags/flag/get_flag")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["name"] == "get_flag"
+    assert data["variant"] == "beta"
+
+def test_flag_toggle(client):
+    client.post("/flags/flag", json={"name": "toggle_flag", "enabled": True})
+    r = client.post("/flags/flag/toggle_flag/toggle")
+    assert r.status_code == 200
+    assert r.json()["enabled"] is False
+
+def test_flag_check(client):
+    client.post("/flags/flag", json={"name": "check_flag", "enabled": True})
+    r = client.get("/flags/check/check_flag")
+    assert r.status_code == 200
+    assert r.json()["enabled"] is True
+
+def test_flag_delete(client):
+    client.post("/flags/flag", json={"name": "del_flag", "enabled": True})
+    r = client.delete("/flags/flag/del_flag")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "del_flag"
+
+# ── Phase 35: Config Profiles ─────────────────────────────────────────────────
+def test_config_profile_set(client):
+    r = client.post("/config/profile", json={"name": "prod", "values": {"HOST": "prod.example.com", "PORT": "443"}})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "prod"
+
+def test_config_profile_no_name(client):
+    r = client.post("/config/profile", json={"name": "", "values": {}})
+    assert r.status_code == 400
+
+def test_config_profiles_list(client):
+    client.post("/config/profile", json={"name": "dev", "values": {"HOST": "localhost"}})
+    r = client.get("/config/profiles")
+    assert r.status_code == 200
+    data = r.json()
+    assert "profiles" in data
+    assert any(p["name"] == "dev" for p in data["profiles"])
+
+def test_config_profile_get(client):
+    client.post("/config/profile", json={"name": "staging", "values": {"ENV": "staging"}})
+    r = client.get("/config/profile/staging")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["name"] == "staging"
+    assert data["values"]["ENV"] == "staging"
+
+def test_config_profile_activate(client):
+    client.post("/config/profile", json={"name": "active_prof", "values": {"K": "V"}})
+    r = client.post("/config/profile/active_prof/activate")
+    assert r.status_code == 200
+    assert r.json()["activated"] == "active_prof"
+
+def test_config_active(client):
+    client.post("/config/profile", json={"name": "act2", "values": {"X": "1"}})
+    client.post("/config/profile/act2/activate")
+    r = client.get("/config/active")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["active"] == "act2"
+    assert data["values"]["X"] == "1"
+
+def test_config_profile_delete(client):
+    client.post("/config/profile", json={"name": "del_prof", "values": {}})
+    r = client.delete("/config/profile/del_prof")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "del_prof"
+
+# ── Phase 36: Notification Center ─────────────────────────────────────────────
+def test_notify_push(client):
+    r = client.post("/notify", json={"title": "Deploy done", "message": "All good", "level": "success"})
+    assert r.status_code == 200
+    assert "id" in r.json()
+
+def test_notify_no_title(client):
+    r = client.post("/notify", json={"title": "", "message": "oops"})
+    assert r.status_code == 400
+
+def test_notifications_list(client):
+    client.post("/notify", json={"title": "A", "level": "info"})
+    r = client.get("/notifications")
+    assert r.status_code == 200
+    data = r.json()
+    assert "notifications" in data
+    assert "unread" in data
+    assert data["unread"] >= 1
+
+def test_notification_get(client):
+    r1 = client.post("/notify", json={"title": "Get me", "level": "warn"})
+    nid = r1.json()["id"]
+    r = client.get(f"/notification/{nid}")
+    assert r.status_code == 200
+    assert r.json()["title"] == "Get me"
+
+def test_notifications_mark_read(client):
+    client.post("/notify", json={"title": "Unread", "level": "info"})
+    r = client.post("/notifications/mark-read")
+    assert r.status_code == 200
+    assert r.json()["marked"] >= 1
+
+def test_notifications_clear(client):
+    client.post("/notify", json={"title": "Clear me", "level": "info"})
+    r = client.delete("/notifications/clear")
+    assert r.status_code == 200
+    assert r.json()["cleared"] >= 1
+
+def test_notification_delete(client):
+    r1 = client.post("/notify", json={"title": "Del me", "level": "error"})
+    nid = r1.json()["id"]
+    r = client.delete(f"/notification/{nid}")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == nid
+
+# ── Phase 37: Task Queue ───────────────────────────────────────────────────────
+def test_queue_task_add(client):
+    r = client.post("/queue/task", json={"name": "build_image", "priority": 2})
+    assert r.status_code == 200
+    assert "id" in r.json()
+
+def test_queue_task_no_name(client):
+    r = client.post("/queue/task", json={"name": "", "priority": 1})
+    assert r.status_code == 400
+
+def test_queue_tasks_list(client):
+    client.post("/queue/task", json={"name": "list_task", "priority": 5})
+    r = client.get("/queue/tasks")
+    assert r.status_code == 200
+    data = r.json()
+    assert "tasks" in data
+    assert any(t["name"] == "list_task" for t in data["tasks"])
+
+def test_queue_task_get(client):
+    r1 = client.post("/queue/task", json={"name": "get_task", "priority": 3})
+    tid = r1.json()["id"]
+    r = client.get(f"/queue/task/{tid}")
+    assert r.status_code == 200
+    assert r.json()["name"] == "get_task"
+
+def test_queue_task_complete(client):
+    r1 = client.post("/queue/task", json={"name": "complete_task", "priority": 1})
+    tid = r1.json()["id"]
+    r = client.post(f"/queue/task/{tid}/complete")
+    assert r.status_code == 200
+    assert r.json()["status"] == "done"
+
+def test_queue_stats(client):
+    client.post("/queue/task", json={"name": "stats_task", "priority": 5})
+    r = client.get("/queue/stats")
+    assert r.status_code == 200
+    data = r.json()
+    assert "total" in data
+    assert "pending" in data
+    assert "done" in data
+
+def test_queue_task_delete(client):
+    r1 = client.post("/queue/task", json={"name": "del_task", "priority": 7})
+    tid = r1.json()["id"]
+    r = client.delete(f"/queue/task/{tid}")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == tid

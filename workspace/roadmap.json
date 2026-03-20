@@ -1261,6 +1261,711 @@
           "description": "GUI panel to manage deploy configs and run/monitor deployments"
         }
       ]
+    },
+    {
+      "id": "m26",
+      "title": "Phase 26 \u2014 Monitoring & Observability",
+      "description": "Real-time system metrics, health checks, alert thresholds, and live metrics streaming via WebSocket",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t26-1",
+          "title": "GET /metrics \u2014 current system metrics",
+          "status": "done",
+          "priority": "high",
+          "description": "Collect and return CPU load, memory, and disk usage"
+        },
+        {
+          "id": "t26-2",
+          "title": "GET /metrics/history \u2014 historical snapshots",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return the last N metric snapshots"
+        },
+        {
+          "id": "t26-3",
+          "title": "POST /metrics/snapshot \u2014 manual snapshot",
+          "status": "done",
+          "priority": "low",
+          "description": "Trigger and store a metrics snapshot"
+        },
+        {
+          "id": "t26-4",
+          "title": "GET /health/detailed \u2014 detailed health check",
+          "status": "done",
+          "priority": "high",
+          "description": "Full system health report with per-resource checks"
+        },
+        {
+          "id": "t26-5",
+          "title": "POST /metrics/alert \u2014 set alert threshold",
+          "status": "done",
+          "priority": "medium",
+          "description": "Store a named alert threshold for a metric"
+        },
+        {
+          "id": "t26-6",
+          "title": "GET /metrics/alerts \u2014 list alert thresholds",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return all configured alert thresholds"
+        },
+        {
+          "id": "t26-7",
+          "title": "DELETE /metrics/alert/{name} \u2014 remove alert",
+          "status": "done",
+          "priority": "low",
+          "description": "Delete a named alert threshold"
+        },
+        {
+          "id": "t26-8",
+          "title": "WebSocket /ws/metrics \u2014 stream live metrics",
+          "status": "done",
+          "priority": "medium",
+          "description": "Stream 3 metric snapshots then done"
+        },
+        {
+          "id": "t26-9",
+          "title": "Monitoring panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with gauges, alert configuration"
+        }
+      ]
+    },
+    {
+      "id": "m27",
+      "title": "Phase 27 \u2014 Database Management",
+      "description": "SQLite connection management, schema browsing, SQL query execution, and WebSocket result streaming",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t27-1",
+          "title": "POST /db/connect \u2014 connect to SQLite file",
+          "status": "done",
+          "priority": "high",
+          "description": "Register a SQLite database file as a named connection"
+        },
+        {
+          "id": "t27-2",
+          "title": "GET /db/connections \u2014 list connections",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all registered database connections"
+        },
+        {
+          "id": "t27-3",
+          "title": "DELETE /db/connection/{id} \u2014 disconnect",
+          "status": "done",
+          "priority": "medium",
+          "description": "Remove a database connection"
+        },
+        {
+          "id": "t27-4",
+          "title": "POST /db/query \u2014 execute SQL",
+          "status": "done",
+          "priority": "high",
+          "description": "Run a SQL query and return rows"
+        },
+        {
+          "id": "t27-5",
+          "title": "GET /db/schema/{id} \u2014 browse schema",
+          "status": "done",
+          "priority": "high",
+          "description": "List tables and columns for a connection"
+        },
+        {
+          "id": "t27-6",
+          "title": "WebSocket /ws/db \u2014 stream query results",
+          "status": "done",
+          "priority": "medium",
+          "description": "Stream last query result rows"
+        },
+        {
+          "id": "t27-7",
+          "title": "Database panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel for connections, schema browser, and SQL editor"
+        }
+      ]
+    },
+    {
+      "id": "m28",
+      "title": "Phase 28 \u2014 Secret & Environment Vault",
+      "description": "In-memory key-value secret store with base64 obfuscation, export (.env/JSON), import, and vault IDE panel",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t28-1",
+          "title": "POST /vault/set \u2014 store a secret",
+          "status": "done",
+          "priority": "high",
+          "description": "Store a key-value secret with optional description"
+        },
+        {
+          "id": "t28-2",
+          "title": "GET /vault/keys \u2014 list keys (no values)",
+          "status": "done",
+          "priority": "high",
+          "description": "Return key names and descriptions only"
+        },
+        {
+          "id": "t28-3",
+          "title": "GET /vault/get/{key} \u2014 retrieve a secret",
+          "status": "done",
+          "priority": "high",
+          "description": "Return the decoded value for a key"
+        },
+        {
+          "id": "t28-4",
+          "title": "DELETE /vault/key/{key} \u2014 remove a secret",
+          "status": "done",
+          "priority": "medium",
+          "description": "Delete a named secret"
+        },
+        {
+          "id": "t28-5",
+          "title": "POST /vault/export \u2014 export secrets",
+          "status": "done",
+          "priority": "medium",
+          "description": "Export secrets as .env or JSON format"
+        },
+        {
+          "id": "t28-6",
+          "title": "POST /vault/import \u2014 bulk import secrets",
+          "status": "done",
+          "priority": "medium",
+          "description": "Import key-value pairs into the vault"
+        },
+        {
+          "id": "t28-7",
+          "title": "Vault panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with secret management, reveal, and export UI"
+        }
+      ]
+    },
+    {
+      "id": "m29",
+      "title": "Phase 29 \u2014 WebHook Manager",
+      "description": "Register outbound webhooks, deliver events with optional HMAC signing, and track delivery history",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t29-1",
+          "title": "POST /webhook/register \u2014 register a webhook",
+          "status": "done",
+          "priority": "high",
+          "description": "Store a named webhook with URL, events filter, and optional HMAC secret"
+        },
+        {
+          "id": "t29-2",
+          "title": "GET /webhooks \u2014 list webhooks",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all webhooks without exposing secrets"
+        },
+        {
+          "id": "t29-3",
+          "title": "DELETE /webhook/{id} \u2014 remove webhook",
+          "status": "done",
+          "priority": "medium",
+          "description": "Delete a registered webhook"
+        },
+        {
+          "id": "t29-4",
+          "title": "POST /webhook/deliver/{id} \u2014 deliver event",
+          "status": "done",
+          "priority": "high",
+          "description": "POST payload to webhook URL with optional HMAC-SHA256 signature"
+        },
+        {
+          "id": "t29-5",
+          "title": "GET /webhook/deliveries \u2014 delivery history",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return recent delivery records"
+        },
+        {
+          "id": "t29-6",
+          "title": "GET /webhook/delivery/{id} \u2014 single delivery",
+          "status": "done",
+          "priority": "low",
+          "description": "Get a specific delivery record by ID"
+        },
+        {
+          "id": "t29-7",
+          "title": "Webhooks panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with webhook registration, delivery, and history"
+        }
+      ]
+    },
+    {
+      "id": "m30",
+      "title": "Phase 30 \u2014 API Rate Limiting & Quota",
+      "description": "Define named rate-limit rules with sliding-window counters, check quota, and reset from IDE or API",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t30-1",
+          "title": "POST /ratelimit/rule \u2014 create/update a rule",
+          "status": "done",
+          "priority": "high",
+          "description": "Define a named rule with limit and window"
+        },
+        {
+          "id": "t30-2",
+          "title": "GET /ratelimit/rules \u2014 list rules",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all defined rules"
+        },
+        {
+          "id": "t30-3",
+          "title": "DELETE /ratelimit/rule/{name} \u2014 remove rule",
+          "status": "done",
+          "priority": "medium",
+          "description": "Delete a named rule"
+        },
+        {
+          "id": "t30-4",
+          "title": "GET /ratelimit/status \u2014 usage overview",
+          "status": "done",
+          "priority": "high",
+          "description": "Return per-rule usage and remaining quota"
+        },
+        {
+          "id": "t30-5",
+          "title": "POST /ratelimit/check/{name} \u2014 consume a call",
+          "status": "done",
+          "priority": "high",
+          "description": "Consume one call unit and return allowed/throttled"
+        },
+        {
+          "id": "t30-6",
+          "title": "POST /ratelimit/reset/{name} \u2014 reset counter",
+          "status": "done",
+          "priority": "medium",
+          "description": "Clear usage history for a rule"
+        },
+        {
+          "id": "t30-7",
+          "title": "Rate Limits panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with rule management, usage bars, check/reset buttons"
+        }
+      ]
+    },
+    {
+      "id": "m31",
+      "title": "Phase 31 \u2014 Event Bus & Pub/Sub",
+      "description": "Publish events to topics, subscribe to topics, broadcast to WebSocket clients, and browse event history",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t31-1",
+          "title": "POST /events/publish \u2014 publish an event",
+          "status": "done",
+          "priority": "high",
+          "description": "Publish a topic event and broadcast to WS clients"
+        },
+        {
+          "id": "t31-2",
+          "title": "POST /events/subscribe \u2014 register a subscription",
+          "status": "done",
+          "priority": "high",
+          "description": "Register topic interest with a friendly name"
+        },
+        {
+          "id": "t31-3",
+          "title": "GET /events/subscriptions \u2014 list subscriptions",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return all active subscriptions"
+        },
+        {
+          "id": "t31-4",
+          "title": "DELETE /events/subscription/{id} \u2014 remove subscription",
+          "status": "done",
+          "priority": "medium",
+          "description": "Unsubscribe from topics"
+        },
+        {
+          "id": "t31-5",
+          "title": "GET /events/history \u2014 full event log",
+          "status": "done",
+          "priority": "high",
+          "description": "Return recent published events"
+        },
+        {
+          "id": "t31-6",
+          "title": "GET /events/history/{topic} \u2014 filtered log",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return events for a specific topic"
+        },
+        {
+          "id": "t31-7",
+          "title": "/ws/events \u2014 WebSocket live stream",
+          "status": "done",
+          "priority": "high",
+          "description": "Stream published events to WebSocket subscribers"
+        },
+        {
+          "id": "t31-8",
+          "title": "Events panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with publish form, subscriptions table, event history"
+        }
+      ]
+    },
+    {
+      "id": "m32",
+      "title": "Phase 32 \u2014 Cron Job Scheduler",
+      "description": "Define named cron jobs, trigger manually, view run history, and stream job events over WebSocket",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t32-1",
+          "title": "POST /cron/job \u2014 create/update a job",
+          "status": "done",
+          "priority": "high",
+          "description": "Define a named job with schedule and command"
+        },
+        {
+          "id": "t32-2",
+          "title": "GET /cron/jobs \u2014 list jobs",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all registered cron jobs"
+        },
+        {
+          "id": "t32-3",
+          "title": "DELETE /cron/job/{name} \u2014 remove a job",
+          "status": "done",
+          "priority": "medium",
+          "description": "Delete a named job"
+        },
+        {
+          "id": "t32-4",
+          "title": "POST /cron/job/{name}/run \u2014 trigger job now",
+          "status": "done",
+          "priority": "high",
+          "description": "Execute job command immediately and record result"
+        },
+        {
+          "id": "t32-5",
+          "title": "GET /cron/job/{name}/history \u2014 per-job run history",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return run records for a specific job"
+        },
+        {
+          "id": "t32-6",
+          "title": "GET /cron/history \u2014 global run history",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return all recent run records"
+        },
+        {
+          "id": "t32-7",
+          "title": "/ws/cron \u2014 WebSocket live stream",
+          "status": "done",
+          "priority": "high",
+          "description": "Stream job run results to WebSocket clients"
+        },
+        {
+          "id": "t32-8",
+          "title": "Cron Jobs panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with job definition, run/delete buttons, run history"
+        }
+      ]
+    },
+    {
+      "id": "m33",
+      "title": "Phase 33 \u2014 Audit Log",
+      "description": "Record all significant API actions as structured audit entries, query by level or actor, and view stats",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t33-1",
+          "title": "POST /audit/log \u2014 manual audit entry",
+          "status": "done",
+          "priority": "high",
+          "description": "Append a structured audit log entry"
+        },
+        {
+          "id": "t33-2",
+          "title": "GET /audit/log \u2014 query log",
+          "status": "done",
+          "priority": "high",
+          "description": "Return recent entries filtered by level/actor"
+        },
+        {
+          "id": "t33-3",
+          "title": "GET /audit/log/{id} \u2014 single entry",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch a specific audit entry by ID"
+        },
+        {
+          "id": "t33-4",
+          "title": "GET /audit/stats \u2014 aggregate stats",
+          "status": "done",
+          "priority": "high",
+          "description": "Return counts by level, top actions, top actors"
+        },
+        {
+          "id": "t33-5",
+          "title": "DELETE /audit/log/clear \u2014 purge log",
+          "status": "done",
+          "priority": "medium",
+          "description": "Clear all audit log entries"
+        },
+        {
+          "id": "t33-6",
+          "title": "Audit Log panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with stats overview, manual entry form, entries table with level colors"
+        }
+      ]
+    },
+    {
+      "id": "m34",
+      "title": "Phase 34 \u2014 Feature Flags",
+      "description": "Define named feature flags with enabled/disabled state and optional variants; toggle and check flags via API",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t34-1",
+          "title": "POST /flags/flag \u2014 create/update a flag",
+          "status": "done",
+          "priority": "high",
+          "description": "Define a named flag with enabled state and optional variant"
+        },
+        {
+          "id": "t34-2",
+          "title": "GET /flags \u2014 list all flags",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all registered feature flags"
+        },
+        {
+          "id": "t34-3",
+          "title": "GET /flags/flag/{name} \u2014 get a flag",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch a specific flag by name"
+        },
+        {
+          "id": "t34-4",
+          "title": "DELETE /flags/flag/{name} \u2014 delete a flag",
+          "status": "done",
+          "priority": "medium",
+          "description": "Remove a named flag"
+        },
+        {
+          "id": "t34-5",
+          "title": "POST /flags/flag/{name}/toggle \u2014 toggle a flag",
+          "status": "done",
+          "priority": "high",
+          "description": "Flip enabled state of a flag"
+        },
+        {
+          "id": "t34-6",
+          "title": "GET /flags/check/{name} \u2014 check if flag is on",
+          "status": "done",
+          "priority": "high",
+          "description": "Return enabled state and variant for a flag"
+        },
+        {
+          "id": "t34-7",
+          "title": "Feature Flags panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with flag form, flags table, toggle/delete buttons"
+        }
+      ]
+    },
+    {
+      "id": "m35",
+      "title": "Phase 35 \u2014 Config Profiles",
+      "description": "Define named configuration profiles with key-value maps, activate one as the current profile, and retrieve active values",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t35-1",
+          "title": "POST /config/profile \u2014 create/update a profile",
+          "status": "done",
+          "priority": "high",
+          "description": "Define a named profile with a key-value map"
+        },
+        {
+          "id": "t35-2",
+          "title": "GET /config/profiles \u2014 list all profiles",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all registered profiles and the active one"
+        },
+        {
+          "id": "t35-3",
+          "title": "GET /config/profile/{name} \u2014 get a profile",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch a specific profile by name"
+        },
+        {
+          "id": "t35-4",
+          "title": "DELETE /config/profile/{name} \u2014 delete a profile",
+          "status": "done",
+          "priority": "medium",
+          "description": "Remove a named profile; clears active if it was active"
+        },
+        {
+          "id": "t35-5",
+          "title": "POST /config/profile/{name}/activate \u2014 activate a profile",
+          "status": "done",
+          "priority": "high",
+          "description": "Set a profile as the active configuration"
+        },
+        {
+          "id": "t35-6",
+          "title": "GET /config/active \u2014 get active profile values",
+          "status": "done",
+          "priority": "high",
+          "description": "Return the active profile name and its values"
+        },
+        {
+          "id": "t35-7",
+          "title": "Config Profiles panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with profile form, profiles table, activate/delete buttons, active values display"
+        }
+      ]
+    },
+    {
+      "id": "m36",
+      "title": "Phase 36 \u2014 Notification Center",
+      "description": "Push named notifications with level (info/warn/error/success), mark them read, clear all",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t36-1",
+          "title": "POST /notify \u2014 push a notification",
+          "status": "done",
+          "priority": "high",
+          "description": "Push a notification with title, message, and level"
+        },
+        {
+          "id": "t36-2",
+          "title": "GET /notifications \u2014 list all notifications",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all notifications with unread count"
+        },
+        {
+          "id": "t36-3",
+          "title": "GET /notification/{id} \u2014 get a notification",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch a specific notification by ID"
+        },
+        {
+          "id": "t36-4",
+          "title": "DELETE /notification/{id} \u2014 delete a notification",
+          "status": "done",
+          "priority": "medium",
+          "description": "Remove a specific notification"
+        },
+        {
+          "id": "t36-5",
+          "title": "POST /notifications/mark-read \u2014 mark all read",
+          "status": "done",
+          "priority": "high",
+          "description": "Mark all notifications as read"
+        },
+        {
+          "id": "t36-6",
+          "title": "DELETE /notifications/clear \u2014 clear all",
+          "status": "done",
+          "priority": "high",
+          "description": "Remove all notifications and reset counter"
+        },
+        {
+          "id": "t36-7",
+          "title": "Notification Center panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with send form, inbox list, mark-read/clear buttons"
+        }
+      ]
+    },
+    {
+      "id": "m37",
+      "title": "Phase 37 \u2014 Task Queue",
+      "description": "Enqueue named async tasks with priority, mark them complete, and get queue stats",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t37-1",
+          "title": "POST /queue/task \u2014 enqueue a task",
+          "status": "done",
+          "priority": "high",
+          "description": "Add a task with name, payload, and priority"
+        },
+        {
+          "id": "t37-2",
+          "title": "GET /queue/tasks \u2014 list tasks",
+          "status": "done",
+          "priority": "high",
+          "description": "Return tasks sorted by status then priority"
+        },
+        {
+          "id": "t37-3",
+          "title": "GET /queue/task/{id} \u2014 get a task",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch a specific task by ID"
+        },
+        {
+          "id": "t37-4",
+          "title": "DELETE /queue/task/{id} \u2014 delete a task",
+          "status": "done",
+          "priority": "medium",
+          "description": "Remove a task from the queue"
+        },
+        {
+          "id": "t37-5",
+          "title": "POST /queue/task/{id}/complete \u2014 mark task done",
+          "status": "done",
+          "priority": "high",
+          "description": "Mark a task as completed with timestamp"
+        },
+        {
+          "id": "t37-6",
+          "title": "GET /queue/stats \u2014 queue statistics",
+          "status": "done",
+          "priority": "high",
+          "description": "Return total/pending/done counts"
+        },
+        {
+          "id": "t37-7",
+          "title": "Task Queue panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with enqueue form, task table with complete/delete, stats bar"
+        }
+      ]
     }
   ]
 }

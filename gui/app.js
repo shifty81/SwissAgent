@@ -2108,6 +2108,18 @@
       if (panel === "ci")     loadCIPanel();
       if (panel === "docker") loadDockerPanel();
       if (panel === "deploy") loadDeployPanel();
+      if (panel === "monitor")   loadMonitorPanel();
+      if (panel === "database")  loadDatabasePanel();
+      if (panel === "vault")     loadVaultPanel();
+      if (panel === "webhooks") loadWebhooksPanel();
+      if (panel === "ratelimit") loadRatelimitPanel();
+      if (panel === "events")    loadEventsPanel();
+      if (panel === "cron")      loadCronPanel();
+      if (panel === "audit")     loadAuditPanel();
+      if (panel === "flags")     loadFlagsPanel();
+      if (panel === "cfgprofile") loadCfgProfilePanel();
+      if (panel === "notify")      loadNotifyPanel();
+      if (panel === "taskqueue") loadTaskQueuePanel();
     });
   });
 
@@ -3923,6 +3935,1299 @@
   }
 
   $("btn-deploy-refresh")?.addEventListener("click", () => loadDeployPanel());
+
+  // ── Phase 26: Monitoring & Observability panel ────────────────────────────
+  async function loadMonitorPanel() {
+    const container = $("monitor-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/metrics");
+      const data = await res.json();
+      renderMonitorPanel(data);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderMonitorPanel(metrics) {
+    const container = $("monitor-panel-content");
+    if (!container) return;
+    const bar = (pct) => {
+      const color = pct >= 90 ? "var(--danger,#f44)" : pct >= 70 ? "#f90" : "var(--ok,#4caf50)";
+      return `<div style="height:6px;background:var(--bg3,#333);border-radius:3px;overflow:hidden;margin-top:2px">
+        <div style="width:${Math.min(pct,100)}%;height:100%;background:${color};transition:width .3s"></div>
+      </div>`;
+    };
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">SYSTEM METRICS</div>
+      <div style="font-size:11px;color:var(--text-dim,#aaa);margin-bottom:2px">Updated: ${escHtmlSimple((metrics.ts||"").slice(0,19).replace("T"," "))} UTC</div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--text,#d4d4d4);margin-top:6px">CPU Load (1m avg)</div>
+        <div style="font-size:10px;color:var(--text-dim,#aaa)">${escHtmlSimple(String(metrics.cpu_load_percent))}% &nbsp;|&nbsp; 1m: ${escHtmlSimple(String((metrics.cpu_load_avg||{})['1m']||0))} 5m: ${escHtmlSimple(String((metrics.cpu_load_avg||{})['5m']||0))} 15m: ${escHtmlSimple(String((metrics.cpu_load_avg||{})['15m']||0))}</div>
+        ${bar(metrics.cpu_load_percent||0)}
+      </div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--text,#d4d4d4)">Memory</div>
+        <div style="font-size:10px;color:var(--text-dim,#aaa)">${escHtmlSimple(String(metrics.mem_percent))}% used &nbsp;|&nbsp; ${escHtmlSimple(String(Math.round((metrics.mem_used_kb||0)/1024)))} / ${escHtmlSimple(String(Math.round((metrics.mem_total_kb||0)/1024)))} MB</div>
+        ${bar(metrics.mem_percent||0)}
+      </div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--text,#d4d4d4)">Disk</div>
+        <div style="font-size:10px;color:var(--text-dim,#aaa)">${escHtmlSimple(String(metrics.disk_percent))}% used &nbsp;|&nbsp; ${escHtmlSimple(String(Math.round((metrics.disk_used_bytes||0)/1e9*10)/10))} / ${escHtmlSimple(String(Math.round((metrics.disk_total_bytes||0)/1e9*10)/10))} GB</div>
+        ${bar(metrics.disk_percent||0)}
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">SET ALERT</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:4px">
+        <input id="mon-alert-name"      style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;grid-column:span 1" placeholder="alert name" />
+        <select id="mon-alert-metric"   style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px">
+          <option value="cpu_load_percent">CPU</option>
+          <option value="mem_percent">Memory</option>
+          <option value="disk_percent">Disk</option>
+        </select>
+        <input id="mon-alert-threshold" style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="threshold %" type="number" />
+      </div>
+      <button id="btn-mon-alert-save" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Save Alert</button>
+      <div id="mon-alerts-list"></div>
+    `;
+
+    $("btn-monitor-refresh")?.addEventListener("click", () => loadMonitorPanel());
+    $("btn-mon-alert-save")?.addEventListener("click", async () => {
+      const name = $("mon-alert-name")?.value.trim();
+      const metric = $("mon-alert-metric")?.value;
+      const threshold = parseFloat($("mon-alert-threshold")?.value || "0");
+      if (!name) return;
+      try {
+        await fetch("/metrics/alert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, metric, threshold }),
+        });
+        const r2 = await fetch("/metrics/alerts");
+        const d2 = await r2.json();
+        const alertsList = $("mon-alerts-list");
+        if (alertsList) {
+          alertsList.innerHTML = (d2.alerts || []).map((a) =>
+            `<div style="font-size:10px;color:var(--text-dim,#aaa);margin:1px 0">${escHtmlSimple(a.name)}: ${escHtmlSimple(a.metric)} &ge; ${escHtmlSimple(String(a.threshold))}%
+              <button data-name="${escHtmlSimple(a.name)}" class="btn-mon-alert-del" style="font-size:9px;padding:1px 3px;margin-left:4px">✕</button></div>`
+          ).join("");
+          alertsList.querySelectorAll(".btn-mon-alert-del").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              await fetch(`/metrics/alert/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+              loadMonitorPanel();
+            });
+          });
+        }
+      } catch (e) {
+        alert(`Error: ${e.message}`);
+      }
+    });
+  }
+
+  // ── Phase 27: Database Management panel ──────────────────────────────────
+  async function loadDatabasePanel() {
+    const container = $("database-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/db/connections");
+      const data = await res.json();
+      renderDatabasePanel(data.connections || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderDatabasePanel(connections) {
+    const container = $("database-panel-content");
+    if (!container) return;
+    const connOptions = connections.map((c) =>
+      `<option value="${escHtmlSimple(c.id)}">${escHtmlSimple(c.alias)} (#${escHtmlSimple(c.id)})</option>`
+    ).join("");
+    const connRows = connections.map((c) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(c.id)}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(c.alias)}</td>
+        <td style="padding:2px 4px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px" title="${escHtmlSimple(c.path)}">${escHtmlSimple(c.path.split('/').pop())}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-db-schema" data-id="${escHtmlSimple(c.id)}" style="font-size:10px;padding:1px 4px">⬡</button>
+          <button class="btn-db-del"    data-id="${escHtmlSimple(c.id)}" style="font-size:10px;padding:1px 4px">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">CONNECT (SQLite)</div>
+      <input id="db-path"  style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="path relative to workspace/ (e.g. mydb.sqlite)" />
+      <input id="db-alias" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="alias (optional)" />
+      <button id="btn-db-connect" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Connect</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">CONNECTIONS</div>
+      ${connections.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Alias</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">File</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)"></th>
+          </tr></thead>
+          <tbody>${connRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No connections.</div>'}
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">QUERY</div>
+      <select id="db-query-conn" style="width:100%;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px">
+        <option value="">— select connection —</option>
+        ${connOptions}
+      </select>
+      <textarea id="db-sql" style="width:100%;box-sizing:border-box;height:60px;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;font-family:var(--font-mono,monospace);resize:vertical;margin-bottom:4px" placeholder="SELECT * FROM ..."></textarea>
+      <button id="btn-db-run-query" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Run Query</button>
+      <div id="db-query-result" style="font-size:10px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;overflow:auto;max-height:140px;white-space:pre"></div>
+      <div id="db-schema-result" style="margin-top:8px"></div>
+    `;
+
+    $("btn-db-refresh")?.addEventListener("click", () => loadDatabasePanel());
+
+    $("btn-db-connect")?.addEventListener("click", async () => {
+      const path = $("db-path")?.value.trim();
+      if (!path) return;
+      const alias = $("db-alias")?.value.trim();
+      try {
+        const res = await fetch("/db/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, alias }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadDatabasePanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    $("btn-db-run-query")?.addEventListener("click", async () => {
+      const conn_id = $("db-query-conn")?.value;
+      const sql = $("db-sql")?.value.trim();
+      if (!conn_id || !sql) return;
+      const resultDiv = $("db-query-result");
+      if (resultDiv) resultDiv.textContent = "Running…";
+      try {
+        const res = await fetch("/db/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connection_id: conn_id, sql }),
+        });
+        const data = await res.json();
+        if (!res.ok) { if (resultDiv) resultDiv.textContent = data.detail || "Error"; return; }
+        if (data.columns && data.columns.length) {
+          const header = data.columns.join(" | ");
+          const rows = (data.rows || []).map((r) => Object.values(r).join(" | ")).join("\n");
+          if (resultDiv) resultDiv.textContent = `${header}\n${"-".repeat(header.length)}\n${rows}\n(${data.row_count} rows)`;
+        } else {
+          if (resultDiv) resultDiv.textContent = `OK — ${data.row_count} row(s) affected`;
+        }
+      } catch (e) { if (resultDiv) resultDiv.textContent = `Error: ${e.message}`; }
+    });
+
+    container.querySelectorAll(".btn-db-schema").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          const res = await fetch(`/db/schema/${encodeURIComponent(btn.dataset.id)}`);
+          const data = await res.json();
+          const schemaDiv = $("db-schema-result");
+          if (!schemaDiv) return;
+          if (!data.tables || !data.tables.length) { schemaDiv.innerHTML = '<div style="font-size:11px;color:var(--text-dim)">No tables found.</div>'; return; }
+          schemaDiv.innerHTML = `<div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">SCHEMA</div>` +
+            data.tables.map((t) => `
+              <div style="font-size:11px;font-weight:600;color:var(--text,#d4d4d4);margin-top:4px">${escHtmlSimple(t.name)} <span style="color:var(--text-dim,#aaa);font-size:10px">(${escHtmlSimple(t.type)})</span></div>
+              <div style="font-size:10px;color:var(--text-dim,#aaa);padding-left:8px">${(t.columns||[]).map((c) => `${escHtmlSimple(c.name)} <span style="color:#888">${escHtmlSimple(c.type)}</span>${c.pk?" <b>PK</b>":""}${c.not_null?" NOT NULL":""}`).join(", ")}</div>
+            `).join("");
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-db-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/db/connection/${encodeURIComponent(btn.dataset.id)}`, { method: "DELETE" });
+          loadDatabasePanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 28: Secret & Environment Vault panel ───────────────────────────
+  async function loadVaultPanel() {
+    const container = $("vault-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/vault/keys");
+      const data = await res.json();
+      renderVaultPanel(data.keys || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderVaultPanel(keys) {
+    const container = $("vault-panel-content");
+    if (!container) return;
+    const keyRows = keys.map((k) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(k.key)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim,#aaa)">${escHtmlSimple(k.description || "")}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-vault-get" data-key="${escHtmlSimple(k.key)}" style="font-size:10px;padding:1px 4px" title="Reveal value">👁</button>
+          <button class="btn-vault-del" data-key="${escHtmlSimple(k.key)}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">SET SECRET</div>
+      <input id="vault-key"   style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="KEY_NAME" />
+      <input id="vault-value" type="password" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="secret value" />
+      <input id="vault-desc"  style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="description (optional)" />
+      <button id="btn-vault-set" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Save Secret</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">STORED KEYS</div>
+      ${keys.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Key</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Desc</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)"></th>
+          </tr></thead>
+          <tbody>${keyRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No secrets stored.</div>'}
+
+      <div id="vault-reveal-area" style="display:none;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--text-muted,#888);margin-bottom:2px">Revealed value:</div>
+        <code id="vault-reveal-value" style="font-size:11px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;display:block;word-break:break-all"></code>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">EXPORT</div>
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
+        <select id="vault-export-format" style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px">
+          <option value="env">.env format</option>
+          <option value="json">JSON format</option>
+        </select>
+        <button id="btn-vault-export" style="font-size:11px;padding:3px 8px">Export</button>
+      </div>
+      <pre id="vault-export-output" style="font-size:10px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;overflow:auto;max-height:80px;white-space:pre-wrap;display:none"></pre>
+    `;
+
+    $("btn-vault-refresh")?.addEventListener("click", () => loadVaultPanel());
+
+    $("btn-vault-set")?.addEventListener("click", async () => {
+      const key   = $("vault-key")?.value.trim();
+      const value = $("vault-value")?.value;
+      const desc  = $("vault-desc")?.value.trim();
+      if (!key || !value) return;
+      try {
+        await fetch("/vault/set", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, value, description: desc }),
+        });
+        loadVaultPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-vault-get").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          const res = await fetch(`/vault/get/${encodeURIComponent(btn.dataset.key)}`);
+          const data = await res.json();
+          const area = $("vault-reveal-area");
+          const val  = $("vault-reveal-value");
+          if (area && val) {
+            val.textContent = data.value || "";
+            area.style.display = "block";
+            setTimeout(() => { area.style.display = "none"; }, 10000);
+          }
+        } catch (e) { alert(`Error: ${e.message}`); }
+      });
+    });
+
+    container.querySelectorAll(".btn-vault-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/vault/key/${encodeURIComponent(btn.dataset.key)}`, { method: "DELETE" });
+          loadVaultPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    $("btn-vault-export")?.addEventListener("click", async () => {
+      const format = $("vault-export-format")?.value || "env";
+      try {
+        const res = await fetch("/vault/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ format }),
+        });
+        const data = await res.json();
+        const out = $("vault-export-output");
+        if (out) {
+          out.textContent = typeof data.data === "string" ? data.data : JSON.stringify(data.data, null, 2);
+          out.style.display = "block";
+        }
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+  }
+
+  // ── Phase 29: WebHook Manager panel ──────────────────────────────────────
+  async function loadWebhooksPanel() {
+    const container = $("webhooks-panel-content");
+    if (!container) return;
+    try {
+      const [whRes, dlRes] = await Promise.all([
+        fetch("/webhooks"),
+        fetch("/webhook/deliveries"),
+      ]);
+      const whData = await whRes.json();
+      const dlData = await dlRes.json();
+      renderWebhooksPanel(whData.webhooks || [], dlData.deliveries || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderWebhooksPanel(webhooks, deliveries) {
+    const container = $("webhooks-panel-content");
+    if (!container) return;
+
+    const whRows = webhooks.map((w) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(w.id)}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(w.name)}</td>
+        <td style="padding:2px 4px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px" title="${escHtmlSimple(w.url)}">${escHtmlSimple(w.url)}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-wh-deliver" data-id="${escHtmlSimple(w.id)}" style="font-size:10px;padding:1px 4px" title="Deliver">▶</button>
+          <button class="btn-wh-del"     data-id="${escHtmlSimple(w.id)}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    const dlRows = deliveries.slice().reverse().slice(0, 10).map((d) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(String(d.id))}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(d.webhook_name)}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(d.event)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${d.status_code >= 200 && d.status_code < 300 ? "var(--ok,#4caf50)" : "var(--danger,#f44)"}">${escHtmlSimple(String(d.status_code))}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">REGISTER WEBHOOK</div>
+      <input id="wh-name"   style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="webhook name" />
+      <input id="wh-url"    style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="https://example.com/hook" />
+      <input id="wh-events" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="events (comma-separated, empty=all)" />
+      <button id="btn-wh-register" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Register</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">WEBHOOKS</div>
+      ${webhooks.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">URL</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)"></th>
+          </tr></thead>
+          <tbody>${whRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No webhooks registered.</div>'}
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RECENT DELIVERIES</div>
+      ${deliveries.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Hook</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Event</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Status</th>
+          </tr></thead>
+          <tbody>${dlRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No deliveries yet.</div>'}
+    `;
+
+    $("btn-webhooks-refresh")?.addEventListener("click", () => loadWebhooksPanel());
+
+    $("btn-wh-register")?.addEventListener("click", async () => {
+      const name   = $("wh-name")?.value.trim();
+      const url    = $("wh-url")?.value.trim();
+      const evts   = ($("wh-events")?.value.trim() || "").split(",").map((s) => s.trim()).filter(Boolean);
+      if (!name || !url) return;
+      try {
+        const res = await fetch("/webhook/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, url, events: evts }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadWebhooksPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-wh-deliver").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/webhook/deliver/${encodeURIComponent(btn.dataset.id)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event: "manual", payload: {} }),
+          });
+          const data = await res.json();
+          if (!res.ok) { alert(data.detail || "Error"); return; }
+          loadWebhooksPanel();
+        } catch (e) {
+          alert(`Error: ${e.message}`);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    container.querySelectorAll(".btn-wh-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/webhook/${encodeURIComponent(btn.dataset.id)}`, { method: "DELETE" });
+          loadWebhooksPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 30: API Rate Limiting & Quota panel ────────────────────────────
+  async function loadRatelimitPanel() {
+    const container = $("ratelimit-panel-content");
+    if (!container) return;
+    try {
+      const [rulesRes, statusRes] = await Promise.all([
+        fetch("/ratelimit/rules"),
+        fetch("/ratelimit/status"),
+      ]);
+      const rulesData  = await rulesRes.json();
+      const statusData = await statusRes.json();
+      const statusMap  = {};
+      (statusData.status || []).forEach((s) => { statusMap[s.name] = s; });
+      renderRatelimitPanel(rulesData.rules || [], statusMap);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderRatelimitPanel(rules, statusMap) {
+    const container = $("ratelimit-panel-content");
+    if (!container) return;
+
+    const ruleRows = rules.map((r) => {
+      const s = statusMap[r.name] || {};
+      const pct = r.limit > 0 ? Math.round(((s.used || 0) / r.limit) * 100) : 0;
+      const color = s.throttled ? "var(--danger,#f44)" : pct >= 80 ? "var(--warn,#fc0)" : "var(--ok,#4caf50)";
+      return `
+        <tr>
+          <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(r.name)}</td>
+          <td style="padding:2px 4px;font-size:10px;color:${color}">${s.used ?? "?"} / ${r.limit}</td>
+          <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${r.window_seconds}s</td>
+          <td style="padding:2px 4px">
+            <button class="btn-rl-check" data-name="${escHtmlSimple(r.name)}" style="font-size:10px;padding:1px 4px" title="Check (consumes 1 call)">▶</button>
+            <button class="btn-rl-reset" data-name="${escHtmlSimple(r.name)}" style="font-size:10px;padding:1px 4px" title="Reset counter">↺</button>
+            <button class="btn-rl-del"   data-name="${escHtmlSimple(r.name)}" style="font-size:10px;padding:1px 4px" title="Delete rule">✕</button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">ADD RULE</div>
+      <input id="rl-name"    style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="rule name" />
+      <div style="display:flex;gap:4px;margin-bottom:4px">
+        <input id="rl-limit"  type="number" min="1" value="100" style="width:50%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="limit" />
+        <input id="rl-window" type="number" min="1" value="60"  style="width:50%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="window (s)" />
+      </div>
+      <button id="btn-rl-add" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Add Rule</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RULES</div>
+      ${rules.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:4px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Rule</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Used</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Window</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)"></th>
+          </tr></thead>
+          <tbody>${ruleRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No rules defined.</div>'}
+      <div id="rl-result" style="font-size:11px;color:var(--text-muted);min-height:18px;margin-top:4px"></div>
+    `;
+
+    $("btn-ratelimit-refresh")?.addEventListener("click", () => loadRatelimitPanel());
+
+    $("btn-rl-add")?.addEventListener("click", async () => {
+      const name   = $("rl-name")?.value.trim();
+      const limit  = parseInt($("rl-limit")?.value || "100", 10);
+      const window_ = parseInt($("rl-window")?.value || "60", 10);
+      if (!name) return;
+      try {
+        const res = await fetch("/ratelimit/rule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, limit, window_seconds: window_ }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadRatelimitPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-rl-check").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          const res  = await fetch(`/ratelimit/check/${encodeURIComponent(btn.dataset.name)}`, { method: "POST" });
+          const data = await res.json();
+          const result = $("rl-result");
+          if (result) result.textContent = `${data.rule}: ${data.allowed ? "✅ allowed" : "🚫 throttled"} (${data.used}/${data.used + data.remaining} used)`;
+          loadRatelimitPanel();
+        } catch (e) { alert(`Error: ${e.message}`); }
+      });
+    });
+
+    container.querySelectorAll(".btn-rl-reset").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/ratelimit/reset/${encodeURIComponent(btn.dataset.name)}`, { method: "POST" });
+          loadRatelimitPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-rl-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/ratelimit/rule/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+          loadRatelimitPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 31: Event Bus & Pub/Sub panel ──────────────────────────────────
+  async function loadEventsPanel() {
+    const container = $("events-panel-content");
+    if (!container) return;
+    try {
+      const [subRes, histRes] = await Promise.all([
+        fetch("/events/subscriptions"),
+        fetch("/events/history"),
+      ]);
+      const subData  = await subRes.json();
+      const histData = await histRes.json();
+      renderEventsPanel(subData.subscriptions || [], histData.events || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderEventsPanel(subscriptions, events) {
+    const container = $("events-panel-content");
+    if (!container) return;
+
+    const subRows = subscriptions.map((s) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(s.id)}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(s.name || "(unnamed)")}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple((s.topics || []).join(", "))}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-ev-unsub" data-id="${escHtmlSimple(s.id)}" style="font-size:10px;padding:1px 4px" title="Unsubscribe">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    const evRows = events.slice().reverse().slice(0, 15).map((e) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(String(e.id))}</td>
+        <td style="padding:2px 4px;font-size:10px;font-weight:600">${escHtmlSimple(e.topic)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(e.source || "—")}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple((e.ts || "").slice(11, 19))}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">PUBLISH EVENT</div>
+      <input id="ev-topic"   style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="topic name" />
+      <input id="ev-source"  style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="source (optional)" />
+      <textarea id="ev-payload" rows="2" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px;resize:vertical;font-family:var(--font-mono,monospace)" placeholder='{"key":"value"}'></textarea>
+      <button id="btn-ev-publish" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Publish</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">SUBSCRIBE</div>
+      <input id="ev-sub-topics" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="topics (comma-separated)" />
+      <input id="ev-sub-name"   style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="subscriber name (optional)" />
+      <button id="btn-ev-subscribe" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Subscribe</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">SUBSCRIPTIONS</div>
+      ${subscriptions.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Topics</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${subRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No subscriptions.</div>'}
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RECENT EVENTS</div>
+      ${events.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Topic</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Source</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Time</th>
+          </tr></thead>
+          <tbody>${evRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No events published yet.</div>'}
+    `;
+
+    $("btn-events-refresh")?.addEventListener("click", () => loadEventsPanel());
+
+    $("btn-ev-publish")?.addEventListener("click", async () => {
+      const topic   = $("ev-topic")?.value.trim();
+      const source  = $("ev-source")?.value.trim();
+      let payload   = {};
+      try { payload = JSON.parse($("ev-payload")?.value || "{}"); } catch { payload = {}; }
+      if (!topic) return;
+      try {
+        const res = await fetch("/events/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topic, source, payload }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadEventsPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    $("btn-ev-subscribe")?.addEventListener("click", async () => {
+      const topicsRaw = $("ev-sub-topics")?.value.trim();
+      const name      = $("ev-sub-name")?.value.trim();
+      const topics    = topicsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+      if (!topics.length) return;
+      try {
+        const res = await fetch("/events/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topics, name }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadEventsPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-ev-unsub").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/events/subscription/${encodeURIComponent(btn.dataset.id)}`, { method: "DELETE" });
+          loadEventsPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 32: Cron Job Scheduler panel ───────────────────────────────────
+  async function loadCronPanel() {
+    const container = $("cron-panel-content");
+    if (!container) return;
+    try {
+      const [jobsRes, histRes] = await Promise.all([
+        fetch("/cron/jobs"),
+        fetch("/cron/history"),
+      ]);
+      const jobsData = await jobsRes.json();
+      const histData = await histRes.json();
+      renderCronPanel(jobsData.jobs || [], histData.history || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderCronPanel(jobs, history) {
+    const container = $("cron-panel-content");
+    if (!container) return;
+
+    const jobRows = jobs.map((j) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(j.name)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(j.schedule)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${j.enabled ? "var(--ok,#4caf50)" : "var(--text-dim)"}">${j.enabled ? "on" : "off"}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${j.run_count ?? 0}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-cron-run" data-name="${escHtmlSimple(j.name)}" style="font-size:10px;padding:1px 4px" title="Run now">▶</button>
+          <button class="btn-cron-del" data-name="${escHtmlSimple(j.name)}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    const histRows = history.slice().reverse().slice(0, 10).map((r) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(r.job)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${r.exit_code === 0 ? "var(--ok,#4caf50)" : "var(--danger,#f44)"}">${r.exit_code === 0 ? "✓" : "✗"} ${r.exit_code}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple((r.started_at || "").slice(11, 19))}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">ADD JOB</div>
+      <input id="cron-name"     style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="job name" />
+      <input id="cron-schedule" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="schedule (e.g. every 60s)" />
+      <input id="cron-command"  style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="command (e.g. echo hello)" />
+      <button id="btn-cron-add" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Add Job</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">JOBS</div>
+      ${jobs.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Schedule</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Enabled</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Runs</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${jobRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No jobs defined.</div>'}
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RECENT RUNS</div>
+      ${history.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Job</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Result</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Time</th>
+          </tr></thead>
+          <tbody>${histRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No runs yet.</div>'}
+    `;
+
+    $("btn-cron-refresh")?.addEventListener("click", () => loadCronPanel());
+
+    $("btn-cron-add")?.addEventListener("click", async () => {
+      const name     = $("cron-name")?.value.trim();
+      const schedule = $("cron-schedule")?.value.trim();
+      const command  = $("cron-command")?.value.trim();
+      if (!name || !command) return;
+      try {
+        const res = await fetch("/cron/job", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, schedule: schedule || "manual", command }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadCronPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-cron-run").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/cron/job/${encodeURIComponent(btn.dataset.name)}/run`, { method: "POST" });
+          loadCronPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-cron-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/cron/job/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+          loadCronPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 33: Audit Log panel ─────────────────────────────────────────────
+  async function loadAuditPanel() {
+    const container = $("audit-panel-content");
+    if (!container) return;
+    try {
+      const [logRes, statsRes] = await Promise.all([
+        fetch("/audit/log?limit=30"),
+        fetch("/audit/stats"),
+      ]);
+      const logData   = await logRes.json();
+      const statsData = await statsRes.json();
+      renderAuditPanel(logData.entries || [], statsData);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderAuditPanel(entries, stats) {
+    const container = $("audit-panel-content");
+    if (!container) return;
+
+    const levelColor = (lv) =>
+      lv === "error" ? "var(--danger,#f44)" : lv === "warn" ? "var(--warn,#fc0)" : "var(--ok,#4caf50)";
+
+    const entryRows = entries.slice().reverse().slice(0, 20).map((e) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;color:${levelColor(e.level)}">${escHtmlSimple(e.level)}</td>
+        <td style="padding:2px 4px;font-size:10px;font-weight:600">${escHtmlSimple(e.action)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(e.actor)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple((e.ts || "").slice(11, 19))}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">STATS</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:11px">
+        <span>Total: <b>${stats.total ?? 0}</b></span>
+        <span style="color:var(--ok,#4caf50)">info: ${stats.by_level?.info ?? 0}</span>
+        <span style="color:var(--warn,#fc0)">warn: ${stats.by_level?.warn ?? 0}</span>
+        <span style="color:var(--danger,#f44)">error: ${stats.by_level?.error ?? 0}</span>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">MANUAL ENTRY</div>
+      <input id="audit-action" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="action" />
+      <div style="display:flex;gap:4px;margin-bottom:4px">
+        <input id="audit-actor"  style="width:50%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" placeholder="actor" />
+        <select id="audit-level" style="width:50%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px">
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </select>
+      </div>
+      <input id="audit-detail" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="detail (optional)" />
+      <div style="display:flex;gap:4px;margin-bottom:8px">
+        <button id="btn-audit-add"   style="font-size:11px;padding:3px 8px">Log Entry</button>
+        <button id="btn-audit-clear" style="font-size:11px;padding:3px 8px;color:var(--danger,#f44)" title="Clear all audit log entries">Clear All</button>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RECENT ENTRIES</div>
+      ${entries.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Level</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Action</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Actor</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Time</th>
+          </tr></thead>
+          <tbody>${entryRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No entries yet.</div>'}
+    `;
+
+    $("btn-audit-refresh")?.addEventListener("click", () => loadAuditPanel());
+
+    $("btn-audit-add")?.addEventListener("click", async () => {
+      const action = $("audit-action")?.value.trim();
+      const actor  = $("audit-actor")?.value.trim() || "manual";
+      const level  = $("audit-level")?.value || "info";
+      const detail = $("audit-detail")?.value.trim();
+      if (!action) return;
+      try {
+        const res = await fetch("/audit/log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, actor, level, detail }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadAuditPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    $("btn-audit-clear")?.addEventListener("click", async () => {
+      if (!confirm("Clear all audit log entries?")) return;
+      try {
+        await fetch("/audit/log/clear", { method: "DELETE" });
+        loadAuditPanel();
+      } catch (e) { /* ignore */ }
+    });
+  }
+
+  // ── Phase 34: Feature Flags panel ────────────────────────────────────────
+  async function loadFlagsPanel() {
+    const container = $("flags-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/flags");
+      const data = await res.json();
+      renderFlagsPanel(data.flags || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderFlagsPanel(flags) {
+    const container = $("flags-panel-content");
+    if (!container) return;
+
+    const flagRows = flags.map((f) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(f.name)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${f.enabled ? "var(--ok,#4caf50)" : "var(--text-dim)"}">${f.enabled ? "on" : "off"}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(f.variant || "")}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-flag-toggle" data-name="${escHtmlSimple(f.name)}" style="font-size:10px;padding:1px 4px" title="Toggle">${f.enabled ? "⏸" : "▶"}</button>
+          <button class="btn-flag-del"    data-name="${escHtmlSimple(f.name)}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">ADD / UPDATE FLAG</div>
+      <input id="flag-name"    style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="flag name" />
+      <input id="flag-variant" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="variant (optional)" />
+      <input id="flag-desc"    style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="description (optional)" />
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <label style="font-size:11px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="flag-enabled" checked /> Enabled</label>
+        <button id="btn-flag-add" style="font-size:11px;padding:3px 8px">Save Flag</button>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">FLAGS</div>
+      ${flags.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">State</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Variant</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${flagRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No flags defined.</div>'}
+    `;
+
+    $("btn-flags-refresh")?.addEventListener("click", () => loadFlagsPanel());
+
+    $("btn-flag-add")?.addEventListener("click", async () => {
+      const name    = $("flag-name")?.value.trim();
+      const variant = $("flag-variant")?.value.trim();
+      const desc    = $("flag-desc")?.value.trim();
+      const enabled = $("flag-enabled")?.checked ?? true;
+      if (!name) return;
+      try {
+        const res = await fetch("/flags/flag", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, variant, description: desc, enabled }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadFlagsPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-flag-toggle").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/flags/flag/${encodeURIComponent(btn.dataset.name)}/toggle`, { method: "POST" });
+          loadFlagsPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-flag-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/flags/flag/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+          loadFlagsPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 35: Config Profiles panel ──────────────────────────────────────
+  async function loadCfgProfilePanel() {
+    const container = $("cfgprofile-panel-content");
+    if (!container) return;
+    try {
+      const [profilesRes, activeRes] = await Promise.all([
+        fetch("/config/profiles"),
+        fetch("/config/active"),
+      ]);
+      const profilesData = await profilesRes.json();
+      const activeData   = await activeRes.json();
+      renderCfgProfilePanel(profilesData.profiles || [], profilesData.active || "", activeData);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderCfgProfilePanel(profiles, activeProfile, activeData) {
+    const container = $("cfgprofile-panel-content");
+    if (!container) return;
+
+    const profileRows = profiles.map((p) => {
+      const isActive = p.name === activeProfile;
+      return `
+        <tr style="${isActive ? "background:rgba(33,150,243,0.1)" : ""}">
+          <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(p.name)}</td>
+          <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${Object.keys(p.values || {}).length} keys</td>
+          <td style="padding:2px 4px;font-size:10px;color:${isActive ? "var(--info,#2196f3)" : "var(--text-dim)"}">${isActive ? "● active" : ""}</td>
+          <td style="padding:2px 4px">
+            ${!isActive ? `<button class="btn-cfgprofile-activate" data-name="${escHtmlSimple(p.name)}" style="font-size:10px;padding:1px 4px" title="Activate">✓</button>` : ""}
+            <button class="btn-cfgprofile-del" data-name="${escHtmlSimple(p.name)}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    const activeValues = activeData?.values || {};
+    const activeRows = Object.entries(activeValues).map(([k, v]) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace);color:var(--text-dim)">${escHtmlSimple(k)}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(v)}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">ADD / UPDATE PROFILE</div>
+      <input id="cfgprofile-name" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="profile name" />
+      <textarea id="cfgprofile-values" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;height:60px;resize:vertical;margin-bottom:4px;font-family:var(--font-mono,monospace)" placeholder='key=value pairs (one per line)'></textarea>
+      <button id="btn-cfgprofile-add" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Save Profile</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">PROFILES</div>
+      ${profiles.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Keys</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Status</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${profileRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No profiles defined.</div>'}
+
+      ${activeData?.active ? `
+        <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">ACTIVE VALUES <span style="font-size:10px;color:var(--info,#2196f3)">(${escHtmlSimple(activeData.active)})</span></div>
+        ${Object.keys(activeValues).length ? `
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Key</th>
+              <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Value</th>
+            </tr></thead>
+            <tbody>${activeRows}</tbody>
+          </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">Profile has no keys.</div>'}
+      ` : ""}
+    `;
+
+    $("btn-cfgprofile-refresh")?.addEventListener("click", () => loadCfgProfilePanel());
+
+    $("btn-cfgprofile-add")?.addEventListener("click", async () => {
+      const name   = $("cfgprofile-name")?.value.trim();
+      const rawVal = $("cfgprofile-values")?.value || "";
+      if (!name) return;
+      const values = {};
+      for (const line of rawVal.split("\n")) {
+        const idx = line.indexOf("=");
+        if (idx > 0) values[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+      }
+      try {
+        const res = await fetch("/config/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, values }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadCfgProfilePanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-cfgprofile-activate").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/config/profile/${encodeURIComponent(btn.dataset.name)}/activate`, { method: "POST" });
+          loadCfgProfilePanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-cfgprofile-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/config/profile/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+          loadCfgProfilePanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 36: Notification Center panel ──────────────────────────────────
+  async function loadNotifyPanel() {
+    const container = $("notify-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/notifications");
+      const data = await res.json();
+      renderNotifyPanel(data.notifications || [], data.unread || 0);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderNotifyPanel(notifications, unread) {
+    const container = $("notify-panel-content");
+    if (!container) return;
+
+    const levelColor = { info: "var(--info,#2196f3)", warn: "var(--warn,#ff9800)", error: "var(--danger,#f44336)", success: "var(--ok,#4caf50)" };
+
+    const rows = notifications.slice().reverse().map((n) => `
+      <div style="padding:6px 4px;border-bottom:1px solid var(--border,#333);opacity:${n.read ? "0.55" : "1"}">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:10px;font-weight:600;color:${levelColor[n.level] || "var(--text)"}">
+            [${escHtmlSimple((n.level || "info").toUpperCase())}] ${escHtmlSimple(n.title)}
+          </span>
+          <button class="btn-notify-del" data-id="${n.id}" style="font-size:10px;padding:0 4px;background:none;border:none;color:var(--text-dim);cursor:pointer" title="Delete">✕</button>
+        </div>
+        ${n.message ? `<div style="font-size:10px;color:var(--text-dim);margin-top:2px">${escHtmlSimple(n.message)}</div>` : ""}
+        <div style="font-size:9px;color:var(--text-dim);margin-top:2px">${escHtmlSimple(n.created_at || "")}</div>
+      </div>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">SEND NOTIFICATION</div>
+      <input id="notify-title"   style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="title" />
+      <input id="notify-message" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="message (optional)" />
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <select id="notify-level" style="font-size:11px;padding:2px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px">
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+          <option value="success">success</option>
+        </select>
+        <button id="btn-notify-send" style="font-size:11px;padding:3px 8px">Send</button>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">
+        INBOX <span style="font-size:10px;color:var(--info,#2196f3)">${unread} unread</span>
+      </div>
+      ${notifications.length ? rows : '<div style="font-size:11px;color:var(--text-dim)">No notifications.</div>'}
+    `;
+
+    $("btn-notify-refresh")?.addEventListener("click",   () => loadNotifyPanel());
+    $("btn-notify-mark-read")?.addEventListener("click", async () => {
+      await fetch("/notifications/mark-read", { method: "POST" });
+      loadNotifyPanel();
+    });
+    $("btn-notify-clear")?.addEventListener("click", async () => {
+      await fetch("/notifications/clear", { method: "DELETE" });
+      loadNotifyPanel();
+    });
+
+    $("btn-notify-send")?.addEventListener("click", async () => {
+      const title   = $("notify-title")?.value.trim();
+      const message = $("notify-message")?.value.trim();
+      const level   = $("notify-level")?.value || "info";
+      if (!title) return;
+      try {
+        const res = await fetch("/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, message, level }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadNotifyPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-notify-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/notification/${btn.dataset.id}`, { method: "DELETE" });
+          loadNotifyPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 37: Task Queue panel ────────────────────────────────────────────
+  async function loadTaskQueuePanel() {
+    const container = $("taskqueue-panel-content");
+    if (!container) return;
+    try {
+      const [tasksRes, statsRes] = await Promise.all([
+        fetch("/queue/tasks"),
+        fetch("/queue/stats"),
+      ]);
+      const tasksData = await tasksRes.json();
+      const statsData = await statsRes.json();
+      renderTaskQueuePanel(tasksData.tasks || [], statsData);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderTaskQueuePanel(tasks, stats) {
+    const container = $("taskqueue-panel-content");
+    if (!container) return;
+
+    const taskRows = tasks.map((t) => `
+      <tr style="opacity:${t.status === "done" ? "0.5" : "1"}">
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(t.name)}</td>
+        <td style="padding:2px 4px;font-size:10px;text-align:center">${t.priority}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${t.status === "pending" ? "var(--warn,#ff9800)" : "var(--ok,#4caf50)"}">${t.status}</td>
+        <td style="padding:2px 4px">
+          ${t.status === "pending" ? `<button class="btn-tq-complete" data-id="${t.id}" style="font-size:10px;padding:1px 4px" title="Mark done">✓</button>` : ""}
+          <button class="btn-tq-del" data-id="${t.id}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">ENQUEUE TASK</div>
+      <input id="tq-name"    style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="task name" />
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <label style="font-size:11px">Priority (1-10):</label>
+        <input id="tq-priority" type="number" min="1" max="10" value="5" style="width:48px;padding:2px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px" />
+        <button id="btn-tq-add" style="font-size:11px;padding:3px 8px">Enqueue</button>
+      </div>
+
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">
+        📊 Total: <b>${stats.total || 0}</b> | Pending: <b style="color:var(--warn,#ff9800)">${stats.pending || 0}</b> | Done: <b style="color:var(--ok,#4caf50)">${stats.done || 0}</b>
+      </div>
+
+      ${tasks.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:center;padding:2px 4px;color:var(--text-muted,#888)">Pri</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Status</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${taskRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim)">Queue is empty.</div>'}
+    `;
+
+    $("btn-taskqueue-refresh")?.addEventListener("click", () => loadTaskQueuePanel());
+
+    $("btn-tq-add")?.addEventListener("click", async () => {
+      const name     = $("tq-name")?.value.trim();
+      const priority = parseInt($("tq-priority")?.value || "5", 10);
+      if (!name) return;
+      try {
+        const res = await fetch("/queue/task", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, priority }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadTaskQueuePanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-tq-complete").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/queue/task/${btn.dataset.id}/complete`, { method: "POST" });
+          loadTaskQueuePanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    container.querySelectorAll(".btn-tq-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/queue/task/${btn.dataset.id}`, { method: "DELETE" });
+          loadTaskQueuePanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
 
 })();
 

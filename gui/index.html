@@ -53,6 +53,18 @@
       <button class="ab-btn" data-panel="ci"        title="CI/CD Pipeline (Phase 23)">🔁</button>
       <button class="ab-btn" data-panel="docker"    title="Docker Management (Phase 24)">🐳</button>
       <button class="ab-btn" data-panel="deploy"    title="Remote Deployment (Phase 25)">🚀</button>
+      <button class="ab-btn" data-panel="monitor"   title="Monitoring & Observability (Phase 26)">📊</button>
+      <button class="ab-btn" data-panel="database"  title="Database Management (Phase 27)">🗄️</button>
+      <button class="ab-btn" data-panel="vault"     title="Secret Vault (Phase 28)">🔐</button>
+      <button class="ab-btn" data-panel="webhooks"  title="WebHook Manager (Phase 29)">🪝</button>
+      <button class="ab-btn" data-panel="ratelimit"  title="Rate Limits (Phase 30)">⏱</button>
+      <button class="ab-btn" data-panel="events"    title="Event Bus (Phase 31)">📡</button>
+      <button class="ab-btn" data-panel="cron"      title="Cron Jobs (Phase 32)">🕐</button>
+      <button class="ab-btn" data-panel="audit"     title="Audit Log (Phase 33)">📋</button>
+      <button class="ab-btn" data-panel="flags"     title="Feature Flags (Phase 34)">🚩</button>
+      <button class="ab-btn" data-panel="cfgprofile" title="Config Profiles (Phase 35)">⚙️</button>
+      <button class="ab-btn" data-panel="notify"    title="Notifications (Phase 36)">🔔</button>
+      <button class="ab-btn" data-panel="taskqueue" title="Task Queue (Phase 37)">📋</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -564,6 +576,164 @@
         </div>
         <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="deploy-panel-content">
           <div style="color:var(--text-muted,#888);font-size:11px;padding:4px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Monitoring & Observability (Phase 26) ──────────── -->
+      <div class="sb-panel" id="panel-monitor">
+        <div class="sb-panel-header">
+          <span>📊 Monitoring</span>
+          <div>
+            <button id="btn-monitor-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="monitor-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Database Management (Phase 27) ─────────────────── -->
+      <div class="sb-panel" id="panel-database">
+        <div class="sb-panel-header">
+          <span>🗄️ Database</span>
+          <div>
+            <button id="btn-db-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="database-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Secret & Environment Vault (Phase 28) ─────────── -->
+      <div class="sb-panel" id="panel-vault">
+        <div class="sb-panel-header">
+          <span>🔐 Vault</span>
+          <div>
+            <button id="btn-vault-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="vault-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: WebHook Manager (Phase 29) ─────────────────────── -->
+      <div class="sb-panel" id="panel-webhooks">
+        <div class="sb-panel-header">
+          <span>🪝 Webhooks</span>
+          <div>
+            <button id="btn-webhooks-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="webhooks-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: API Rate Limiting & Quota (Phase 30) ───────────── -->
+      <div class="sb-panel" id="panel-ratelimit">
+        <div class="sb-panel-header">
+          <span>⏱ Rate Limits</span>
+          <div>
+            <button id="btn-ratelimit-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="ratelimit-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Event Bus & Pub/Sub (Phase 31) ─────────────────── -->
+      <div class="sb-panel" id="panel-events">
+        <div class="sb-panel-header">
+          <span>📡 Events</span>
+          <div>
+            <button id="btn-events-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="events-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Cron Job Scheduler (Phase 32) ──────────────────── -->
+      <div class="sb-panel" id="panel-cron">
+        <div class="sb-panel-header">
+          <span>🕐 Cron Jobs</span>
+          <div>
+            <button id="btn-cron-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="cron-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Audit Log (Phase 33) ───────────────────────────── -->
+      <div class="sb-panel" id="panel-audit">
+        <div class="sb-panel-header">
+          <span>📋 Audit Log</span>
+          <div>
+            <button id="btn-audit-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="audit-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Feature Flags (Phase 34) ───────────────────────── -->
+      <div class="sb-panel" id="panel-flags">
+        <div class="sb-panel-header">
+          <span>🚩 Feature Flags</span>
+          <div>
+            <button id="btn-flags-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="flags-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Config Profiles (Phase 35) ────────────────────── -->
+      <div class="sb-panel" id="panel-cfgprofile">
+        <div class="sb-panel-header">
+          <span>⚙️ Config Profiles</span>
+          <div>
+            <button id="btn-cfgprofile-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="cfgprofile-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Notification Center (Phase 36) ─────────────────── -->
+      <div class="sb-panel" id="panel-notify">
+        <div class="sb-panel-header">
+          <span>🔔 Notifications</span>
+          <div>
+            <button id="btn-notify-mark-read" title="Mark all read" style="font-size:10px;padding:1px 5px">✓ all</button>
+            <button id="btn-notify-clear"     title="Clear all"     style="font-size:10px;padding:1px 5px">✕ all</button>
+            <button id="btn-notify-refresh"   title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="notify-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Task Queue (Phase 37) ──────────────────────────── -->
+      <div class="sb-panel" id="panel-taskqueue">
+        <div class="sb-panel-header">
+          <span>📋 Task Queue</span>
+          <div>
+            <button id="btn-taskqueue-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="taskqueue-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
         </div>
       </div>
 

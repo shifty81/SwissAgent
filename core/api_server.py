@@ -495,6 +495,119 @@ class DeployRunRequest(BaseModel):
     key_path: str = ""
 
 
+# ── Phase 26: Monitoring & Observability request models ──────────────────────
+
+class MetricsAlertRequest(BaseModel):
+    name: str
+    metric: str          # "cpu_load_percent" | "mem_percent" | "disk_percent"
+    threshold: float     # alert when value >= threshold
+    enabled: bool = True
+
+# ── Phase 27: Database Management request models ──────────────────────────────
+
+class DbConnectRequest(BaseModel):
+    path: str                      # path to SQLite file (relative to workspace/)
+    alias: str = ""                # optional friendly name
+
+class DbQueryRequest(BaseModel):
+    connection_id: str
+    sql: str
+    params: list[Any] = []
+    limit: int = 200               # max rows returned
+
+# ── Phase 28: Secret & Environment Vault request models ──────────────────────
+
+class VaultSetRequest(BaseModel):
+    key: str
+    value: str
+    description: str = ""
+
+class VaultExportRequest(BaseModel):
+    keys: list[str] = []   # empty = export all keys
+    format: str = "env"    # "env" | "json"
+
+# ── Phase 29: WebHook Manager request models ──────────────────────────────────
+
+class WebhookRegisterRequest(BaseModel):
+    name: str
+    url: str
+    events: list[str] = []          # event types to subscribe to, empty = all
+    secret: str = ""                # optional HMAC secret for payload signing
+    enabled: bool = True
+
+class WebhookDeliverRequest(BaseModel):
+    event: str = "manual"
+    payload: dict[str, Any] = {}
+
+# ── Phase 30: API Rate Limiting & Quota request models ────────────────────────
+
+class RateLimitRuleRequest(BaseModel):
+    name: str
+    limit: int          # max requests per window
+    window_seconds: int = 60
+    description: str = ""
+
+# ── Phase 31: Event Bus & Pub/Sub request models ──────────────────────────────
+
+class EventPublishRequest(BaseModel):
+    topic: str
+    payload: dict[str, Any] = {}
+    source: str = ""
+
+class EventSubscribeRequest(BaseModel):
+    topics: list[str]           # list of topic patterns to subscribe to
+    name: str = ""              # friendly subscriber name
+
+# ── Phase 32: Cron Job Scheduler request models ───────────────────────────────
+
+class CronJobRequest(BaseModel):
+    name: str
+    schedule: str               # cron expression or "every Ns" (e.g. "every 60s")
+    command: str                # shell command to run
+    enabled: bool = True
+    description: str = ""
+
+# ── Phase 33: Audit Log request models ───────────────────────────────────────
+
+class AuditLogEntryRequest(BaseModel):
+    action: str
+    actor: str = "system"
+    resource: str = ""
+    detail: str = ""
+    level: str = "info"       # info | warn | error
+
+# ── Phase 34: Feature Flags request models ────────────────────────────────────
+
+class FeatureFlagRequest(BaseModel):
+    name: str
+    enabled: bool = True
+    variant: str = ""          # optional string variant value
+    description: str = ""
+
+# ── Phase 35: Config Profiles request models ──────────────────────────────────
+
+class ConfigProfileRequest(BaseModel):
+    name: str
+    values: dict[str, str] = {}
+    description: str = ""
+
+
+# ── Phase 36: Notification Center request models ──────────────────────────────
+
+class NotificationRequest(BaseModel):
+    title: str
+    message: str = ""
+    level: str = "info"        # info | warn | error | success
+
+
+# ── Phase 37: Task Queue request models ───────────────────────────────────────
+
+class TaskQueueRequest(BaseModel):
+    name: str
+    payload: dict[str, Any] = {}
+    priority: int = 5          # 1 (highest) – 10 (lowest)
+
+
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
 # Context window sizes sent to the LLM.  Prefix is longer because the model
@@ -4299,6 +4412,884 @@ indent_style = tab
         except Exception:
             pass
 
+    # ── Phase 26: Monitoring & Observability ──────────────────────────────────
+
+    def _collect_metrics() -> dict[str, Any]:
+        """Collect current system metrics using stdlib only."""
+        import shutil
+        ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        try:
+            load1, load5, load15 = os.getloadavg()
+            cpu_count = os.cpu_count() or 1
+            cpu_load_percent = round((load1 / cpu_count) * 100, 1)
+        except Exception:
+            load1, load5, load15 = 0.0, 0.0, 0.0
+            cpu_load_percent = 0.0
+        mem_total_kb, mem_avail_kb = 0, 0
+        try:
+            with open("/proc/meminfo", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        mem_total_kb = int(line.split()[1])
+                    elif line.startswith("MemAvailable:"):
+                        mem_avail_kb = int(line.split()[1])
+        except Exception:
+            pass
+        mem_used_kb = mem_total_kb - mem_avail_kb
+        mem_percent = round((mem_used_kb / mem_total_kb) * 100, 1) if mem_total_kb else 0.0
+        try:
+            du = shutil.disk_usage(".")
+            disk_total = du.total
+            disk_used = du.used
+            disk_percent = round((disk_used / disk_total) * 100, 1) if disk_total else 0.0
+        except Exception:
+            disk_total, disk_used, disk_percent = 0, 0, 0.0
+        return {
+            "ts": ts,
+            "cpu_load_percent": cpu_load_percent,
+            "cpu_load_avg": {"1m": round(load1, 2), "5m": round(load5, 2), "15m": round(load15, 2)},
+            "mem_total_kb": mem_total_kb,
+            "mem_used_kb": mem_used_kb,
+            "mem_percent": mem_percent,
+            "disk_total_bytes": disk_total,
+            "disk_used_bytes": disk_used,
+            "disk_percent": disk_percent,
+        }
+
+    @app.get("/metrics")
+    async def metrics_current() -> dict[str, Any]:
+        snap = _collect_metrics()
+        _metrics_history.append(snap)
+        if len(_metrics_history) > _MAX_METRICS_HISTORY:
+            _metrics_history[:] = _metrics_history[-_MAX_METRICS_HISTORY:]
+        return snap
+
+    @app.get("/metrics/history")
+    async def metrics_history_list(limit: int = 20) -> dict[str, Any]:
+        return {"history": _metrics_history[-limit:]}
+
+    @app.post("/metrics/snapshot")
+    async def metrics_snapshot() -> dict[str, Any]:
+        snap = _collect_metrics()
+        _metrics_history.append(snap)
+        if len(_metrics_history) > _MAX_METRICS_HISTORY:
+            _metrics_history[:] = _metrics_history[-_MAX_METRICS_HISTORY:]
+        return {"saved": True, "snapshot": snap}
+
+    @app.get("/health/detailed")
+    async def health_detailed() -> dict[str, Any]:
+        snap = _collect_metrics()
+        checks = {
+            "api": "ok",
+            "cpu": "ok" if snap["cpu_load_percent"] < 90 else "warn",
+            "memory": "ok" if snap["mem_percent"] < 90 else "warn",
+            "disk": "ok" if snap["disk_percent"] < 90 else "warn",
+        }
+        overall = "ok" if all(v == "ok" for v in checks.values()) else "degraded"
+        return {"status": overall, "checks": checks, "metrics": snap}
+
+    @app.post("/metrics/alert")
+    async def metrics_alert_set(req: MetricsAlertRequest) -> dict[str, Any]:
+        _metrics_alerts[req.name] = {
+            "name": req.name,
+            "metric": req.metric,
+            "threshold": req.threshold,
+            "enabled": req.enabled,
+        }
+        return {"saved": req.name}
+
+    @app.get("/metrics/alerts")
+    async def metrics_alerts_list() -> dict[str, Any]:
+        return {"alerts": list(_metrics_alerts.values())}
+
+    @app.delete("/metrics/alert/{name}")
+    async def metrics_alert_delete(name: str) -> dict[str, Any]:
+        _metrics_alerts.pop(name, None)
+        return {"deleted": name}
+
+    @app.websocket("/ws/metrics")
+    async def ws_metrics(websocket: WebSocket) -> None:
+        await websocket.accept()
+        try:
+            for _ in range(3):
+                snap = _collect_metrics()
+                await websocket.send_text(json.dumps(snap))
+                await asyncio.sleep(1)
+            await websocket.send_text(json.dumps({"done": True}))
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
+    # ── Phase 27: Database Management (SQLite) ────────────────────────────────
+
+    @app.post("/db/connect")
+    async def db_connect(req: DbConnectRequest) -> dict[str, Any]:
+        import sqlite3 as _sqlite3
+        global _db_conn_counter
+        db_path = _safe_path(base_dir / "workspace", req.path)
+        try:
+            conn = _sqlite3.connect(str(db_path))
+            conn.close()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        _db_conn_counter += 1
+        conn_id = str(_db_conn_counter)
+        alias = req.alias or db_path.name
+        _db_connections[conn_id] = {
+            "id": conn_id,
+            "path": str(db_path),
+            "alias": alias,
+            "connected_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        return _db_connections[conn_id]
+
+    @app.get("/db/connections")
+    async def db_connections_list() -> dict[str, Any]:
+        return {"connections": list(_db_connections.values())}
+
+    @app.delete("/db/connection/{connection_id}")
+    async def db_connection_delete(connection_id: str) -> dict[str, Any]:
+        _db_connections.pop(connection_id, None)
+        return {"deleted": connection_id}
+
+    @app.post("/db/query")
+    async def db_query(req: DbQueryRequest) -> dict[str, Any]:
+        import sqlite3 as _sqlite3
+        if req.connection_id not in _db_connections:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        db_path = _db_connections[req.connection_id]["path"]
+        try:
+            conn = _sqlite3.connect(db_path)
+            conn.row_factory = _sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(req.sql, req.params)
+            if cur.description:
+                columns = [d[0] for d in cur.description]
+                rows = [dict(r) for r in cur.fetchmany(req.limit)]
+                conn.close()
+                result = {"columns": columns, "rows": rows, "row_count": len(rows)}
+            else:
+                conn.commit()
+                affected = cur.rowcount
+                conn.close()
+                result = {"columns": [], "rows": [], "row_count": affected}
+            _db_last_results.clear()
+            _db_last_results.extend(result.get("rows", []))
+            return result
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/db/schema/{connection_id}")
+    async def db_schema(connection_id: str) -> dict[str, Any]:
+        import sqlite3 as _sqlite3
+        if connection_id not in _db_connections:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        db_path = _db_connections[connection_id]["path"]
+        try:
+            conn = _sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("SELECT name, type FROM sqlite_master WHERE type IN ('table','view') ORDER BY name")
+            tables = []
+            for name, ttype in cur.fetchall():
+                try:
+                    cur2 = conn.cursor()
+                    # Table name from sqlite_master (trusted DB catalog, not user input).
+                    # Standard SQLite identifier quoting: double-quote with "" escaping.
+                    quoted = name.replace('"', '""')
+                    cur2.execute(f'PRAGMA table_info("{quoted}")')
+                    cols = [{"name": r[1], "type": r[2], "not_null": bool(r[3]), "pk": bool(r[5])} for r in cur2.fetchall()]
+                except Exception:
+                    cols = []
+                tables.append({"name": name, "type": ttype, "columns": cols})
+            conn.close()
+            return {"connection_id": connection_id, "tables": tables}
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.websocket("/ws/db")
+    async def ws_db(websocket: WebSocket) -> None:
+        await websocket.accept()
+        try:
+            for row in _db_last_results[:50]:
+                await websocket.send_text(json.dumps({"row": row}))
+            await websocket.send_text(json.dumps({"done": True}))
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
+    # ── Phase 28: Secret & Environment Vault ─────────────────────────────────
+
+    @app.post("/vault/set")
+    async def vault_set(req: VaultSetRequest) -> dict[str, Any]:
+        import base64 as _b64
+        if not req.key:
+            raise HTTPException(status_code=400, detail="key is required")
+        _vault_store[req.key] = {
+            "key": req.key,
+            "value": _b64.b64encode(req.value.encode()).decode(),
+            "description": req.description,
+        }
+        return {"saved": req.key}
+
+    @app.get("/vault/keys")
+    async def vault_keys() -> dict[str, Any]:
+        return {
+            "keys": [
+                {"key": v["key"], "description": v["description"]}
+                for v in _vault_store.values()
+            ]
+        }
+
+    @app.get("/vault/get/{key}")
+    async def vault_get(key: str) -> dict[str, Any]:
+        import base64 as _b64
+        if key not in _vault_store:
+            raise HTTPException(status_code=404, detail="Key not found")
+        entry = _vault_store[key]
+        return {
+            "key": key,
+            "value": _b64.b64decode(entry["value"].encode()).decode(),
+            "description": entry["description"],
+        }
+
+    @app.delete("/vault/key/{key}")
+    async def vault_delete(key: str) -> dict[str, Any]:
+        _vault_store.pop(key, None)
+        return {"deleted": key}
+
+    @app.post("/vault/export")
+    async def vault_export(req: VaultExportRequest) -> dict[str, Any]:
+        import base64 as _b64
+        keys_to_export = req.keys if req.keys else list(_vault_store.keys())
+        items = {
+            k: _b64.b64decode(_vault_store[k]["value"].encode()).decode()
+            for k in keys_to_export
+            if k in _vault_store
+        }
+        if req.format == "json":
+            return {"format": "json", "data": items}
+        # env format
+        lines = "\n".join(f'{k}={v}' for k, v in items.items())
+        return {"format": "env", "data": lines}
+
+    @app.post("/vault/import")
+    async def vault_import(payload: dict[str, Any]) -> dict[str, Any]:
+        import base64 as _b64
+        # Accept {"KEY": "VALUE", ...}
+        imported = []
+        for k, v in payload.items():
+            if isinstance(k, str) and isinstance(v, str):
+                _vault_store[k] = {
+                    "key": k,
+                    "value": _b64.b64encode(v.encode()).decode(),
+                    "description": "",
+                }
+                imported.append(k)
+        return {"imported": imported}
+
+    # ── Phase 29: WebHook Manager ────────────────────────────────────────────
+
+    @app.post("/webhook/register")
+    async def webhook_register(req: WebhookRegisterRequest) -> dict[str, Any]:
+        global _webhook_id_counter
+        if not req.name or not req.url:
+            raise HTTPException(status_code=400, detail="name and url are required")
+        _webhook_id_counter += 1
+        wid = str(_webhook_id_counter)
+        _webhooks[wid] = {
+            "id": wid,
+            "name": req.name,
+            "url": req.url,
+            "events": req.events,
+            "secret": req.secret,
+            "enabled": req.enabled,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        return {"id": wid, "name": req.name}
+
+    @app.get("/webhooks")
+    async def webhooks_list() -> dict[str, Any]:
+        # Don't expose the secret in listings
+        safe = [
+            {k: v for k, v in wh.items() if k != "secret"}
+            for wh in _webhooks.values()
+        ]
+        return {"webhooks": safe}
+
+    @app.delete("/webhook/{webhook_id}")
+    async def webhook_delete(webhook_id: str) -> dict[str, Any]:
+        _webhooks.pop(webhook_id, None)
+        return {"deleted": webhook_id}
+
+    @app.post("/webhook/deliver/{webhook_id}")
+    async def webhook_deliver(webhook_id: str, req: WebhookDeliverRequest) -> dict[str, Any]:
+        global _webhook_delivery_counter
+        if webhook_id not in _webhooks:
+            raise HTTPException(status_code=404, detail="Webhook not found")
+        wh = _webhooks[webhook_id]
+        if not wh.get("enabled"):
+            raise HTTPException(status_code=400, detail="Webhook is disabled")
+        payload = {"event": req.event, "data": req.payload, "webhook_id": webhook_id}
+        # Optionally sign with HMAC-SHA256 if secret is set
+        signature = ""
+        if wh.get("secret"):
+            import hmac as _hmac
+            import hashlib as _hl
+            body = json.dumps(payload, separators=(",", ":")).encode()
+            signature = _hmac.new(wh["secret"].encode(), body, _hl.sha256).hexdigest()
+        headers = {"Content-Type": "application/json"}
+        if signature:
+            headers["X-SwissAgent-Signature"] = signature
+        started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        status_code = -1
+        response_body = ""
+        try:
+            resp = requests.post(wh["url"], json=payload, headers=headers, timeout=10)
+            status_code = resp.status_code
+            response_body = resp.text[:2000]
+        except Exception as exc:
+            response_body = str(exc)
+        finished_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _webhook_delivery_counter += 1
+        record: dict[str, Any] = {
+            "id": _webhook_delivery_counter,
+            "webhook_id": webhook_id,
+            "webhook_name": wh["name"],
+            "event": req.event,
+            "status_code": status_code,
+            "response": response_body,
+            "started_at": started_at,
+            "finished_at": finished_at,
+        }
+        _webhook_deliveries.append(record)
+        if len(_webhook_deliveries) > _MAX_WEBHOOK_DELIVERIES:
+            _webhook_deliveries[:] = _webhook_deliveries[-_MAX_WEBHOOK_DELIVERIES:]
+        return record
+
+    @app.get("/webhook/deliveries")
+    async def webhook_deliveries_list(limit: int = 20) -> dict[str, Any]:
+        return {"deliveries": _webhook_deliveries[-limit:]}
+
+    @app.get("/webhook/delivery/{delivery_id}")
+    async def webhook_delivery_get(delivery_id: int) -> dict[str, Any]:
+        for d in _webhook_deliveries:
+            if d["id"] == delivery_id:
+                return d
+        raise HTTPException(status_code=404, detail="Delivery not found")
+
+    # ── Phase 30: API Rate Limiting & Quota ──────────────────────────────────
+
+    @app.post("/ratelimit/rule")
+    async def ratelimit_rule_set(req: RateLimitRuleRequest) -> dict[str, Any]:
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        if req.limit < 1:
+            raise HTTPException(status_code=400, detail="limit must be >= 1")
+        _ratelimit_rules[req.name] = {
+            "name": req.name,
+            "limit": req.limit,
+            "window_seconds": req.window_seconds,
+            "description": req.description,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _ratelimit_usage.setdefault(req.name, [])
+        return {"saved": req.name}
+
+    @app.get("/ratelimit/rules")
+    async def ratelimit_rules_list() -> dict[str, Any]:
+        return {"rules": list(_ratelimit_rules.values())}
+
+    @app.delete("/ratelimit/rule/{rule_name}")
+    async def ratelimit_rule_delete(rule_name: str) -> dict[str, Any]:
+        _ratelimit_rules.pop(rule_name, None)
+        _ratelimit_usage.pop(rule_name, None)
+        return {"deleted": rule_name}
+
+    @app.get("/ratelimit/status")
+    async def ratelimit_status() -> dict[str, Any]:
+        import time as _time
+        now = _time.time()
+        result = []
+        for name, rule in _ratelimit_rules.items():
+            window = rule["window_seconds"]
+            calls = _ratelimit_usage.get(name, [])
+            recent = [t for t in calls if now - t < window]
+            _ratelimit_usage[name] = recent
+            result.append({
+                "name": name,
+                "limit": rule["limit"],
+                "window_seconds": window,
+                "used": len(recent),
+                "remaining": max(0, rule["limit"] - len(recent)),
+                "throttled": len(recent) >= rule["limit"],
+            })
+        return {"status": result}
+
+    @app.post("/ratelimit/check/{rule_name}")
+    async def ratelimit_check(rule_name: str) -> dict[str, Any]:
+        import time as _time
+        if rule_name not in _ratelimit_rules:
+            raise HTTPException(status_code=404, detail="Rule not found")
+        rule = _ratelimit_rules[rule_name]
+        now = _time.time()
+        window = rule["window_seconds"]
+        calls = _ratelimit_usage.get(rule_name, [])
+        recent = [t for t in calls if now - t < window]
+        allowed = len(recent) < rule["limit"]
+        if allowed:
+            recent.append(now)
+        _ratelimit_usage[rule_name] = recent
+        return {
+            "rule": rule_name,
+            "allowed": allowed,
+            "used": len(recent),
+            "remaining": max(0, rule["limit"] - len(recent)),
+            "throttled": not allowed,
+        }
+
+    @app.post("/ratelimit/reset/{rule_name}")
+    async def ratelimit_reset(rule_name: str) -> dict[str, Any]:
+        if rule_name not in _ratelimit_rules:
+            raise HTTPException(status_code=404, detail="Rule not found")
+        _ratelimit_usage[rule_name] = []
+        return {"reset": rule_name}
+
+    # ── Phase 31: Event Bus & Pub/Sub ────────────────────────────────────────
+
+    @app.post("/events/publish")
+    async def events_publish(req: EventPublishRequest) -> dict[str, Any]:
+        global _event_id_counter
+        if not req.topic:
+            raise HTTPException(status_code=400, detail="topic is required")
+        _event_id_counter += 1
+        event: dict[str, Any] = {
+            "id": _event_id_counter,
+            "topic": req.topic,
+            "payload": req.payload,
+            "source": req.source,
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _event_history.append(event)
+        if len(_event_history) > _MAX_EVENT_HISTORY:
+            _event_history[:] = _event_history[-_MAX_EVENT_HISTORY:]
+        # broadcast to WS subscribers
+        dead: list[Any] = []
+        for ws in list(_event_ws_clients):
+            try:
+                await ws.send_json(event)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            if ws in _event_ws_clients:
+                _event_ws_clients.remove(ws)
+        return event
+
+    @app.post("/events/subscribe")
+    async def events_subscribe(req: EventSubscribeRequest) -> dict[str, Any]:
+        global _event_sub_counter
+        if not req.topics:
+            raise HTTPException(status_code=400, detail="topics list is required")
+        _event_sub_counter += 1
+        sub_id = str(_event_sub_counter)
+        _event_subscriptions[sub_id] = {
+            "id": sub_id,
+            "name": req.name,
+            "topics": req.topics,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        return {"id": sub_id, "topics": req.topics}
+
+    @app.get("/events/subscriptions")
+    async def events_subscriptions_list() -> dict[str, Any]:
+        return {"subscriptions": list(_event_subscriptions.values())}
+
+    @app.delete("/events/subscription/{sub_id}")
+    async def events_subscription_delete(sub_id: str) -> dict[str, Any]:
+        _event_subscriptions.pop(sub_id, None)
+        return {"deleted": sub_id}
+
+    @app.get("/events/history")
+    async def events_history(limit: int = 50) -> dict[str, Any]:
+        return {"events": _event_history[-limit:]}
+
+    @app.get("/events/history/{topic}")
+    async def events_history_topic(topic: str, limit: int = 50) -> dict[str, Any]:
+        filtered = [e for e in _event_history if e["topic"] == topic]
+        return {"topic": topic, "events": filtered[-limit:]}
+
+    @app.websocket("/ws/events")
+    async def ws_events(websocket: WebSocket):
+        await websocket.accept()
+        _event_ws_clients.append(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except Exception:
+            pass
+        finally:
+            if websocket in _event_ws_clients:
+                _event_ws_clients.remove(websocket)
+
+    # ── Phase 32: Cron Job Scheduler ─────────────────────────────────────────
+
+    @app.post("/cron/job")
+    async def cron_job_set(req: CronJobRequest) -> dict[str, Any]:
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        if not req.command:
+            raise HTTPException(status_code=400, detail="command is required")
+        _cron_jobs[req.name] = {
+            "name": req.name,
+            "schedule": req.schedule,
+            "command": req.command,
+            "enabled": req.enabled,
+            "description": req.description,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "last_run": None,
+            "run_count": 0,
+        }
+        return {"saved": req.name}
+
+    @app.get("/cron/jobs")
+    async def cron_jobs_list() -> dict[str, Any]:
+        return {"jobs": list(_cron_jobs.values())}
+
+    @app.delete("/cron/job/{job_name}")
+    async def cron_job_delete(job_name: str) -> dict[str, Any]:
+        _cron_jobs.pop(job_name, None)
+        return {"deleted": job_name}
+
+    @app.post("/cron/job/{job_name}/run")
+    async def cron_job_run(job_name: str) -> dict[str, Any]:
+        global _cron_run_id
+        if job_name not in _cron_jobs:
+            raise HTTPException(status_code=404, detail="Job not found")
+        import asyncio, subprocess as _sp
+        job = _cron_jobs[job_name]
+        _cron_run_id += 1
+        run_id = _cron_run_id
+        start = datetime.datetime.now(datetime.timezone.utc)
+        output = ""
+        error = ""
+        exit_code = 0
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                job["command"],
+                stdout=_sp.PIPE,
+                stderr=_sp.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            output = stdout.decode(errors="replace")
+            error  = stderr.decode(errors="replace")
+            exit_code = proc.returncode or 0
+        except Exception as exc:
+            error = str(exc)
+            exit_code = 1
+        end = datetime.datetime.now(datetime.timezone.utc)
+        record: dict[str, Any] = {
+            "run_id": run_id,
+            "job": job_name,
+            "started_at": start.isoformat(),
+            "finished_at": end.isoformat(),
+            "exit_code": exit_code,
+            "output": output[:4096],
+            "error": error[:2048],
+        }
+        _cron_history.append(record)
+        if len(_cron_history) > 200:
+            _cron_history[:] = _cron_history[-200:]
+        job["last_run"] = end.isoformat()
+        job["run_count"] = job.get("run_count", 0) + 1
+        dead: list[Any] = []
+        for ws in list(_cron_ws_clients):
+            try:
+                await ws.send_json(record)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            if ws in _cron_ws_clients:
+                _cron_ws_clients.remove(ws)
+        return record
+
+    @app.get("/cron/job/{job_name}/history")
+    async def cron_job_history(job_name: str, limit: int = 20) -> dict[str, Any]:
+        runs = [r for r in _cron_history if r["job"] == job_name]
+        return {"job": job_name, "history": runs[-limit:]}
+
+    @app.get("/cron/history")
+    async def cron_history_all(limit: int = 50) -> dict[str, Any]:
+        return {"history": _cron_history[-limit:]}
+
+    @app.websocket("/ws/cron")
+    async def ws_cron(websocket: WebSocket):
+        await websocket.accept()
+        _cron_ws_clients.append(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except Exception:
+            pass
+        finally:
+            if websocket in _cron_ws_clients:
+                _cron_ws_clients.remove(websocket)
+
+    # ── Phase 33: Audit Log ───────────────────────────────────────────────────
+
+    def _audit(action: str, actor: str = "api", resource: str = "", detail: str = "", level: str = "info") -> None:
+        global _audit_id_counter
+        _audit_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": _audit_id_counter,
+            "action": action,
+            "actor": actor,
+            "resource": resource,
+            "detail": detail,
+            "level": level,
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _audit_log.append(entry)
+        if len(_audit_log) > _MAX_AUDIT:
+            _audit_log[:] = _audit_log[-_MAX_AUDIT:]
+
+    @app.post("/audit/log")
+    async def audit_log_append(req: AuditLogEntryRequest) -> dict[str, Any]:
+        if not req.action:
+            raise HTTPException(status_code=400, detail="action is required")
+        _audit(req.action, actor=req.actor, resource=req.resource, detail=req.detail, level=req.level)
+        return {"logged": req.action, "id": _audit_id_counter}
+
+    @app.delete("/audit/log/clear")
+    async def audit_log_clear() -> dict[str, Any]:
+        count = len(_audit_log)
+        _audit_log.clear()
+        return {"cleared": count}
+
+    @app.get("/audit/log")
+    async def audit_log_list(limit: int = 50, level: str = "", actor: str = "") -> dict[str, Any]:
+        entries = list(_audit_log)
+        if level:
+            entries = [e for e in entries if e["level"] == level]
+        if actor:
+            entries = [e for e in entries if e["actor"] == actor]
+        return {"entries": entries[-limit:]}
+
+    @app.get("/audit/log/{entry_id}")
+    async def audit_log_get(entry_id: int) -> dict[str, Any]:
+        for e in _audit_log:
+            if e["id"] == entry_id:
+                return e
+        raise HTTPException(status_code=404, detail="Entry not found")
+
+    @app.get("/audit/stats")
+    async def audit_stats() -> dict[str, Any]:
+        from collections import Counter as _Counter
+        levels  = _Counter(e["level"]  for e in _audit_log)
+        actions = _Counter(e["action"] for e in _audit_log)
+        actors  = _Counter(e["actor"]  for e in _audit_log)
+        return {
+            "total": len(_audit_log),
+            "by_level": dict(levels),
+            "top_actions": dict(actions.most_common(10)),
+            "top_actors": dict(actors.most_common(10)),
+        }
+
+    # ── Phase 34: Feature Flags ───────────────────────────────────────────────
+
+    @app.post("/flags/flag")
+    async def flag_set(req: FeatureFlagRequest) -> dict[str, Any]:
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        _feature_flags[req.name] = {
+            "name": req.name,
+            "enabled": req.enabled,
+            "variant": req.variant,
+            "description": req.description,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        return {"saved": req.name}
+
+    @app.get("/flags")
+    async def flags_list() -> dict[str, Any]:
+        return {"flags": list(_feature_flags.values())}
+
+    @app.get("/flags/flag/{flag_name}")
+    async def flag_get(flag_name: str) -> dict[str, Any]:
+        if flag_name not in _feature_flags:
+            raise HTTPException(status_code=404, detail="Flag not found")
+        return _feature_flags[flag_name]
+
+    @app.delete("/flags/flag/{flag_name}")
+    async def flag_delete(flag_name: str) -> dict[str, Any]:
+        _feature_flags.pop(flag_name, None)
+        return {"deleted": flag_name}
+
+    @app.post("/flags/flag/{flag_name}/toggle")
+    async def flag_toggle(flag_name: str) -> dict[str, Any]:
+        if flag_name not in _feature_flags:
+            raise HTTPException(status_code=404, detail="Flag not found")
+        _feature_flags[flag_name]["enabled"] = not _feature_flags[flag_name]["enabled"]
+        _feature_flags[flag_name]["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"name": flag_name, "enabled": _feature_flags[flag_name]["enabled"]}
+
+    @app.get("/flags/check/{flag_name}")
+    async def flag_check(flag_name: str) -> dict[str, Any]:
+        flag = _feature_flags.get(flag_name)
+        if flag is None:
+            return {"name": flag_name, "enabled": False, "variant": ""}
+        return {"name": flag_name, "enabled": flag["enabled"], "variant": flag.get("variant", "")}
+
+    # ── Phase 35: Config Profiles ─────────────────────────────────────────────
+
+    @app.post("/config/profile")
+    async def config_profile_set(req: ConfigProfileRequest) -> dict[str, Any]:
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        _config_profiles[req.name] = {
+            "name": req.name,
+            "values": req.values,
+            "description": req.description,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        return {"saved": req.name}
+
+    @app.get("/config/profiles")
+    async def config_profiles_list() -> dict[str, Any]:
+        return {"profiles": list(_config_profiles.values()), "active": _active_config_profile}
+
+    @app.get("/config/profile/{profile_name}")
+    async def config_profile_get(profile_name: str) -> dict[str, Any]:
+        if profile_name not in _config_profiles:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        return _config_profiles[profile_name]
+
+    @app.delete("/config/profile/{profile_name}")
+    async def config_profile_delete(profile_name: str) -> dict[str, Any]:
+        global _active_config_profile
+        _config_profiles.pop(profile_name, None)
+        if _active_config_profile == profile_name:
+            _active_config_profile = ""
+        return {"deleted": profile_name}
+
+    @app.post("/config/profile/{profile_name}/activate")
+    async def config_profile_activate(profile_name: str) -> dict[str, Any]:
+        global _active_config_profile
+        if profile_name not in _config_profiles:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        _active_config_profile = profile_name
+        return {"activated": profile_name}
+
+    @app.get("/config/active")
+    async def config_active() -> dict[str, Any]:
+        if not _active_config_profile or _active_config_profile not in _config_profiles:
+            return {"active": None, "values": {}}
+        profile = _config_profiles[_active_config_profile]
+        return {"active": _active_config_profile, "values": profile.get("values", {})}
+
+    # ── Phase 36: Notification Center ────────────────────────────────────────
+
+    @app.post("/notify")
+    async def notify_push(req: NotificationRequest) -> dict[str, Any]:
+        global _notification_id_counter
+        if not req.title:
+            raise HTTPException(status_code=400, detail="title is required")
+        _notification_id_counter += 1
+        nid = _notification_id_counter
+        _notifications.append({
+            "id": nid,
+            "title": req.title,
+            "message": req.message,
+            "level": req.level,
+            "read": False,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        })
+        return {"id": nid}
+
+    @app.get("/notifications")
+    async def notifications_list() -> dict[str, Any]:
+        return {"notifications": list(_notifications), "unread": sum(1 for n in _notifications if not n["read"])}
+
+    @app.get("/notification/{nid}")
+    async def notification_get(nid: int) -> dict[str, Any]:
+        for n in _notifications:
+            if n["id"] == nid:
+                return n
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    @app.delete("/notification/{nid}")
+    async def notification_delete(nid: int) -> dict[str, Any]:
+        global _notifications
+        _notifications = [n for n in _notifications if n["id"] != nid]
+        return {"deleted": nid}
+
+    @app.post("/notifications/mark-read")
+    async def notifications_mark_read() -> dict[str, Any]:
+        for n in _notifications:
+            n["read"] = True
+        return {"marked": len(_notifications)}
+
+    @app.delete("/notifications/clear")
+    async def notifications_clear() -> dict[str, Any]:
+        global _notifications, _notification_id_counter
+        count = len(_notifications)
+        _notifications = []
+        _notification_id_counter = 0
+        return {"cleared": count}
+
+    # ── Phase 37: Task Queue ──────────────────────────────────────────────────
+
+    @app.post("/queue/task")
+    async def queue_task_add(req: TaskQueueRequest) -> dict[str, Any]:
+        global _task_queue_id_counter
+        if not req.name:
+            raise HTTPException(status_code=400, detail="name is required")
+        _task_queue_id_counter += 1
+        tid = _task_queue_id_counter
+        _task_queue.append({
+            "id": tid,
+            "name": req.name,
+            "payload": req.payload,
+            "priority": req.priority,
+            "status": "pending",
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "completed_at": None,
+        })
+        return {"id": tid}
+
+    @app.get("/queue/tasks")
+    async def queue_tasks_list() -> dict[str, Any]:
+        sorted_tasks = sorted(_task_queue, key=lambda t: (t["status"] != "pending", t["priority"]))
+        return {"tasks": sorted_tasks}
+
+    @app.get("/queue/task/{tid}")
+    async def queue_task_get(tid: int) -> dict[str, Any]:
+        for t in _task_queue:
+            if t["id"] == tid:
+                return t
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    @app.delete("/queue/task/{tid}")
+    async def queue_task_delete(tid: int) -> dict[str, Any]:
+        global _task_queue
+        _task_queue = [t for t in _task_queue if t["id"] != tid]
+        return {"deleted": tid}
+
+    @app.post("/queue/task/{tid}/complete")
+    async def queue_task_complete(tid: int) -> dict[str, Any]:
+        for t in _task_queue:
+            if t["id"] == tid:
+                t["status"] = "done"
+                t["completed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                return {"id": tid, "status": "done"}
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    @app.get("/queue/stats")
+    async def queue_stats() -> dict[str, Any]:
+        pending = sum(1 for t in _task_queue if t["status"] == "pending")
+        done    = sum(1 for t in _task_queue if t["status"] == "done")
+        return {"total": len(_task_queue), "pending": pending, "done": done}
+
     return app
 
 
@@ -4395,3 +5386,61 @@ _deploy_history: list[dict[str, Any]] = []
 _MAX_DEPLOY_RUNS = 50
 _DEPLOY_TIMEOUT = 120  # seconds
 _deploy_run_counter: int = 0
+
+# ── Phase 26: Monitoring & Observability ─────────────────────────────────────
+_metrics_history: list[dict[str, Any]] = []
+_MAX_METRICS_HISTORY = 100
+_metrics_alerts: dict[str, Any] = {}
+
+# ── Phase 27: Database Management ─────────────────────────────────────────────
+_db_connections: dict[str, Any] = {}
+_db_conn_counter: int = 0
+_db_last_results: list[dict[str, Any]] = []
+
+# ── Phase 28: Secret & Environment Vault ─────────────────────────────────────
+_vault_store: dict[str, dict[str, str]] = {}
+
+# ── Phase 29: WebHook Manager ─────────────────────────────────────────────────
+_webhooks: dict[str, Any] = {}
+_webhook_deliveries: list[dict[str, Any]] = []
+_MAX_WEBHOOK_DELIVERIES = 100
+_webhook_id_counter: int = 0
+_webhook_delivery_counter: int = 0
+
+# ── Phase 30: API Rate Limiting & Quota ───────────────────────────────────────
+_ratelimit_rules: dict[str, Any] = {}
+_ratelimit_usage: dict[str, list[float]] = {}   # name → list of timestamps
+
+# ── Phase 31: Event Bus & Pub/Sub ─────────────────────────────────────────────
+_event_history: list[dict[str, Any]] = []
+_MAX_EVENT_HISTORY = 200
+_event_subscriptions: dict[str, Any] = {}
+_event_sub_counter: int = 0
+_event_ws_clients: list[Any] = []
+_event_id_counter: int = 0
+
+# ── Phase 32: Cron Job Scheduler ─────────────────────────────────────────────
+_cron_jobs: dict[str, Any] = {}
+_cron_history: list[dict[str, Any]] = []
+_cron_ws_clients: list[Any] = []
+_cron_run_id: int = 0
+
+# ── Phase 33: Audit Log ───────────────────────────────────────────────────────
+_audit_log: list[dict[str, Any]] = []
+_MAX_AUDIT = 500
+_audit_id_counter: int = 0
+
+# ── Phase 34: Feature Flags ───────────────────────────────────────────────────
+_feature_flags: dict[str, Any] = {}
+
+# ── Phase 35: Config Profiles ─────────────────────────────────────────────────
+_config_profiles: dict[str, Any] = {}
+_active_config_profile: str = ""
+
+# ── Phase 36: Notification Center ─────────────────────────────────────────────
+_notifications: list[dict[str, Any]] = []
+_notification_id_counter: int = 0
+
+# ── Phase 37: Task Queue ───────────────────────────────────────────────────────
+_task_queue: list[dict[str, Any]] = []
+_task_queue_id_counter: int = 0
