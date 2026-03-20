@@ -55,6 +55,8 @@
       <button class="ab-btn" data-panel="deploy"    title="Remote Deployment (Phase 25)">🚀</button>
       <button class="ab-btn" data-panel="monitor"   title="Monitoring & Observability (Phase 26)">📊</button>
       <button class="ab-btn" data-panel="database"  title="Database Management (Phase 27)">🗄️</button>
+      <button class="ab-btn" data-panel="vault"     title="Secret Vault (Phase 28)">🔐</button>
+      <button class="ab-btn" data-panel="webhooks"  title="WebHook Manager (Phase 29)">🪝</button>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -591,6 +593,32 @@
           </div>
         </div>
         <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="database-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Secret & Environment Vault (Phase 28) ─────────── -->
+      <div class="sb-panel" id="panel-vault">
+        <div class="sb-panel-header">
+          <span>🔐 Vault</span>
+          <div>
+            <button id="btn-vault-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="vault-panel-content">
+          <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: WebHook Manager (Phase 29) ─────────────────────── -->
+      <div class="sb-panel" id="panel-webhooks">
+        <div class="sb-panel-header">
+          <span>🪝 Webhooks</span>
+          <div>
+            <button id="btn-webhooks-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="webhooks-panel-content">
           <div style="color:var(--text-dim);font-size:11px">Loading…</div>
         </div>
       </div>

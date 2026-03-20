@@ -1389,6 +1389,120 @@
           "description": "GUI panel for connections, schema browser, and SQL editor"
         }
       ]
+    },
+    {
+      "id": "m28",
+      "title": "Phase 28 \u2014 Secret & Environment Vault",
+      "description": "In-memory key-value secret store with base64 obfuscation, export (.env/JSON), import, and vault IDE panel",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t28-1",
+          "title": "POST /vault/set \u2014 store a secret",
+          "status": "done",
+          "priority": "high",
+          "description": "Store a key-value secret with optional description"
+        },
+        {
+          "id": "t28-2",
+          "title": "GET /vault/keys \u2014 list keys (no values)",
+          "status": "done",
+          "priority": "high",
+          "description": "Return key names and descriptions only"
+        },
+        {
+          "id": "t28-3",
+          "title": "GET /vault/get/{key} \u2014 retrieve a secret",
+          "status": "done",
+          "priority": "high",
+          "description": "Return the decoded value for a key"
+        },
+        {
+          "id": "t28-4",
+          "title": "DELETE /vault/key/{key} \u2014 remove a secret",
+          "status": "done",
+          "priority": "medium",
+          "description": "Delete a named secret"
+        },
+        {
+          "id": "t28-5",
+          "title": "POST /vault/export \u2014 export secrets",
+          "status": "done",
+          "priority": "medium",
+          "description": "Export secrets as .env or JSON format"
+        },
+        {
+          "id": "t28-6",
+          "title": "POST /vault/import \u2014 bulk import secrets",
+          "status": "done",
+          "priority": "medium",
+          "description": "Import key-value pairs into the vault"
+        },
+        {
+          "id": "t28-7",
+          "title": "Vault panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with secret management, reveal, and export UI"
+        }
+      ]
+    },
+    {
+      "id": "m29",
+      "title": "Phase 29 \u2014 WebHook Manager",
+      "description": "Register outbound webhooks, deliver events with optional HMAC signing, and track delivery history",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t29-1",
+          "title": "POST /webhook/register \u2014 register a webhook",
+          "status": "done",
+          "priority": "high",
+          "description": "Store a named webhook with URL, events filter, and optional HMAC secret"
+        },
+        {
+          "id": "t29-2",
+          "title": "GET /webhooks \u2014 list webhooks",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all webhooks without exposing secrets"
+        },
+        {
+          "id": "t29-3",
+          "title": "DELETE /webhook/{id} \u2014 remove webhook",
+          "status": "done",
+          "priority": "medium",
+          "description": "Delete a registered webhook"
+        },
+        {
+          "id": "t29-4",
+          "title": "POST /webhook/deliver/{id} \u2014 deliver event",
+          "status": "done",
+          "priority": "high",
+          "description": "POST payload to webhook URL with optional HMAC-SHA256 signature"
+        },
+        {
+          "id": "t29-5",
+          "title": "GET /webhook/deliveries \u2014 delivery history",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return recent delivery records"
+        },
+        {
+          "id": "t29-6",
+          "title": "GET /webhook/delivery/{id} \u2014 single delivery",
+          "status": "done",
+          "priority": "low",
+          "description": "Get a specific delivery record by ID"
+        },
+        {
+          "id": "t29-7",
+          "title": "Webhooks panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with webhook registration, delivery, and history"
+        }
+      ]
     }
   ]
 }

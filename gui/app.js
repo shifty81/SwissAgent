@@ -2110,6 +2110,8 @@
       if (panel === "deploy") loadDeployPanel();
       if (panel === "monitor")   loadMonitorPanel();
       if (panel === "database")  loadDatabasePanel();
+      if (panel === "vault")     loadVaultPanel();
+      if (panel === "webhooks") loadWebhooksPanel();
     });
   });
 
@@ -4137,6 +4139,249 @@
         try {
           await fetch(`/db/connection/${encodeURIComponent(btn.dataset.id)}`, { method: "DELETE" });
           loadDatabasePanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+  }
+
+  // ── Phase 28: Secret & Environment Vault panel ───────────────────────────
+  async function loadVaultPanel() {
+    const container = $("vault-panel-content");
+    if (!container) return;
+    try {
+      const res = await fetch("/vault/keys");
+      const data = await res.json();
+      renderVaultPanel(data.keys || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderVaultPanel(keys) {
+    const container = $("vault-panel-content");
+    if (!container) return;
+    const keyRows = keys.map((k) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;font-family:var(--font-mono,monospace)">${escHtmlSimple(k.key)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim,#aaa)">${escHtmlSimple(k.description || "")}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-vault-get" data-key="${escHtmlSimple(k.key)}" style="font-size:10px;padding:1px 4px" title="Reveal value">👁</button>
+          <button class="btn-vault-del" data-key="${escHtmlSimple(k.key)}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">SET SECRET</div>
+      <input id="vault-key"   style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="KEY_NAME" />
+      <input id="vault-value" type="password" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="secret value" />
+      <input id="vault-desc"  style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="description (optional)" />
+      <button id="btn-vault-set" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Save Secret</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">STORED KEYS</div>
+      ${keys.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Key</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Desc</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)"></th>
+          </tr></thead>
+          <tbody>${keyRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No secrets stored.</div>'}
+
+      <div id="vault-reveal-area" style="display:none;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--text-muted,#888);margin-bottom:2px">Revealed value:</div>
+        <code id="vault-reveal-value" style="font-size:11px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;display:block;word-break:break-all"></code>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">EXPORT</div>
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
+        <select id="vault-export-format" style="padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px">
+          <option value="env">.env format</option>
+          <option value="json">JSON format</option>
+        </select>
+        <button id="btn-vault-export" style="font-size:11px;padding:3px 8px">Export</button>
+      </div>
+      <pre id="vault-export-output" style="font-size:10px;font-family:var(--font-mono,monospace);background:var(--bg2,#1e1e1e);border:1px solid var(--border,#444);border-radius:3px;padding:4px;overflow:auto;max-height:80px;white-space:pre-wrap;display:none"></pre>
+    `;
+
+    $("btn-vault-refresh")?.addEventListener("click", () => loadVaultPanel());
+
+    $("btn-vault-set")?.addEventListener("click", async () => {
+      const key   = $("vault-key")?.value.trim();
+      const value = $("vault-value")?.value;
+      const desc  = $("vault-desc")?.value.trim();
+      if (!key || !value) return;
+      try {
+        await fetch("/vault/set", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, value, description: desc }),
+        });
+        loadVaultPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-vault-get").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          const res = await fetch(`/vault/get/${encodeURIComponent(btn.dataset.key)}`);
+          const data = await res.json();
+          const area = $("vault-reveal-area");
+          const val  = $("vault-reveal-value");
+          if (area && val) {
+            val.textContent = data.value || "";
+            area.style.display = "block";
+            setTimeout(() => { area.style.display = "none"; }, 10000);
+          }
+        } catch (e) { alert(`Error: ${e.message}`); }
+      });
+    });
+
+    container.querySelectorAll(".btn-vault-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/vault/key/${encodeURIComponent(btn.dataset.key)}`, { method: "DELETE" });
+          loadVaultPanel();
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    $("btn-vault-export")?.addEventListener("click", async () => {
+      const format = $("vault-export-format")?.value || "env";
+      try {
+        const res = await fetch("/vault/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ format }),
+        });
+        const data = await res.json();
+        const out = $("vault-export-output");
+        if (out) {
+          out.textContent = typeof data.data === "string" ? data.data : JSON.stringify(data.data, null, 2);
+          out.style.display = "block";
+        }
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+  }
+
+  // ── Phase 29: WebHook Manager panel ──────────────────────────────────────
+  async function loadWebhooksPanel() {
+    const container = $("webhooks-panel-content");
+    if (!container) return;
+    try {
+      const [whRes, dlRes] = await Promise.all([
+        fetch("/webhooks"),
+        fetch("/webhook/deliveries"),
+      ]);
+      const whData = await whRes.json();
+      const dlData = await dlRes.json();
+      renderWebhooksPanel(whData.webhooks || [], dlData.deliveries || []);
+    } catch (e) {
+      container.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:4px">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderWebhooksPanel(webhooks, deliveries) {
+    const container = $("webhooks-panel-content");
+    if (!container) return;
+
+    const whRows = webhooks.map((w) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(w.id)}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(w.name)}</td>
+        <td style="padding:2px 4px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px" title="${escHtmlSimple(w.url)}">${escHtmlSimple(w.url)}</td>
+        <td style="padding:2px 4px">
+          <button class="btn-wh-deliver" data-id="${escHtmlSimple(w.id)}" style="font-size:10px;padding:1px 4px" title="Deliver">▶</button>
+          <button class="btn-wh-del"     data-id="${escHtmlSimple(w.id)}" style="font-size:10px;padding:1px 4px" title="Delete">✕</button>
+        </td>
+      </tr>
+    `).join("");
+
+    const dlRows = deliveries.slice().reverse().slice(0, 10).map((d) => `
+      <tr>
+        <td style="padding:2px 4px;font-size:10px;color:var(--text-dim)">${escHtmlSimple(String(d.id))}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(d.webhook_name)}</td>
+        <td style="padding:2px 4px;font-size:10px">${escHtmlSimple(d.event)}</td>
+        <td style="padding:2px 4px;font-size:10px;color:${d.status_code >= 200 && d.status_code < 300 ? "var(--ok,#4caf50)" : "var(--danger,#f44)"}">${escHtmlSimple(String(d.status_code))}</td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:6px">REGISTER WEBHOOK</div>
+      <input id="wh-name"   style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="webhook name" />
+      <input id="wh-url"    style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="https://example.com/hook" />
+      <input id="wh-events" style="width:100%;box-sizing:border-box;padding:3px;background:var(--bg2,#1e1e1e);color:var(--text,#d4d4d4);border:1px solid var(--border,#444);border-radius:3px;font-size:11px;margin-bottom:4px" placeholder="events (comma-separated, empty=all)" />
+      <button id="btn-wh-register" style="font-size:11px;padding:3px 8px;margin-bottom:8px">Register</button>
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">WEBHOOKS</div>
+      ${webhooks.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Name</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">URL</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)"></th>
+          </tr></thead>
+          <tbody>${whRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px;margin-bottom:8px">No webhooks registered.</div>'}
+
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:4px">RECENT DELIVERIES</div>
+      ${deliveries.length ? `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">#</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Hook</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Event</th>
+            <th style="font-size:10px;text-align:left;padding:2px 4px;color:var(--text-muted,#888)">Status</th>
+          </tr></thead>
+          <tbody>${dlRows}</tbody>
+        </table>` : '<div style="font-size:11px;color:var(--text-dim);padding:2px">No deliveries yet.</div>'}
+    `;
+
+    $("btn-webhooks-refresh")?.addEventListener("click", () => loadWebhooksPanel());
+
+    $("btn-wh-register")?.addEventListener("click", async () => {
+      const name   = $("wh-name")?.value.trim();
+      const url    = $("wh-url")?.value.trim();
+      const evts   = ($("wh-events")?.value.trim() || "").split(",").map((s) => s.trim()).filter(Boolean);
+      if (!name || !url) return;
+      try {
+        const res = await fetch("/webhook/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, url, events: evts }),
+        });
+        if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+        loadWebhooksPanel();
+      } catch (e) { alert(`Error: ${e.message}`); }
+    });
+
+    container.querySelectorAll(".btn-wh-deliver").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/webhook/deliver/${encodeURIComponent(btn.dataset.id)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event: "manual", payload: {} }),
+          });
+          const data = await res.json();
+          if (!res.ok) { alert(data.detail || "Error"); return; }
+          loadWebhooksPanel();
+        } catch (e) {
+          alert(`Error: ${e.message}`);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    container.querySelectorAll(".btn-wh-del").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await fetch(`/webhook/${encodeURIComponent(btn.dataset.id)}`, { method: "DELETE" });
+          loadWebhooksPanel();
         } catch (e) { /* ignore */ }
       });
     });

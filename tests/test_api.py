@@ -1954,3 +1954,102 @@ def test_db_query_and_schema(client, tmp_path):
         assert any(t["name"] == "users" for t in sdata["tables"])
     finally:
         os.unlink(ws)
+
+# ── Phase 28: Secret & Environment Vault ─────────────────────────────────────
+def test_vault_set(client):
+    r = client.post("/vault/set", json={"key": "MY_API_KEY", "value": "super-secret", "description": "test key"})
+    assert r.status_code == 200
+    assert r.json()["saved"] == "MY_API_KEY"
+
+def test_vault_keys_hides_values(client):
+    client.post("/vault/set", json={"key": "DB_PASSWORD", "value": "hunter2"})
+    r = client.get("/vault/keys")
+    assert r.status_code == 200
+    data = r.json()
+    assert "keys" in data
+    assert any(k["key"] == "DB_PASSWORD" for k in data["keys"])
+    # values must NOT appear in the keys listing
+    assert not any("hunter2" in str(k) for k in data["keys"])
+
+def test_vault_get(client):
+    client.post("/vault/set", json={"key": "TOKEN", "value": "abc123"})
+    r = client.get("/vault/get/TOKEN")
+    assert r.status_code == 200
+    assert r.json()["value"] == "abc123"
+
+def test_vault_get_not_found(client):
+    r = client.get("/vault/get/NONEXISTENT_KEY_XYZ")
+    assert r.status_code == 404
+
+def test_vault_delete(client):
+    client.post("/vault/set", json={"key": "TEMP_KEY", "value": "temp"})
+    r = client.delete("/vault/key/TEMP_KEY")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "TEMP_KEY"
+
+def test_vault_export_env(client):
+    client.post("/vault/set", json={"key": "EXPORT_KEY", "value": "export_val"})
+    r = client.post("/vault/export", json={"keys": ["EXPORT_KEY"], "format": "env"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["format"] == "env"
+    assert "EXPORT_KEY=export_val" in data["data"]
+
+def test_vault_import(client):
+    r = client.post("/vault/import", json={"IMPORT_A": "val_a", "IMPORT_B": "val_b"})
+    assert r.status_code == 200
+    imported = r.json()["imported"]
+    assert "IMPORT_A" in imported
+    assert "IMPORT_B" in imported
+
+# ── Phase 29: WebHook Manager ─────────────────────────────────────────────────
+def test_webhook_register(client):
+    r = client.post("/webhook/register", json={"name": "test-hook", "url": "http://localhost:9999/hook"})
+    assert r.status_code == 200
+    data = r.json()
+    assert "id" in data
+    assert data["name"] == "test-hook"
+
+def test_webhooks_list(client):
+    client.post("/webhook/register", json={"name": "list-hook", "url": "http://localhost:9999/list"})
+    r = client.get("/webhooks")
+    assert r.status_code == 200
+    data = r.json()
+    assert "webhooks" in data
+    assert any(w["name"] == "list-hook" for w in data["webhooks"])
+
+def test_webhooks_list_hides_secret(client):
+    client.post("/webhook/register", json={"name": "secret-hook", "url": "http://localhost:9999/s", "secret": "mysecret"})
+    r = client.get("/webhooks")
+    assert r.status_code == 200
+    for wh in r.json()["webhooks"]:
+        assert "secret" not in wh
+
+def test_webhook_register_missing_url(client):
+    r = client.post("/webhook/register", json={"name": "no-url", "url": ""})
+    assert r.status_code == 400
+
+def test_webhook_deliver_not_found(client):
+    r = client.post("/webhook/deliver/99999", json={"event": "test"})
+    assert r.status_code == 404
+
+def test_webhook_deliver_connection_error(client):
+    r = client.post("/webhook/register", json={"name": "fail-hook", "url": "http://localhost:19999/nope"})
+    wid = r.json()["id"]
+    r2 = client.post(f"/webhook/deliver/{wid}", json={"event": "test", "payload": {"x": 1}})
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["status_code"] == -1   # connection refused → error
+    assert "webhook_id" in data
+
+def test_webhook_deliveries_list(client):
+    r = client.get("/webhook/deliveries")
+    assert r.status_code == 200
+    assert "deliveries" in r.json()
+
+def test_webhook_delete(client):
+    r = client.post("/webhook/register", json={"name": "del-hook", "url": "http://localhost:9999/del"})
+    wid = r.json()["id"]
+    r2 = client.delete(f"/webhook/{wid}")
+    assert r2.status_code == 200
+    assert r2.json()["deleted"] == wid

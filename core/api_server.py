@@ -515,6 +515,30 @@ class DbQueryRequest(BaseModel):
     params: list[Any] = []
     limit: int = 200               # max rows returned
 
+# ── Phase 28: Secret & Environment Vault request models ──────────────────────
+
+class VaultSetRequest(BaseModel):
+    key: str
+    value: str
+    description: str = ""
+
+class VaultExportRequest(BaseModel):
+    keys: list[str] = []   # empty = export all keys
+    format: str = "env"    # "env" | "json"
+
+# ── Phase 29: WebHook Manager request models ──────────────────────────────────
+
+class WebhookRegisterRequest(BaseModel):
+    name: str
+    url: str
+    events: list[str] = []          # event types to subscribe to, empty = all
+    secret: str = ""                # optional HMAC secret for payload signing
+    enabled: bool = True
+
+class WebhookDeliverRequest(BaseModel):
+    event: str = "manual"
+    payload: dict[str, Any] = {}
+
 
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
@@ -4527,6 +4551,166 @@ indent_style = tab
         except Exception:
             pass
 
+    # ── Phase 28: Secret & Environment Vault ─────────────────────────────────
+
+    @app.post("/vault/set")
+    async def vault_set(req: VaultSetRequest) -> dict[str, Any]:
+        import base64 as _b64
+        if not req.key:
+            raise HTTPException(status_code=400, detail="key is required")
+        _vault_store[req.key] = {
+            "key": req.key,
+            "value": _b64.b64encode(req.value.encode()).decode(),
+            "description": req.description,
+        }
+        return {"saved": req.key}
+
+    @app.get("/vault/keys")
+    async def vault_keys() -> dict[str, Any]:
+        return {
+            "keys": [
+                {"key": v["key"], "description": v["description"]}
+                for v in _vault_store.values()
+            ]
+        }
+
+    @app.get("/vault/get/{key}")
+    async def vault_get(key: str) -> dict[str, Any]:
+        import base64 as _b64
+        if key not in _vault_store:
+            raise HTTPException(status_code=404, detail="Key not found")
+        entry = _vault_store[key]
+        return {
+            "key": key,
+            "value": _b64.b64decode(entry["value"].encode()).decode(),
+            "description": entry["description"],
+        }
+
+    @app.delete("/vault/key/{key}")
+    async def vault_delete(key: str) -> dict[str, Any]:
+        _vault_store.pop(key, None)
+        return {"deleted": key}
+
+    @app.post("/vault/export")
+    async def vault_export(req: VaultExportRequest) -> dict[str, Any]:
+        import base64 as _b64
+        keys_to_export = req.keys if req.keys else list(_vault_store.keys())
+        items = {
+            k: _b64.b64decode(_vault_store[k]["value"].encode()).decode()
+            for k in keys_to_export
+            if k in _vault_store
+        }
+        if req.format == "json":
+            return {"format": "json", "data": items}
+        # env format
+        lines = "\n".join(f'{k}={v}' for k, v in items.items())
+        return {"format": "env", "data": lines}
+
+    @app.post("/vault/import")
+    async def vault_import(payload: dict[str, Any]) -> dict[str, Any]:
+        import base64 as _b64
+        # Accept {"KEY": "VALUE", ...}
+        imported = []
+        for k, v in payload.items():
+            if isinstance(k, str) and isinstance(v, str):
+                _vault_store[k] = {
+                    "key": k,
+                    "value": _b64.b64encode(v.encode()).decode(),
+                    "description": "",
+                }
+                imported.append(k)
+        return {"imported": imported}
+
+    # ── Phase 29: WebHook Manager ────────────────────────────────────────────
+
+    @app.post("/webhook/register")
+    async def webhook_register(req: WebhookRegisterRequest) -> dict[str, Any]:
+        global _webhook_id_counter
+        if not req.name or not req.url:
+            raise HTTPException(status_code=400, detail="name and url are required")
+        _webhook_id_counter += 1
+        wid = str(_webhook_id_counter)
+        _webhooks[wid] = {
+            "id": wid,
+            "name": req.name,
+            "url": req.url,
+            "events": req.events,
+            "secret": req.secret,
+            "enabled": req.enabled,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        return {"id": wid, "name": req.name}
+
+    @app.get("/webhooks")
+    async def webhooks_list() -> dict[str, Any]:
+        # Don't expose the secret in listings
+        safe = [
+            {k: v for k, v in wh.items() if k != "secret"}
+            for wh in _webhooks.values()
+        ]
+        return {"webhooks": safe}
+
+    @app.delete("/webhook/{webhook_id}")
+    async def webhook_delete(webhook_id: str) -> dict[str, Any]:
+        _webhooks.pop(webhook_id, None)
+        return {"deleted": webhook_id}
+
+    @app.post("/webhook/deliver/{webhook_id}")
+    async def webhook_deliver(webhook_id: str, req: WebhookDeliverRequest) -> dict[str, Any]:
+        global _webhook_delivery_counter
+        if webhook_id not in _webhooks:
+            raise HTTPException(status_code=404, detail="Webhook not found")
+        wh = _webhooks[webhook_id]
+        if not wh.get("enabled"):
+            raise HTTPException(status_code=400, detail="Webhook is disabled")
+        payload = {"event": req.event, "data": req.payload, "webhook_id": webhook_id}
+        # Optionally sign with HMAC-SHA256 if secret is set
+        signature = ""
+        if wh.get("secret"):
+            import hmac as _hmac
+            import hashlib as _hl
+            body = json.dumps(payload, separators=(",", ":")).encode()
+            signature = _hmac.new(wh["secret"].encode(), body, _hl.sha256).hexdigest()
+        headers = {"Content-Type": "application/json"}
+        if signature:
+            headers["X-SwissAgent-Signature"] = signature
+        started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        status_code = -1
+        response_body = ""
+        try:
+            resp = requests.post(wh["url"], json=payload, headers=headers, timeout=10)
+            status_code = resp.status_code
+            response_body = resp.text[:2000]
+        except Exception as exc:
+            response_body = str(exc)
+        finished_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _webhook_delivery_counter += 1
+        record: dict[str, Any] = {
+            "id": _webhook_delivery_counter,
+            "webhook_id": webhook_id,
+            "webhook_name": wh["name"],
+            "event": req.event,
+            "status_code": status_code,
+            "response": response_body,
+            "started_at": started_at,
+            "finished_at": finished_at,
+        }
+        _webhook_deliveries.append(record)
+        if len(_webhook_deliveries) > _MAX_WEBHOOK_DELIVERIES:
+            _webhook_deliveries[:] = _webhook_deliveries[-_MAX_WEBHOOK_DELIVERIES:]
+        return record
+
+    @app.get("/webhook/deliveries")
+    async def webhook_deliveries_list(limit: int = 20) -> dict[str, Any]:
+        return {"deliveries": _webhook_deliveries[-limit:]}
+
+    @app.get("/webhook/delivery/{delivery_id}")
+    async def webhook_delivery_get(delivery_id: int) -> dict[str, Any]:
+        for d in _webhook_deliveries:
+            if d["id"] == delivery_id:
+                return d
+        raise HTTPException(status_code=404, detail="Delivery not found")
+
     return app
 
 
@@ -4633,3 +4817,13 @@ _metrics_alerts: dict[str, Any] = {}
 _db_connections: dict[str, Any] = {}
 _db_conn_counter: int = 0
 _db_last_results: list[dict[str, Any]] = []
+
+# ── Phase 28: Secret & Environment Vault ─────────────────────────────────────
+_vault_store: dict[str, dict[str, str]] = {}
+
+# ── Phase 29: WebHook Manager ─────────────────────────────────────────────────
+_webhooks: dict[str, Any] = {}
+_webhook_deliveries: list[dict[str, Any]] = []
+_MAX_WEBHOOK_DELIVERIES = 100
+_webhook_id_counter: int = 0
+_webhook_delivery_counter: int = 0
