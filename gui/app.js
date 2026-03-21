@@ -5735,9 +5735,13 @@
         }
         out.innerHTML = `
           <div style="margin-bottom:4px;font-size:11px;color:var(--text-dim)">${data.changed_lines} changed line(s)</div>
-          <pre style="font-size:10px;font-family:var(--font-mono);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px;overflow-x:auto;white-space:pre;max-height:300px">${escHtmlSimple(data.patch)}</pre>
-          <button onclick="navigator.clipboard.writeText(${JSON.stringify(data.patch).replace(/</g,'\\u003c')}).then(()=>_showToast?.('Patch copied!'))" style="font-size:11px;padding:3px 8px;margin-top:4px">📋 Copy Patch</button>
+          <pre id="dp-patch-output" style="font-size:10px;font-family:var(--font-mono);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px;overflow-x:auto;white-space:pre;max-height:300px">${escHtmlSimple(data.patch)}</pre>
+          <button id="btn-dp-copy-patch" style="font-size:11px;padding:3px 8px;margin-top:4px">📋 Copy Patch</button>
         `;
+        const patchText = data.patch;
+        document.getElementById("btn-dp-copy-patch")?.addEventListener("click", () => {
+          navigator.clipboard.writeText(patchText).then(() => _showToast?.("Patch copied!"));
+        });
       } catch (e) {
         out.innerHTML = `<div style="color:var(--danger)">Error: ${escHtmlSimple(e.message)}</div>`;
       }
@@ -5760,9 +5764,13 @@
         if (!res.ok) { out.innerHTML = `<div style="color:var(--danger)">${escHtmlSimple(data.detail || "Error")}</div>`; return; }
         out.innerHTML = `
           <div style="margin-bottom:4px;font-size:11px;color:var(--success,#4caf50)">✔ Patch applied successfully</div>
-          <textarea rows="8" readonly style="width:100%;font-size:11px;font-family:var(--font-mono);background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px;resize:vertical">${escHtmlSimple(data.result)}</textarea>
-          <button onclick="navigator.clipboard.writeText(${JSON.stringify(data.result).replace(/</g,'\\u003c')}).then(()=>_showToast?.('Result copied!'))" style="font-size:11px;padding:3px 8px;margin-top:4px">📋 Copy Result</button>
+          <textarea id="dp-result-text" rows="8" readonly style="width:100%;font-size:11px;font-family:var(--font-mono);background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px;resize:vertical">${escHtmlSimple(data.result)}</textarea>
+          <button id="btn-dp-copy-result" style="font-size:11px;padding:3px 8px;margin-top:4px">📋 Copy Result</button>
         `;
+        const resultText = data.result;
+        document.getElementById("btn-dp-copy-result")?.addEventListener("click", () => {
+          navigator.clipboard.writeText(resultText).then(() => _showToast?.("Result copied!"));
+        });
       } catch (e) {
         out.innerHTML = `<div style="color:var(--danger)">Error: ${escHtmlSimple(e.message)}</div>`;
       }

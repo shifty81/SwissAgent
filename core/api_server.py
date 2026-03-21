@@ -5867,7 +5867,7 @@ indent_style = tab
             n=max(0, req.context_lines),
         ))
         patch = "".join(diff_lines)
-        changed = sum(1 for l in diff_lines if l.startswith(("+", "-")) and not l.startswith(("+++", "---")))
+        changed = sum(1 for line in diff_lines if line.startswith(("+", "-")) and not line.startswith(("+++", "---")))
         return {"patch": patch, "changed_lines": changed, "has_diff": bool(diff_lines)}
 
     @app.post("/patch")
@@ -5906,7 +5906,7 @@ indent_style = tab
             n=max(0, req.context_lines),
         ))
         patch = "".join(diff_lines)
-        changed = sum(1 for l in diff_lines if l.startswith(("+", "-")) and not l.startswith(("+++", "---")))
+        changed = sum(1 for line in diff_lines if line.startswith(("+", "-")) and not line.startswith(("+++", "---")))
         return {"patch": patch, "changed_lines": changed, "has_diff": bool(diff_lines)}
 
     @app.post("/patch/file")
