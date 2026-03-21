@@ -11,7 +11,7 @@
 <body>
   <!-- ── Top bar ─────────────────────────────────────────────── -->
   <header id="topbar">
-    <span class="logo">🛠 SwissAgent IDE</span>
+    <span class="logo">🛠 SwissAgent</span>
     <div class="topbar-actions">
       <button id="btn-save" title="Save current file (Ctrl+S)">💾 Save</button>
       <button id="btn-run-file" title="Run agent on current file">▶ Agent</button>
@@ -20,20 +20,8 @@
       <label id="label-auto-rebuild" title="Auto-rebuild when a file is saved">
         <input type="checkbox" id="chk-auto-rebuild" /> Auto-rebuild
       </label>
-      <select id="llm-backend-select" title="LLM backend">
-        <option value="ollama">🟢 Ollama (local/free)</option>
-        <option value="openwebui">🟢 Open WebUI (local/free)</option>
-        <option value="lmstudio">🟢 LM Studio (local/free)</option>
-        <option value="llamacpp">🟢 llama.cpp (local/free)</option>
-        <option value="localai">🟢 LocalAI (local/free)</option>
-        <option value="tabby">🟢 Tabby (local/free)</option>
-        <option value="gemini">🔵 Gemini (free tier)</option>
-        <option value="api">🔑 OpenAI API</option>
-        <option value="anthropic">🔑 Anthropic</option>
-        <option value="local">⚙ Local stub</option>
-      </select>
       <span id="status-indicator" class="status-idle">● Idle</span>
-      <button id="btn-focus-mode" title="Toggle Focus Mode — hide sidebars (Ctrl+Shift+F)">⛶ Focus</button>
+      <button id="btn-focus-mode" title="Toggle Focus Mode (Ctrl+Shift+F)">⛶</button>
       <button id="btn-theme-toggle" title="Toggle dark/light theme">🌙</button>
     </div>
   </header>
@@ -41,126 +29,80 @@
   <!-- ── Main layout ──────────────────────────────────────────── -->
   <div id="layout">
 
-    <!-- ── Activity bar ──────────────────────────────────────────── -->
+    <!-- ── Activity bar (VS Code-style, icon-only) ─────────────────── -->
     <div id="activity-bar">
-
-      <!-- Group: Files -->
-      <div class="ab-group open" id="abg-files">
-        <button type="button" class="ab-group-hdr" data-group="files">
-          <span class="ab-group-icon">📁</span>
-          <span class="ab-group-label">Files</span>
-          <span class="ab-group-arrow">▾</span>
+      <div class="ab-top">
+        <button class="ab-icon active" data-panel="explorer" title="Explorer">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         </button>
-        <div class="ab-group-items">
-          <button class="ab-btn active" data-panel="explorer" title="Explorer">📁</button>
-          <button class="ab-btn" data-panel="search"   title="Search">🔍</button>
-          <button class="ab-btn" data-panel="git"      title="Git">⎇</button>
-        </div>
-      </div>
-
-      <!-- Group: AI -->
-      <div class="ab-group open" id="abg-ai">
-        <button type="button" class="ab-group-hdr" data-group="ai">
-          <span class="ab-group-icon">🤖</span>
-          <span class="ab-group-label">AI</span>
-          <span class="ab-group-arrow">▾</span>
+        <button class="ab-icon" data-panel="search" title="Search in Files">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
-        <div class="ab-group-items">
-          <button class="ab-btn" data-panel="aibackends" title="AI Backends">🤖</button>
-          <button class="ab-btn" data-panel="knowledge"  title="Knowledge &amp; Profile">📚</button>
-          <button class="ab-btn" data-panel="models"     title="Model Downloads">📥</button>
-          <button class="ab-btn" data-panel="agents"     title="Multi-Agent">🕹</button>
-          <button class="ab-btn" data-panel="refactor"   title="Refactor">🔧</button>
-          <button class="ab-btn" data-panel="brainstorm" title="Brainstorm">💡</button>
-          <button class="ab-btn" data-panel="websearch"  title="Web Search">🌐</button>
-        </div>
-      </div>
-
-      <!-- Group: Code -->
-      <div class="ab-group" id="abg-code">
-        <button type="button" class="ab-group-hdr" data-group="code">
-          <span class="ab-group-icon">⚡</span>
-          <span class="ab-group-label">Code</span>
-          <span class="ab-group-arrow">▾</span>
+        <button class="ab-icon" data-panel="git" title="Source Control">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
         </button>
-        <div class="ab-group-items">
-          <button class="ab-btn" data-panel="scaffold"  title="Scaffold">⚡</button>
-          <button class="ab-btn" data-panel="quality"   title="Code Quality">🔬</button>
-          <button class="ab-btn" data-panel="templates" title="Templates &amp; Toolchain">🧩</button>
-          <button class="ab-btn" data-panel="utilities" title="Utilities">⚙️</button>
-          <button class="ab-btn" data-panel="snippets"  title="Code Snippets">📎</button>
-          <button class="ab-btn" data-panel="diffpatch"  title="Diff &amp; Patch">🔀</button>
-          <button class="ab-btn" data-panel="envvars"    title="Env Variables">🔑</button>
-          <button class="ab-btn" data-panel="apiclient"  title="API Client">🌐</button>
-        </div>
-      </div>
-
-      <!-- Group: Project -->
-      <div class="ab-group" id="abg-project">
-        <button type="button" class="ab-group-hdr" data-group="project">
-          <span class="ab-group-icon">📋</span>
-          <span class="ab-group-label">Project</span>
-          <span class="ab-group-arrow">▾</span>
+        <button class="ab-icon" data-panel="aibackends" title="AI / LLM Backends">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a8 8 0 0 1 8 8v4a8 8 0 0 1-8 8 8 8 0 0 1-8-8v-4a8 8 0 0 1 8-8z"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/><path d="M9 14s1 1 3 1 3-1 3-1"/></svg>
         </button>
-        <div class="ab-group-items">
-          <button class="ab-btn" data-panel="notes"   title="Notes &amp; Tasks">📝</button>
-          <button class="ab-btn" data-panel="roadmap" title="Roadmap">🗺</button>
-          <button class="ab-btn" data-panel="plugins" title="Plugins">🔌</button>
-        </div>
-      </div>
-
-      <!-- Group: DevOps -->
-      <div class="ab-group" id="abg-devops">
-        <button type="button" class="ab-group-hdr" data-group="devops">
-          <span class="ab-group-icon">🚀</span>
-          <span class="ab-group-label">DevOps</span>
-          <span class="ab-group-arrow">▾</span>
+        <button class="ab-icon" data-panel="scaffold" title="Code Tools">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
         </button>
-        <div class="ab-group-items">
-          <button class="ab-btn" data-panel="ci"     title="CI/CD Pipeline">🔁</button>
-          <button class="ab-btn" data-panel="docker" title="Docker">🐳</button>
-          <button class="ab-btn" data-panel="deploy" title="Remote Deploy">🚀</button>
-        </div>
-      </div>
-
-      <!-- Group: Ops -->
-      <div class="ab-group" id="abg-ops">
-        <button type="button" class="ab-group-hdr" data-group="ops">
-          <span class="ab-group-icon">⚙</span>
-          <span class="ab-group-label">Ops</span>
-          <span class="ab-group-arrow">▾</span>
+        <button class="ab-icon" data-panel="ci" title="DevOps / CI / Deploy">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </button>
-        <div class="ab-group-items">
-          <button class="ab-btn" data-panel="monitor"   title="Monitoring">📊</button>
-          <button class="ab-btn" data-panel="database"  title="Database">🗄️</button>
-          <button class="ab-btn" data-panel="vault"     title="Secret Vault">🔐</button>
-          <button class="ab-btn" data-panel="webhooks"  title="Webhooks">🪝</button>
-          <button class="ab-btn" data-panel="ratelimit" title="Rate Limits">⏱</button>
-          <button class="ab-btn" data-panel="events"    title="Event Bus">📡</button>
-          <button class="ab-btn" data-panel="cron"      title="Cron Jobs">🕐</button>
-          <button class="ab-btn" data-panel="audit"     title="Audit Log">📋</button>
-          <button class="ab-btn" data-panel="flags"     title="Feature Flags">🚩</button>
-          <button class="ab-btn" data-panel="cfgprofile" title="Config Profiles">⚙️</button>
-          <button class="ab-btn" data-panel="notify"    title="Notifications">🔔</button>
-          <button class="ab-btn" data-panel="taskqueue" title="Task Queue">📬</button>
-        </div>
-      </div>
-
-      <!-- Group: Insights (Phase 46-49) -->
-      <div class="ab-group" id="abg-insights">
-        <button type="button" class="ab-group-hdr" data-group="insights">
-          <span class="ab-group-icon">📈</span>
-          <span class="ab-group-label">Insights</span>
-          <span class="ab-group-arrow">▾</span>
+        <button class="ab-icon" data-panel="monitor" title="Ops / Monitoring">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         </button>
-        <div class="ab-group-items">
-          <button class="ab-btn" data-panel="aitimeline" title="AI Timeline">🕒</button>
-          <button class="ab-btn" data-panel="healthdash" title="Project Health">💚</button>
-          <button class="ab-btn" data-panel="docgen" title="Doc Generator">📝</button>
-          <button class="ab-btn" data-panel="depsanalyzer" title="Dependency Analyzer">📦</button>
-        </div>
+        <button class="ab-icon" data-panel="aitimeline" title="Insights &amp; Analytics">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </button>
+        <button class="ab-icon" data-panel="notes" title="Project / Notes">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </button>
+        <!-- Overflow: all other panels reachable via a compact "more" menu -->
+        <button class="ab-icon" id="btn-ab-more" title="More panels…">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        </button>
       </div>
-
+      <div class="ab-bottom">
+        <button class="ab-icon" data-panel="cfgprofile" title="Settings &amp; Config">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+      <!-- Overflow panel picker (hidden by default) -->
+      <div id="ab-overflow-menu" class="ab-overflow-menu hidden">
+        <div class="ab-ov-hdr">All Panels</div>
+        <button class="ab-ov-item" data-panel="knowledge">📚 Knowledge</button>
+        <button class="ab-ov-item" data-panel="models">📥 Model Downloads</button>
+        <button class="ab-ov-item" data-panel="agents">🕹 Multi-Agent</button>
+        <button class="ab-ov-item" data-panel="refactor">🔧 Refactor</button>
+        <button class="ab-ov-item" data-panel="brainstorm">💡 Brainstorm</button>
+        <button class="ab-ov-item" data-panel="websearch">🌐 Web Search</button>
+        <button class="ab-ov-item" data-panel="quality">🔬 Code Quality</button>
+        <button class="ab-ov-item" data-panel="templates">🧩 Templates</button>
+        <button class="ab-ov-item" data-panel="utilities">⚙️ Utilities</button>
+        <button class="ab-ov-item" data-panel="snippets">📎 Snippets</button>
+        <button class="ab-ov-item" data-panel="diffpatch">🔀 Diff &amp; Patch</button>
+        <button class="ab-ov-item" data-panel="envvars">🔑 Env Vars</button>
+        <button class="ab-ov-item" data-panel="apiclient">🌐 API Client</button>
+        <button class="ab-ov-item" data-panel="docker">🐳 Docker</button>
+        <button class="ab-ov-item" data-panel="deploy">🚀 Deploy</button>
+        <button class="ab-ov-item" data-panel="database">🗄️ Database</button>
+        <button class="ab-ov-item" data-panel="vault">🔐 Vault</button>
+        <button class="ab-ov-item" data-panel="webhooks">🪝 Webhooks</button>
+        <button class="ab-ov-item" data-panel="ratelimit">⏱ Rate Limits</button>
+        <button class="ab-ov-item" data-panel="events">📡 Event Bus</button>
+        <button class="ab-ov-item" data-panel="cron">🕐 Cron</button>
+        <button class="ab-ov-item" data-panel="audit">📋 Audit Log</button>
+        <button class="ab-ov-item" data-panel="flags">🚩 Feature Flags</button>
+        <button class="ab-ov-item" data-panel="notify">🔔 Notifications</button>
+        <button class="ab-ov-item" data-panel="taskqueue">📬 Task Queue</button>
+        <button class="ab-ov-item" data-panel="roadmap">🗺 Roadmap</button>
+        <button class="ab-ov-item" data-panel="plugins">🔌 Plugins</button>
+        <button class="ab-ov-item" data-panel="healthdash">💚 Health Dashboard</button>
+        <button class="ab-ov-item" data-panel="docgen">📝 Doc Generator</button>
+        <button class="ab-ov-item" data-panel="depsanalyzer">📦 Dep Analyzer</button>
+      </div>
     </div>
 
     <!-- ── Sidebar (panel area) ──────────────────────────────────── -->
@@ -1193,27 +1135,86 @@
       </div>
     </div>
 
-    <!-- Agent chat panel -->
+    <!-- ── Chat panel (Cursor-style, right side) ──────────────────── -->
     <aside id="agent-panel">
-      <div class="agent-header">
-        <span>AI Agent</span>
-        <button id="btn-clear-chat" title="Clear chat">✕</button>
-      </div>
-      <div id="chat-messages"></div>
-      <div id="chat-input-area">
-        <div id="slash-cmd-bar">
-          <button class="slash-btn" data-cmd="/fix"      title="Ask AI to fix bugs in the active file">🔧 Fix</button>
-          <button class="slash-btn" data-cmd="/explain"  title="Ask AI to explain the active file">💡 Explain</button>
-          <button class="slash-btn" data-cmd="/test"     title="Ask AI to write tests for the active file">🧪 Test</button>
-          <button class="slash-btn" data-cmd="/docs"     title="Ask AI to add docstrings to the active file">📝 Docs</button>
-          <button class="slash-btn" data-cmd="/refactor" title="Ask AI to refactor the active file">♻ Refactor</button>
+      <!-- Header -->
+      <div class="cp-header">
+        <span class="cp-title">CHAT</span>
+        <div class="cp-header-actions">
+          <button id="btn-new-session" class="cp-hdr-btn" title="New session">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button id="btn-clear-chat" class="cp-hdr-btn" title="Clear current chat">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </button>
+          <button id="btn-cp-expand" class="cp-hdr-btn" title="Expand chat panel">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          </button>
         </div>
+      </div>
+
+      <!-- Sessions list -->
+      <div id="cp-sessions-panel">
+        <div class="cp-section-label">SESSIONS</div>
+        <div id="sessions-list"></div>
+      </div>
+
+      <!-- Divider shown when a session is active -->
+      <div class="cp-divider" id="cp-divider"></div>
+
+      <!-- Chat messages area -->
+      <div id="chat-messages"></div>
+
+      <!-- Chat input -->
+      <div id="chat-input-area">
+        <!-- Quick action buttons -->
+        <div id="slash-cmd-bar">
+          <button class="slash-btn" data-cmd="/fix"      title="Ask AI to fix bugs in the active file">Fix</button>
+          <button class="slash-btn" data-cmd="/explain"  title="Ask AI to explain the active file">Explain</button>
+          <button class="slash-btn" data-cmd="/test"     title="Ask AI to write tests for the active file">Test</button>
+          <button class="slash-btn" data-cmd="/docs"     title="Ask AI to add docstrings to the active file">Docs</button>
+          <button class="slash-btn" data-cmd="/refactor" title="Ask AI to refactor the active file">Refactor</button>
+        </div>
+        <!-- File context chip -->
+        <div class="ci-attach-row">
+          <button class="ci-attach-chip" id="btn-attach-file" title="Toggle current file as context">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span id="ci-attached-name">no file</span>
+          </button>
+        </div>
+        <!-- Message textarea -->
         <textarea
           id="chat-input"
-          placeholder="Ask anything… or click a button above"
+          placeholder="Describe what to build…"
           rows="3"
         ></textarea>
-        <button id="btn-send-prompt">Send ↵</button>
+        <!-- Toolbar: mode | model | send -->
+        <div class="ci-toolbar">
+          <div class="ci-toolbar-left">
+            <select id="llm-backend-select" class="ci-model-select" title="LLM backend">
+              <option value="ollama">🟢 Ollama (local/free)</option>
+              <option value="openwebui">🟢 Open WebUI (local/free)</option>
+              <option value="lmstudio">🟢 LM Studio (local/free)</option>
+              <option value="llamacpp">🟢 llama.cpp (local/free)</option>
+              <option value="localai">🟢 LocalAI (local/free)</option>
+              <option value="tabby">🟢 Tabby (local/free)</option>
+              <option value="gemini">🔵 Gemini (free tier)</option>
+              <option value="api">🔑 OpenAI API</option>
+              <option value="anthropic">🔑 Anthropic</option>
+              <option value="local">⚙ Local stub</option>
+            </select>
+          </div>
+          <button id="btn-send-prompt" class="ci-send-btn" title="Send (Enter)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          </button>
+        </div>
+        <!-- Status strip -->
+        <div class="ci-status-strip">
+          <span class="ci-status-dot" id="ci-llm-dot">⊙</span>
+          <span class="ci-status-text" id="ci-llm-label">Local</span>
+          <span class="ci-status-sep">|</span>
+          <span class="ci-persona-label" id="ci-persona-label">swissagent_assistant</span>
+        </div>
       </div>
     </aside>
   </div>

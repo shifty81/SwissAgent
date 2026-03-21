@@ -77,7 +77,9 @@ def test_llm_local_stub():
     from llm.local import LocalLLM
     llm = LocalLLM()
     result = llm.chat([{"role": "user", "content": "hello"}])
-    assert "hello" in result
+    # Stub now returns a helpful setup message instead of echoing the input
+    assert "[LocalLLM stub] Received:" not in result
+    assert "LLM" in result or "backend" in result or "Ollama" in result
 
 
 def test_llm_factory_local():

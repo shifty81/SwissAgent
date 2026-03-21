@@ -22,6 +22,42 @@ def test_health(client):
     assert res.json()["status"] == "ok"
 
 
+def test_assistant_chat_returns_reply(client):
+    """Central assistant endpoint returns a reply with session_id and backend_used."""
+    res = client.post("/assistant/chat", json={"message": "hello"})
+    assert res.status_code == 200
+    data = res.json()
+    assert "reply" in data
+    assert isinstance(data["reply"], str)
+    assert "session_id" in data
+    assert data["session_id"]  # non-empty
+    assert "backend_used" in data
+
+
+def test_assistant_chat_accepts_session_id(client):
+    """Provided session_id is echoed back unchanged."""
+    res = client.post("/assistant/chat", json={"message": "ping", "session_id": "test-sess-1"})
+    assert res.status_code == 200
+    assert res.json()["session_id"] == "test-sess-1"
+
+
+def test_assistant_chat_empty_message_rejected(client):
+    """Empty message body should fail validation."""
+    res = client.post("/assistant/chat", json={})
+    assert res.status_code == 422
+
+
+def test_assistant_chat_stub_reply_is_helpful(client):
+    """When local stub is used the reply must contain setup guidance, not the old echo."""
+    res = client.post("/assistant/chat", json={"message": "hello", "llm_backend": "local"})
+    assert res.status_code == 200
+    reply = res.json()["reply"]
+    # Must NOT be the old stub echo
+    assert "[LocalLLM stub] Received:" not in reply
+    # Must contain helpful guidance
+    assert "LLM" in reply or "backend" in reply or "Ollama" in reply
+
+
 def test_tools_list(client):
     res = client.get("/tools")
     assert res.status_code == 200

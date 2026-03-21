@@ -79,6 +79,20 @@ class RunRequest(BaseModel):
     project_path: str = ""
 
 
+class AssistantChatRequest(BaseModel):
+    message: str
+    session_id: str = ""
+    project_path: str = ""
+    # Optional override; if blank the server reads agent.default_llm_backend from config
+    llm_backend: str = ""
+
+
+class AssistantChatResponse(BaseModel):
+    reply: str
+    session_id: str
+    backend_used: str
+
+
 class RunResponse(BaseModel):
     result: str
 
@@ -985,6 +999,50 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             ],
         )
         return RunResponse(result=result)
+
+    # ── Central assistant chat (POST /assistant/chat) ──────────────────────
+    @app.post("/assistant/chat", response_model=AssistantChatResponse)
+    async def assistant_chat(req: AssistantChatRequest) -> AssistantChatResponse:
+        """Universal assistant endpoint — the primary interface for all SwissAgent AI interactions.
+
+        Uses the ``swissagent_assistant`` persona (or the currently active persona) and
+        routes the conversation through the full Agent loop so every tool and
+        capability of the platform is reachable from a single entry point.
+
+        The LLM backend is chosen from (in priority order):
+          1. ``req.llm_backend`` if explicitly provided in the request
+          2. ``agent.default_llm_backend`` from the server config
+          3. ``"ollama"`` as a last-resort default
+        """
+        import uuid
+        from core.agent import Agent
+        from llm.factory import create_llm
+
+        backend = (
+            req.llm_backend.strip()
+            or str(config.get("agent.default_llm_backend", "ollama"))
+        )
+        llm = create_llm(backend, config)
+        project_path = req.project_path or ""
+        session_id = req.session_id or str(uuid.uuid4())
+
+        agent = Agent(llm, registry, permissions, runner, config, project_path)
+        chat_history = _load_chat_history(base_dir, project_path)
+        reply = await asyncio.get_event_loop().run_in_executor(
+            None, agent.run, req.message, project_path, chat_history
+        )
+        _append_chat_history(
+            base_dir, project_path,
+            [
+                {"role": "user", "content": req.message},
+                {"role": "assistant", "content": reply},
+            ],
+        )
+        return AssistantChatResponse(
+            reply=reply,
+            session_id=session_id,
+            backend_used=backend,
+        )
 
     # ── Run agent (WebSocket, streaming) ──────────────────────────────────
     @app.websocket("/ws/run")

@@ -20,7 +20,7 @@ const { spawn } = require('child_process');
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const BACKEND_PORT   = 8000;
-const BACKEND_URL    = `http://localhost:${BACKEND_PORT}`;
+const BACKEND_URL    = `http://127.0.0.1:${BACKEND_PORT}`;
 const HEALTH_URL     = `${BACKEND_URL}/health`;
 const HEALTH_RETRIES = 30;
 const LAUNCHER_W     = 720;

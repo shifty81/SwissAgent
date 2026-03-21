@@ -167,7 +167,11 @@ class Agent:
 
     def _finalize(self, state: AgentState) -> str:
         messages = self._build_messages(state)
-        messages.append({"role": "user", "content": "Summarize the final result."})
+        # When no tools were executed there is nothing to summarize — just
+        # let the LLM respond directly to the user's original prompt so the
+        # stub "Summarize the final result." echo never leaks to the UI.
+        if state.results:
+            messages.append({"role": "user", "content": "Summarize the final result."})
         return self.llm.generate(messages)
 
     def _build_messages(self, state: AgentState, include_tools: bool = False) -> list[dict[str, str]]:
