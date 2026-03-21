@@ -132,6 +132,13 @@ if(MSVC)
     # Use the static CRT in Release so the exe is self-contained
     set_property(TARGET SwissAgent PROPERTY
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    # Disable the linker's auto-generated manifest.  SwissAgent.rc already
+    # embeds the application manifest at RT_MANIFEST / ID 1 (resource type 24,
+    # name 1).  If /MANIFEST is left at its default (/MANIFEST:EMBED), the
+    # linker writes a second manifest into the same slot, which causes:
+    #   CVT1100 — duplicate resource (type:MANIFEST, name:1, language:0x0409)
+    #   LNK1123 — failure during conversion to COFF (cascading CVTRES error)
+    target_link_options(SwissAgent PRIVATE /MANIFEST:NO)
 else()
     # MinGW / Clang
     target_compile_options(SwissAgent PRIVATE -Wall -Wextra -Wno-unused-parameter)

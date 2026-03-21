@@ -692,6 +692,17 @@ class PatchFileRequest(BaseModel):
     path: str
     patch: str                 # unified diff text
 
+# ── Phase 42: AI Persona (hive-mind) request models ──────────────────────────
+
+class PersonaCreateRequest(BaseModel):
+    name: str
+    system_prompt: str
+    display_name: str = ""
+    role: str = ""
+    domain: str = ""
+    offline_model: str = ""
+    llm_backend: str = ""
+
 
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
@@ -5927,6 +5938,97 @@ indent_style = tab
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Patch failed: {exc}")
 
+    # ── Phase 42: AI Persona (hive-mind) ──────────────────────────────────────
+
+    @app.get("/ai/personas")
+    async def ai_personas_list() -> dict[str, Any]:
+        """List all AI personas — 13 built-in specialists plus any custom ones."""
+        from modules.ai_persona.src.ai_persona_tools import persona_list
+        return persona_list()
+
+    @app.get("/ai/persona/active")
+    async def ai_persona_active_get() -> dict[str, Any]:
+        """Return lightweight metadata of the currently active persona."""
+        from modules.ai_persona.src.ai_persona_tools import get_active_persona_info, _load_active_name
+        info = get_active_persona_info()
+        if not info:
+            return {"active": None, "message": "No persona is currently active."}
+        return {"active": _load_active_name(), **info}
+
+    @app.get("/ai/persona/context")
+    async def ai_persona_context() -> dict[str, Any]:
+        """Return the full resolved system prompt that will be sent to the LLM."""
+        from modules.ai_persona.src.ai_persona_tools import (
+            load_active_persona_prompt,
+            get_active_persona_info,
+        )
+        prompt = load_active_persona_prompt()
+        info = get_active_persona_info()
+        if not prompt:
+            return {
+                "active": None,
+                "system_prompt": (
+                    "You are SwissAgent, an AI-powered offline development platform assistant. "
+                    "You help with code generation, build automation, asset pipelines, and development tasks. "
+                    "Think step-by-step and use available tools to complete tasks."
+                ),
+                "message": "No persona active — showing default SwissAgent system prompt.",
+            }
+        return {
+            "active": info.get("name"),
+            "display_name": info.get("display_name"),
+            "system_prompt": prompt,
+        }
+
+    @app.get("/ai/persona/{name}")
+    async def ai_persona_get(name: str) -> dict[str, Any]:
+        """Return full details (including system_prompt) of a named persona."""
+        from modules.ai_persona.src.ai_persona_tools import persona_get
+        result = persona_get(name)
+        if "error" in result:
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+
+    @app.post("/ai/persona")
+    async def ai_persona_create(req: PersonaCreateRequest) -> dict[str, Any]:
+        """Create or replace a custom AI persona."""
+        from modules.ai_persona.src.ai_persona_tools import persona_create
+        if not req.name or not req.name.strip():
+            raise HTTPException(status_code=400, detail="name is required")
+        if not req.system_prompt or not req.system_prompt.strip():
+            raise HTTPException(status_code=400, detail="system_prompt is required")
+        result = persona_create(
+            name=req.name,
+            system_prompt=req.system_prompt,
+            display_name=req.display_name,
+            role=req.role,
+            domain=req.domain,
+            offline_model=req.offline_model,
+            llm_backend=req.llm_backend,
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    @app.post("/ai/persona/{name}/activate")
+    async def ai_persona_activate(name: str) -> dict[str, Any]:
+        """Set a persona as globally active for all subsequent agent calls."""
+        from modules.ai_persona.src.ai_persona_tools import persona_activate
+        result = persona_activate(name)
+        if "error" in result:
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+
+    @app.delete("/ai/persona/{name}")
+    async def ai_persona_delete(name: str) -> dict[str, Any]:
+        """Delete a custom persona (built-in personas cannot be deleted)."""
+        from modules.ai_persona.src.ai_persona_tools import persona_delete
+        result = persona_delete(name)
+        if "error" in result:
+            code = 403 if "cannot be deleted" in result["error"] else 404
+            raise HTTPException(status_code=code, detail=result["error"])
+        return result
+
     return app
 
 
@@ -6092,3 +6194,6 @@ _WEB_SEARCH_TIMEOUT = 8  # seconds
 # ── Phase 40: Code Snippet Library ────────────────────────────────────────────
 _snippets: dict[str, Any] = {}
 _snippet_id_counter: int = 0
+
+# ── Phase 42: AI Persona (hive-mind) — no in-process state;
+#    all state is persisted by modules/ai_persona/src/ai_persona_tools.py
