@@ -3038,3 +3038,193 @@ def test_ai_persona_deactivate(client):
     ctx = client.get("/ai/persona/context").json()
     assert ctx["is_default"] is True
     assert "SwissAgent" in ctx["system_prompt"]
+
+# ── Phase 44: Environment Variables Manager ───────────────────────────────────
+
+def test_env_files_list(client):
+    r = client.get("/env/files")
+    assert r.status_code == 200
+    d = r.json()
+    assert "files" in d
+    assert "total" in d
+
+def test_env_var_set_and_get(client):
+    # Set a variable
+    r = client.post("/env/var", json={"file": "workspace/test.env", "key": "MY_KEY", "value": "hello_world", "comment": "test var"})
+    assert r.status_code == 200
+    assert r.json()["success"] is True
+    # Read it back
+    r2 = client.get("/env/vars?file=workspace/test.env")
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["exists"] is True
+    keys = [v["key"] for v in d2["vars"]]
+    assert "MY_KEY" in keys
+    val = next(v["value"] for v in d2["vars"] if v["key"] == "MY_KEY")
+    assert val == "hello_world"
+
+def test_env_var_update(client):
+    # Update existing key
+    client.post("/env/var", json={"file": "workspace/test_update.env", "key": "PORT", "value": "8000"})
+    client.post("/env/var", json={"file": "workspace/test_update.env", "key": "PORT", "value": "9000"})
+    r = client.get("/env/vars?file=workspace/test_update.env")
+    vars_list = r.json()["vars"]
+    port_vars = [v for v in vars_list if v["key"] == "PORT"]
+    assert len(port_vars) == 1, "Duplicate keys should be merged"
+    assert port_vars[0]["value"] == "9000"
+
+def test_env_var_delete(client):
+    client.post("/env/var", json={"file": "workspace/test_del.env", "key": "TO_DELETE", "value": "bye"})
+    r = client.delete("/env/var?file=workspace/test_del.env&key=TO_DELETE")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "TO_DELETE"
+    # Should be gone
+    r2 = client.get("/env/vars?file=workspace/test_del.env")
+    keys = [v["key"] for v in r2.json()["vars"]]
+    assert "TO_DELETE" not in keys
+
+def test_env_var_delete_not_found(client):
+    client.post("/env/var", json={"file": "workspace/test_notfound.env", "key": "EXISTS", "value": "yes"})
+    r = client.delete("/env/var?file=workspace/test_notfound.env&key=DOES_NOT_EXIST")
+    assert r.status_code == 404
+
+def test_env_export(client):
+    client.post("/env/var", json={"file": "workspace/test_export.env", "key": "EXPORT_KEY", "value": "exported"})
+    r = client.get("/env/export?file=workspace/test_export.env")
+    assert r.status_code == 200
+    d = r.json()
+    assert "content" in d
+    assert "EXPORT_KEY=exported" in d["content"]
+
+def test_env_export_not_found(client):
+    r = client.get("/env/export?file=workspace/nonexistent_file_xyz.env")
+    assert r.status_code == 404
+
+def test_env_import(client):
+    content = "DB_HOST=localhost\nDB_PORT=5432\n# comment\nDB_NAME=mydb\n"
+    r = client.post("/env/import", json={"file": "workspace/test_import.env", "content": content})
+    assert r.status_code == 200
+    assert r.json()["vars_imported"] == 3
+    r2 = client.get("/env/vars?file=workspace/test_import.env")
+    keys = [v["key"] for v in r2.json()["vars"]]
+    assert "DB_HOST" in keys
+    assert "DB_PORT" in keys
+    assert "DB_NAME" in keys
+
+def test_env_var_set_missing_key(client):
+    r = client.post("/env/var", json={"file": ".env", "key": "", "value": "val"})
+    assert r.status_code == 400
+
+def test_env_vars_nonexistent_file(client):
+    r = client.get("/env/vars?file=workspace/totally_missing_xyz.env")
+    assert r.status_code == 200
+    assert r.json()["exists"] is False
+
+# ── Phase 45: API Client / HTTP Playground ────────────────────────────────────
+
+def test_apiclient_send_get(client):
+    r = client.post("/apiclient/send", json={"method": "GET", "url": "https://httpbin.org/get"})
+    # If offline/blocked, expect 502 or 504; otherwise 200
+    assert r.status_code in (200, 502, 504)
+    if r.status_code == 200:
+        d = r.json()
+        assert "status_code" in d
+        assert "body" in d
+        assert "elapsed_ms" in d
+
+def test_apiclient_send_missing_url(client):
+    r = client.post("/apiclient/send", json={"method": "GET", "url": ""})
+    assert r.status_code == 400
+
+def test_apiclient_send_invalid_scheme(client):
+    """Non-http/https schemes must be rejected to prevent SSRF via file:// etc."""
+    for bad_url in ("file:///etc/passwd", "ftp://example.com/file", "javascript:alert(1)"):
+        r = client.post("/apiclient/send", json={"method": "GET", "url": bad_url})
+        assert r.status_code == 400, f"Expected 400 for {bad_url}"
+
+def test_apiclient_send_invalid_method(client):
+    r = client.post("/apiclient/send", json={"method": "INJECT", "url": "https://example.com"})
+    assert r.status_code == 400
+
+def test_apiclient_send_http_internal_allowed(client):
+    """http:// URLs (including localhost) are allowed — this is a developer tool."""
+    # We don't actually connect; we just check the URL passes scheme validation
+    # (it will fail with a connection error at the network level, not a 400)
+    r = client.post("/apiclient/send", json={"method": "GET", "url": "http://localhost:9999/nonexistent"})
+    # 400 = rejected by validation, 502/504 = rejected by network — both are OK
+    # What must NOT happen is a 400 due to scheme rejection
+    assert r.status_code != 400 or "scheme" not in r.json().get("detail", "").lower()
+
+def test_apiclient_collections_empty(client):
+    r = client.get("/apiclient/collections")
+    assert r.status_code == 200
+    d = r.json()
+    assert "collections" in d
+    assert isinstance(d["collections"], list)
+
+def test_apiclient_collection_crud(client):
+    # Create
+    r = client.post("/apiclient/collection", json={"name": "test_collection", "description": "A test collection"})
+    assert r.status_code == 200
+    assert r.json()["success"] is True
+
+    # List
+    r2 = client.get("/apiclient/collections")
+    names = [c["name"] for c in r2.json()["collections"]]
+    assert "test_collection" in names
+
+    # Get
+    r3 = client.get("/apiclient/collection/test_collection")
+    assert r3.status_code == 200
+    assert r3.json()["name"] == "test_collection"
+
+def test_apiclient_collection_duplicate(client):
+    client.post("/apiclient/collection", json={"name": "dupe_collection"})
+    r = client.post("/apiclient/collection", json={"name": "dupe_collection"})
+    assert r.status_code == 409
+
+def test_apiclient_collection_not_found(client):
+    r = client.get("/apiclient/collection/ghost_collection_xyz")
+    assert r.status_code == 404
+
+def test_apiclient_request_save_and_list(client):
+    client.post("/apiclient/collection", json={"name": "req_test_col"})
+    r = client.post("/apiclient/collection/req_test_col/request", json={
+        "name": "Get Users",
+        "method": "GET",
+        "url": "https://api.example.com/users",
+        "headers": {"Authorization": "Bearer token123"},
+        "body": "",
+        "body_type": "raw",
+    })
+    assert r.status_code == 200
+    assert r.json()["request"] == "Get Users"
+
+    r2 = client.get("/apiclient/collection/req_test_col")
+    assert "Get Users" in r2.json()["requests"]
+    assert r2.json()["requests"]["Get Users"]["method"] == "GET"
+
+def test_apiclient_request_delete(client):
+    client.post("/apiclient/collection", json={"name": "req_del_col"})
+    client.post("/apiclient/collection/req_del_col/request", json={
+        "name": "ToDelete", "method": "DELETE", "url": "https://api.example.com/item/1",
+    })
+    r = client.delete("/apiclient/collection/req_del_col/request/ToDelete")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "ToDelete"
+    r2 = client.get("/apiclient/collection/req_del_col")
+    assert "ToDelete" not in r2.json()["requests"]
+
+def test_apiclient_request_save_missing_url(client):
+    client.post("/apiclient/collection", json={"name": "val_test_col"})
+    r = client.post("/apiclient/collection/val_test_col/request", json={
+        "name": "BadReq", "method": "GET", "url": "",
+    })
+    assert r.status_code == 400
+
+def test_apiclient_collection_delete(client):
+    client.post("/apiclient/collection", json={"name": "to_delete_col"})
+    r = client.delete("/apiclient/collection/to_delete_col")
+    assert r.status_code == 200
+    r2 = client.get("/apiclient/collection/to_delete_col")
+    assert r2.status_code == 404

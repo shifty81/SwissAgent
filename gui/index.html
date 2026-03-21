@@ -88,6 +88,8 @@
           <button class="ab-btn" data-panel="utilities" title="Utilities">⚙️</button>
           <button class="ab-btn" data-panel="snippets"  title="Code Snippets">📎</button>
           <button class="ab-btn" data-panel="diffpatch"  title="Diff &amp; Patch">🔀</button>
+          <button class="ab-btn" data-panel="envvars"    title="Env Variables">🔑</button>
+          <button class="ab-btn" data-panel="apiclient"  title="API Client">🌐</button>
         </div>
       </div>
 
@@ -930,6 +932,96 @@
             <button id="btn-dp-patch" style="width:100%;margin-bottom:6px">Apply Patch</button>
           </div>
           <div id="dp-output" style="font-size:11px;margin-top:4px"></div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Environment Variables Manager (Phase 44) ───────── -->
+      <div class="sb-panel" id="panel-envvars">
+        <div class="sb-panel-header">
+          <span>🔑 Env Variables</span>
+          <div style="display:flex;gap:4px">
+            <button id="btn-env-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="envvars-panel-body">
+          <div style="display:flex;gap:4px;margin-bottom:8px">
+            <select id="env-file-select" style="flex:1;font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px">
+              <option value=".env">.env</option>
+            </select>
+            <button id="btn-env-add" title="Add variable" style="padding:4px 8px">+</button>
+          </div>
+          <div id="env-add-form" class="hidden" style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px;padding:8px;background:var(--surface);border-radius:5px;border:1px solid var(--border)">
+            <input id="env-new-key" type="text" placeholder="KEY *"
+              style="font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-family:var(--font-mono)" />
+            <input id="env-new-val" type="text" placeholder="VALUE"
+              style="font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;font-family:var(--font-mono)" />
+            <input id="env-new-comment" type="text" placeholder="Comment (optional)"
+              style="font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px" />
+            <div style="display:flex;gap:4px">
+              <button id="btn-env-save-var" style="flex:1">💾 Save</button>
+              <button id="btn-env-cancel-var" style="flex:1">✕ Cancel</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;margin-bottom:6px">
+            <button id="btn-env-import" style="flex:1;font-size:11px;padding:4px">📥 Import</button>
+            <button id="btn-env-export" style="flex:1;font-size:11px;padding:4px">📤 Export</button>
+          </div>
+          <div id="env-vars-list" style="display:flex;flex-direction:column;gap:4px"></div>
+        </div>
+      </div>
+
+      <!-- ── Panel: API Client / HTTP Playground (Phase 45) ────────── -->
+      <div class="sb-panel" id="panel-apiclient">
+        <div class="sb-panel-header">
+          <span>🌐 API Client</span>
+          <div style="display:flex;gap:4px">
+            <button id="btn-apc-collections" title="Collections">📂</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="apiclient-panel-body">
+          <!-- Request builder -->
+          <div style="display:flex;gap:4px;margin-bottom:6px">
+            <select id="apc-method" style="width:76px;font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-weight:bold">
+              <option>GET</option><option>POST</option><option>PUT</option>
+              <option>PATCH</option><option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
+            </select>
+            <input id="apc-url" type="text" placeholder="https://…"
+              style="flex:1;font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px" />
+          </div>
+          <!-- Tabs: Headers / Body -->
+          <div style="display:flex;gap:2px;margin-bottom:6px">
+            <button class="apc-tab-btn active" data-apc-tab="headers" style="flex:1;font-size:11px;padding:4px">Headers</button>
+            <button class="apc-tab-btn" data-apc-tab="body" style="flex:1;font-size:11px;padding:4px">Body</button>
+          </div>
+          <div id="apc-tab-headers">
+            <textarea id="apc-headers" rows="4" placeholder="Header: Value&#10;Content-Type: application/json"
+              style="width:100%;font-size:11px;font-family:var(--font-mono);resize:vertical;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px;margin-bottom:4px"></textarea>
+          </div>
+          <div id="apc-tab-body" class="hidden">
+            <div style="display:flex;gap:4px;margin-bottom:4px">
+              <select id="apc-body-type" style="font-size:11px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 5px">
+                <option value="raw">Raw</option>
+                <option value="json">JSON</option>
+                <option value="form">Form</option>
+              </select>
+            </div>
+            <textarea id="apc-body" rows="5" placeholder="Request body…"
+              style="width:100%;font-size:11px;font-family:var(--font-mono);resize:vertical;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px;margin-bottom:4px"></textarea>
+          </div>
+          <div style="display:flex;gap:4px;margin-bottom:8px">
+            <button id="btn-apc-send" style="flex:1">▶ Send</button>
+            <button id="btn-apc-save-req" style="font-size:11px;padding:4px 8px" title="Save to collection">💾</button>
+          </div>
+          <!-- Response -->
+          <div id="apc-response" style="font-size:11px"></div>
+          <!-- Collections list (hidden by default) -->
+          <div id="apc-collections-view" class="hidden" style="margin-top:8px">
+            <div style="font-size:11px;font-weight:bold;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between">
+              <span>Collections</span>
+              <button id="btn-apc-new-col" style="font-size:10px;padding:2px 6px">+ New</button>
+            </div>
+            <div id="apc-col-list" style="display:flex;flex-direction:column;gap:4px"></div>
+          </div>
         </div>
       </div>
 
