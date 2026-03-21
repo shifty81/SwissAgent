@@ -705,6 +705,32 @@ class PersonaCreateRequest(BaseModel):
     llm_backend: str = ""
 
 
+class PersonaPatchRequest(BaseModel):
+    display_name: str | None = None
+    role: str | None = None
+    domain: str | None = None
+    system_prompt: str | None = None
+    offline_model: str | None = None
+    llm_backend: str | None = None
+
+
+class PersonaCloneRequest(BaseModel):
+    new_name: str
+    new_display_name: str = ""
+
+
+class PersonaGenerateRequest(BaseModel):
+    persona_name: str
+    project_name: str
+    description: str
+    tech_stack: list[str] = []
+    goals: list[str] = []
+    conventions: str = ""
+    display_name: str = ""
+    offline_model: str = ""
+    llm_backend: str = ""
+
+
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
 # Context window sizes sent to the LLM.  Prefix is longer because the model
@@ -5951,45 +5977,48 @@ indent_style = tab
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Patch failed: {exc}")
 
-    # ── Phase 42: AI Persona (hive-mind) ──────────────────────────────────────
+    # ── Phase 42 + 43: AI Persona (hive-mind + project-aware custom personas) ──
 
     @app.get("/ai/personas")
     async def ai_personas_list() -> dict[str, Any]:
-        """List all AI personas — 13 built-in specialists plus any custom ones."""
+        """List all AI personas — 14 built-in specialists plus any custom ones."""
         from modules.ai_persona.src.ai_persona_tools import persona_list
         return persona_list()
 
     @app.get("/ai/persona/active")
     async def ai_persona_active_get() -> dict[str, Any]:
-        """Return lightweight metadata of the currently active persona."""
-        from modules.ai_persona.src.ai_persona_tools import get_active_persona_info, _load_active_name
+        """Return lightweight metadata of the currently active persona.
+
+        When no persona has been explicitly activated the SwissAgent Assistant
+        (the platform default) is returned with ``is_default: true``.
+        """
+        from modules.ai_persona.src.ai_persona_tools import (
+            get_active_persona_info,
+            _load_active_name,
+            _DEFAULT_PERSONA_NAME,
+        )
         info = get_active_persona_info()
-        if not info:
-            return {"active": None, "message": "No persona is currently active."}
-        return {"active": _load_active_name(), **info}
+        explicit = _load_active_name()
+        active_name = explicit or _DEFAULT_PERSONA_NAME
+        return {"active": active_name, **info}
 
     @app.get("/ai/persona/context")
     async def ai_persona_context() -> dict[str, Any]:
-        """Return the full resolved system prompt that will be sent to the LLM."""
+        """Return the full resolved system prompt that will be sent to the LLM.
+
+        Always returns a non-empty prompt — falls back to the built-in
+        SwissAgent Assistant persona when nothing is explicitly activated.
+        """
         from modules.ai_persona.src.ai_persona_tools import (
             load_active_persona_prompt,
             get_active_persona_info,
         )
         prompt = load_active_persona_prompt()
         info = get_active_persona_info()
-        if not prompt:
-            return {
-                "active": None,
-                "system_prompt": (
-                    "You are SwissAgent, an AI-powered offline development platform assistant. "
-                    "You help with code generation, build automation, asset pipelines, and development tasks. "
-                    "Think step-by-step and use available tools to complete tasks."
-                ),
-                "message": "No persona active — showing default SwissAgent system prompt.",
-            }
         return {
             "active": info.get("name"),
             "display_name": info.get("display_name"),
+            "is_default": info.get("is_default", False),
             "system_prompt": prompt,
         }
 
@@ -6023,6 +6052,84 @@ indent_style = tab
             raise HTTPException(status_code=400, detail=result["error"])
         return result
 
+    @app.patch("/ai/persona/{name}")
+    async def ai_persona_patch(name: str, req: PersonaPatchRequest) -> dict[str, Any]:
+        """Update individual fields of an existing custom persona.
+
+        Only the fields provided in the request body are changed; all others
+        remain unchanged.  Built-in personas cannot be patched — clone one
+        first (``POST /ai/persona/{name}/clone``), then patch the clone.
+        """
+        from modules.ai_persona.src.ai_persona_tools import persona_patch
+        result = persona_patch(
+            name,
+            display_name=req.display_name,
+            role=req.role,
+            domain=req.domain,
+            system_prompt=req.system_prompt,
+            offline_model=req.offline_model,
+            llm_backend=req.llm_backend,
+        )
+        if "error" in result:
+            if "cannot be patched" in result["error"]:
+                code = 403
+            elif "not found" in result["error"]:
+                code = 404
+            else:
+                code = 400
+            raise HTTPException(status_code=code, detail=result["error"])
+        return result
+
+    @app.post("/ai/persona/{name}/clone")
+    async def ai_persona_clone(name: str, req: PersonaCloneRequest) -> dict[str, Any]:
+        """Clone an existing persona (built-in or custom) as a new custom persona.
+
+        The clone is fully editable — use ``PATCH /ai/persona/{new_name}`` to
+        layer project-specific instructions on top of the cloned baseline.
+        """
+        from modules.ai_persona.src.ai_persona_tools import persona_clone
+        if not req.new_name or not req.new_name.strip():
+            raise HTTPException(status_code=400, detail="new_name is required")
+        result = persona_clone(
+            source_name=name,
+            new_name=req.new_name,
+            new_display_name=req.new_display_name,
+        )
+        if "error" in result:
+            code = 400 if "built-in name" in result["error"] else 404
+            raise HTTPException(status_code=code, detail=result["error"])
+        return result
+
+    @app.post("/ai/persona/generate")
+    async def ai_persona_generate(req: PersonaGenerateRequest) -> dict[str, Any]:
+        """Generate a project-specific custom persona from project metadata.
+
+        Builds a tailored system prompt that makes the AI deeply aware of the
+        project — its purpose, technology stack, goals, and coding conventions
+        — and saves it as a new custom persona ready to activate.
+        """
+        from modules.ai_persona.src.ai_persona_tools import persona_generate
+        if not req.persona_name or not req.persona_name.strip():
+            raise HTTPException(status_code=400, detail="persona_name is required")
+        if not req.project_name or not req.project_name.strip():
+            raise HTTPException(status_code=400, detail="project_name is required")
+        if not req.description or not req.description.strip():
+            raise HTTPException(status_code=400, detail="description is required")
+        result = persona_generate(
+            persona_name=req.persona_name,
+            project_name=req.project_name,
+            description=req.description,
+            tech_stack=req.tech_stack,
+            goals=req.goals,
+            conventions=req.conventions,
+            display_name=req.display_name,
+            offline_model=req.offline_model,
+            llm_backend=req.llm_backend,
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
     @app.post("/ai/persona/{name}/activate")
     async def ai_persona_activate(name: str) -> dict[str, Any]:
         """Set a persona as globally active for all subsequent agent calls."""
@@ -6031,6 +6138,16 @@ indent_style = tab
         if "error" in result:
             raise HTTPException(status_code=404, detail=result["error"])
         return result
+
+    @app.delete("/ai/persona/active")
+    async def ai_persona_deactivate() -> dict[str, Any]:
+        """Clear the explicitly-set active persona and revert to the platform default.
+
+        After this call, all AI requests will use the built-in
+        *SwissAgent Assistant* persona until a new persona is activated.
+        """
+        from modules.ai_persona.src.ai_persona_tools import persona_deactivate
+        return persona_deactivate()
 
     @app.delete("/ai/persona/{name}")
     async def ai_persona_delete(name: str) -> dict[str, Any]:

@@ -2715,10 +2715,11 @@ def test_ai_personas_list(client):
     assert r.status_code == 200
     d = r.json()
     assert "personas" in d
-    assert d["total"] >= 13
-    assert d["builtin_count"] == 13
+    assert d["total"] >= 14
+    assert d["builtin_count"] == 14
     names = [p["name"] for p in d["personas"]]
     for expected in (
+        "swissagent_assistant",
         "senior_developer", "software_architect", "frontend_developer",
         "backend_developer", "database_engineer", "mobile_developer",
         "devops_engineer", "security_auditor", "test_engineer",
@@ -2743,9 +2744,20 @@ def test_ai_persona_get_not_found(client):
 def test_ai_persona_active_default(client):
     r = client.get("/ai/persona/active")
     assert r.status_code == 200
-    # May or may not have an active persona; just check shape
     d = r.json()
     assert "active" in d
+    # The SwissAgent Assistant persona is always returned as default
+    assert d["active"] is not None
+
+def test_ai_persona_default_is_swissagent_assistant(client):
+    """When no persona has been explicitly activated the platform default is used."""
+    # Reset any previously-activated persona so we get a clean default state
+    client.delete("/ai/persona/active")
+    r = client.get("/ai/persona/active")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["active"] == "swissagent_assistant"
+    assert d.get("is_default") is True
 
 def test_ai_persona_context_default(client):
     r = client.get("/ai/persona/context")
@@ -2753,6 +2765,16 @@ def test_ai_persona_context_default(client):
     d = r.json()
     assert "system_prompt" in d
     assert len(d["system_prompt"]) > 20
+    # There is always an active persona name (default or explicit)
+    assert d["active"] is not None
+
+def test_ai_persona_default_context_contains_swissagent(client):
+    """Default context system prompt is the SwissAgent Assistant persona."""
+    # Reset to default by not activating anything; the fixture gives a fresh client
+    r = client.get("/ai/persona/context")
+    assert r.status_code == 200
+    d = r.json()
+    assert "SwissAgent" in d["system_prompt"]
 
 def test_ai_persona_create_and_get(client):
     r = client.post("/ai/persona", json={
@@ -2840,3 +2862,179 @@ def test_ai_persona_context_with_active_persona(client):
     d = r.json()
     assert d["active"] == "devops_engineer"
     assert "DevOps" in d["system_prompt"]
+
+def test_ai_persona_patch(client):
+    """PATCH /ai/persona/{name} updates individual fields without full replacement."""
+    client.post("/ai/persona", json={
+        "name": "patch_test_persona",
+        "display_name": "Patch Test",
+        "role": "Original Role",
+        "system_prompt": "Original prompt.",
+    })
+    r = client.patch("/ai/persona/patch_test_persona", json={
+        "role": "Updated Role",
+        "display_name": "Patched Name",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["persona"]["role"] == "Updated Role"
+    assert d["persona"]["display_name"] == "Patched Name"
+    # system_prompt unchanged
+    assert d["persona"]["system_prompt"] == "Original prompt."
+
+def test_ai_persona_patch_builtin_forbidden(client):
+    """Patching a built-in persona should return 403."""
+    r = client.patch("/ai/persona/senior_developer", json={"role": "Hacker"})
+    assert r.status_code == 403
+
+def test_ai_persona_patch_not_found(client):
+    r = client.patch("/ai/persona/ghost_patch_xyz", json={"role": "Ghost"})
+    assert r.status_code == 404
+
+def test_ai_persona_patch_blank_prompt_rejected(client):
+    client.post("/ai/persona", json={
+        "name": "blank_prompt_patch_persona",
+        "system_prompt": "Valid prompt.",
+    })
+    r = client.patch("/ai/persona/blank_prompt_patch_persona", json={"system_prompt": "   "})
+    assert r.status_code == 400
+
+def test_ai_persona_clone_builtin(client):
+    """POST /ai/persona/{name}/clone creates an editable copy of a built-in."""
+    r = client.post("/ai/persona/senior_developer/clone", json={
+        "new_name": "my_senior_dev_clone",
+        "new_display_name": "My Senior Dev",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["persona"]["name"] == "my_senior_dev_clone"
+    assert d["persona"]["builtin"] is False
+    assert d["persona"]["cloned_from"] == "senior_developer"
+    assert d["persona"]["display_name"] == "My Senior Dev"
+    # system_prompt is a copy of the original
+    orig = client.get("/ai/persona/senior_developer").json()
+    assert d["persona"]["system_prompt"] == orig["system_prompt"]
+
+def test_ai_persona_clone_custom(client):
+    """Cloning a custom persona also works."""
+    client.post("/ai/persona", json={
+        "name": "source_clone_persona",
+        "system_prompt": "Source prompt for cloning.",
+        "role": "Source Role",
+    })
+    r = client.post("/ai/persona/source_clone_persona/clone", json={
+        "new_name": "cloned_persona_target",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["persona"]["name"] == "cloned_persona_target"
+    assert d["persona"]["system_prompt"] == "Source prompt for cloning."
+
+def test_ai_persona_clone_not_found(client):
+    r = client.post("/ai/persona/ghost_source_xyz/clone", json={"new_name": "anything"})
+    assert r.status_code == 404
+
+def test_ai_persona_clone_missing_new_name(client):
+    r = client.post("/ai/persona/senior_developer/clone", json={"new_name": ""})
+    assert r.status_code == 400
+
+def test_ai_persona_generate(client):
+    """POST /ai/persona/generate builds a project-specific persona."""
+    r = client.post("/ai/persona/generate", json={
+        "persona_name": "acme_app_ai",
+        "project_name": "Acme App",
+        "description": "An offline-first task management application for enterprise teams.",
+        "tech_stack": ["Python", "FastAPI", "React", "PostgreSQL"],
+        "goals": ["offline-first", "high performance", "WCAG AA accessibility"],
+        "conventions": "4-space indent, black formatter, type hints on all public APIs.",
+        "offline_model": "deepseek-coder-v2",
+        "llm_backend": "ollama",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["persona"]["name"] == "acme_app_ai"
+    assert "Acme App" in d["persona"]["system_prompt"]
+    assert "FastAPI" in d["persona"]["system_prompt"]
+    assert "offline-first" in d["persona"]["system_prompt"]
+    assert "black formatter" in d["persona"]["system_prompt"]
+    assert d["persona"]["builtin"] is False
+
+    # Generated persona can be retrieved
+    r2 = client.get("/ai/persona/acme_app_ai")
+    assert r2.status_code == 200
+    assert r2.json()["role"] == "Project AI for Acme App"
+
+def test_ai_persona_generate_missing_fields(client):
+    r = client.post("/ai/persona/generate", json={
+        "persona_name": "",
+        "project_name": "X",
+        "description": "Y",
+    })
+    assert r.status_code == 400
+
+    r2 = client.post("/ai/persona/generate", json={
+        "persona_name": "x",
+        "project_name": "",
+        "description": "Y",
+    })
+    assert r2.status_code == 400
+
+    r3 = client.post("/ai/persona/generate", json={
+        "persona_name": "x",
+        "project_name": "X",
+        "description": "",
+    })
+    assert r3.status_code == 400
+
+def test_ai_persona_generate_then_activate(client):
+    """A generated persona can be immediately activated."""
+    client.post("/ai/persona/generate", json={
+        "persona_name": "my_project_persona",
+        "project_name": "My Project",
+        "description": "A test project for the persona generate pipeline.",
+        "tech_stack": ["Go", "Vue 3"],
+    })
+    r = client.post("/ai/persona/my_project_persona/activate")
+    assert r.status_code == 200
+    assert r.json()["active"] == "my_project_persona"
+
+    ctx = client.get("/ai/persona/context").json()
+    assert "My Project" in ctx["system_prompt"]
+
+def test_ai_persona_swissagent_assistant_builtin(client):
+    """swissagent_assistant is present as a built-in and cannot be deleted."""
+    r = client.get("/ai/persona/swissagent_assistant")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["builtin"] is True
+    assert "SwissAgent" in d["system_prompt"]
+
+    r2 = client.delete("/ai/persona/swissagent_assistant")
+    assert r2.status_code == 403
+
+def test_ai_persona_deactivate(client):
+    """DELETE /ai/persona/active clears any explicit activation and reverts to default."""
+    # Activate something first
+    client.post("/ai/persona/senior_developer/activate")
+    assert client.get("/ai/persona/active").json()["active"] == "senior_developer"
+
+    r = client.delete("/ai/persona/active")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["previous"] == "senior_developer"
+    assert d["active"] == "swissagent_assistant"
+    assert d["is_default"] is True
+
+    # Active endpoint now reports default
+    r2 = client.get("/ai/persona/active")
+    assert r2.json()["active"] == "swissagent_assistant"
+    assert r2.json().get("is_default") is True
+
+    # Context now shows the default SwissAgent Assistant prompt
+    ctx = client.get("/ai/persona/context").json()
+    assert ctx["is_default"] is True
+    assert "SwissAgent" in ctx["system_prompt"]
