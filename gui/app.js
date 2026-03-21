@@ -1019,6 +1019,8 @@
       monacoLoaded = true;
       clearTimeout(fallbackTimer);
 
+      try {
+
       monaco.editor.defineTheme("swissagent-dark", {
         base: "vs-dark",
         inherit: true,
@@ -1050,6 +1052,9 @@
         model: null,
       });
 
+      // Hide the loading overlay as soon as the editor instance is ready.
+      // Subsequent setup (key bindings, completions, toolbars) is non-critical;
+      // failures there must not leave the spinner running forever.
       state.editorMode = "monaco";
       $("editor-loading").style.display = "none";
       $("editor-welcome").classList.remove("hidden");
@@ -1183,7 +1188,20 @@
       // Load file tree after editor is ready
       loadFileTree();
       _startPendingPushPoller();
-    }); // end require(["vs/editor/editor.main"])
+
+      } catch (err) {
+        // Any error during Monaco setup must not leave the loading overlay
+        // spinning forever.  Fall back to the plain-text editor.
+        console.error("[SwissAgent] Monaco initialization error:", err);
+        clearTimeout(fallbackTimer);
+        initFallbackEditor();
+      }
+      }, function (loadErr) {
+        // AMD module-load error (e.g. CDN unreachable for the main editor bundle)
+        console.error("[SwissAgent] Monaco module load error:", loadErr);
+        clearTimeout(fallbackTimer);
+        initFallbackEditor();
+      }); // end require(["vs/editor/editor.main"])
   } // end _tryLoad
 
   _tryLoad(); // kick off the async-aware initialisation
