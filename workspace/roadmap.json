@@ -1966,6 +1966,106 @@
           "description": "GUI panel with enqueue form, task table with complete/delete, stats bar"
         }
       ]
+    },
+    {
+      "id": "m40",
+      "title": "Phase 40 \u2014 Code Snippet Library",
+      "description": "Save, browse, search, and copy reusable code snippets with language tags",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t40-1",
+          "title": "POST /snippet \u2014 save a snippet",
+          "status": "done",
+          "priority": "high",
+          "description": "Create a snippet with name, language, code, tags, description"
+        },
+        {
+          "id": "t40-2",
+          "title": "GET /snippets \u2014 list snippets",
+          "status": "done",
+          "priority": "high",
+          "description": "Return all snippets with optional language/tag filter"
+        },
+        {
+          "id": "t40-3",
+          "title": "GET /snippet/{id} \u2014 get a snippet",
+          "status": "done",
+          "priority": "medium",
+          "description": "Fetch a specific snippet by ID"
+        },
+        {
+          "id": "t40-4",
+          "title": "PUT /snippet/{id} \u2014 update a snippet",
+          "status": "done",
+          "priority": "medium",
+          "description": "Update name, language, code, tags or description"
+        },
+        {
+          "id": "t40-5",
+          "title": "DELETE /snippet/{id} \u2014 delete a snippet",
+          "status": "done",
+          "priority": "medium",
+          "description": "Remove a snippet by ID"
+        },
+        {
+          "id": "t40-6",
+          "title": "GET /snippets/search \u2014 search snippets",
+          "status": "done",
+          "priority": "high",
+          "description": "Full-text search across name, description, tags, and code"
+        },
+        {
+          "id": "t40-7",
+          "title": "Code Snippet Library panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with snippet form, snippet list, copy/edit/delete buttons, search"
+        }
+      ]
+    },
+    {
+      "id": "m41",
+      "title": "Phase 41 \u2014 Diff & Patch Tool",
+      "description": "Compute unified diffs between texts or files, and apply patches in-memory or on disk",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t41-1",
+          "title": "POST /diff \u2014 compute text diff",
+          "status": "done",
+          "priority": "high",
+          "description": "Return unified diff between two text blocks"
+        },
+        {
+          "id": "t41-2",
+          "title": "POST /patch \u2014 apply patch to text",
+          "status": "done",
+          "priority": "high",
+          "description": "Apply a unified diff patch to a text string"
+        },
+        {
+          "id": "t41-3",
+          "title": "POST /diff/files \u2014 diff two files",
+          "status": "done",
+          "priority": "medium",
+          "description": "Compute unified diff between two files on disk"
+        },
+        {
+          "id": "t41-4",
+          "title": "POST /patch/file \u2014 patch a file on disk",
+          "status": "done",
+          "priority": "medium",
+          "description": "Apply a unified diff patch to a file, writing result back"
+        },
+        {
+          "id": "t41-5",
+          "title": "Diff & Patch panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "GUI panel with Diff and Patch modes, text inputs, diff viewer"
+        }
+      ]
     }
   ]
 }

@@ -63,7 +63,7 @@ git clone https://github.com/shifty81/SwissAgent.git && cd SwissAgent
 bash scripts/install.sh          # installs deps + opens the IDE in your browser
 ```
 
-**Windows:**
+**Windows (browser):**
 ```powershell
 git clone https://github.com/shifty81/SwissAgent.git
 cd SwissAgent
@@ -73,6 +73,24 @@ python -m core.cli ui
 ```
 
 Then open **http://localhost:8000** — you'll see the Monaco IDE with 6 activity-bar panels.
+
+**Windows (native C++ app — recommended):**
+```powershell
+# Install build deps (cmake, WebView2 Runtime, Python package)
+.\native\scripts\install-deps.ps1
+
+# Build the native app
+cd native\scripts
+.\build.bat Release
+```
+
+The **`native/`** directory contains a self-contained Win32/WebView2 C++ application that:
+- Embeds a lightweight C++ HTTP server (`cpp-httplib`) for the animated startup splash
+- Launches the Python backend as a managed child process
+- Renders the full IDE in a **WebView2** window (native Edge engine — no Electron/Node required)
+- Adds a system-tray icon with restart, show, and quit actions
+
+See **[native/README.md](native/README.md)** for the full build guide.
 
 > 💡 See **[docs/SETUP.md](docs/SETUP.md)** for the full walkthrough including virtual environments, all LLM backends, and Docker Compose.
 

@@ -655,6 +655,43 @@ class BrainstormToProjectRequest(BaseModel):
     project_name: str
     project_path: str = ""     # relative under projects/; defaults to slugified title
 
+# ── Phase 40: Code Snippet Library request models ─────────────────────────────
+
+class SnippetSaveRequest(BaseModel):
+    name: str
+    language: str = ""      # e.g. "python", "javascript"
+    code: str
+    tags: list[str] = []
+    description: str = ""
+
+class SnippetUpdateRequest(BaseModel):
+    name: str = ""
+    language: str = ""
+    code: str = ""
+    tags: list[str] = []
+    description: str = ""
+
+# ── Phase 41: Diff & Patch Tool request models ────────────────────────────────
+
+class DiffRequest(BaseModel):
+    original: str
+    modified: str
+    filename: str = "file"     # shown in diff header
+    context_lines: int = 3
+
+class PatchRequest(BaseModel):
+    original: str
+    patch: str                 # unified diff text
+
+class DiffFilesRequest(BaseModel):
+    path_a: str
+    path_b: str
+    context_lines: int = 3
+
+class PatchFileRequest(BaseModel):
+    path: str
+    patch: str                 # unified diff text
+
 
 # ── Phase 7: AI action prompt templates ───────────────────────────────────────
 
@@ -694,6 +731,51 @@ def _safe_path(base_dir: Path, rel: str) -> Path:
     if not str(resolved).startswith(str(base_dir.resolve())):
         raise HTTPException(status_code=403, detail="Path traversal denied")
     return resolved
+
+
+def _apply_unified_patch(original_lines: list[str], patch_lines: list[str]) -> list[str]:
+    """Apply a unified diff patch to a list of lines. Raises ValueError on errors."""
+    import re as _re
+    result: list[str] = []
+    orig_idx = 0
+    i = 0
+    n = len(patch_lines)
+    while i < n:
+        line = patch_lines[i]
+        if line.startswith("---") or line.startswith("+++"):
+            i += 1
+            continue
+        if line.startswith("@@"):
+            m = _re.match(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", line)
+            if not m:
+                raise ValueError(f"Bad hunk header: {line!r}")
+            orig_start = int(m.group(1))
+            while orig_idx < orig_start - 1:
+                result.append(original_lines[orig_idx])
+                orig_idx += 1
+            i += 1
+            while i < n and not patch_lines[i].startswith("@@"):
+                hunk_line = patch_lines[i]
+                if hunk_line.startswith("---") or hunk_line.startswith("+++"):
+                    i += 1
+                    break
+                if hunk_line.startswith("+"):
+                    result.append(hunk_line[1:])
+                elif hunk_line.startswith("-"):
+                    if orig_idx >= len(original_lines):
+                        raise ValueError("Patch extends beyond original file")
+                    orig_idx += 1
+                else:
+                    if orig_idx < len(original_lines):
+                        result.append(original_lines[orig_idx])
+                    orig_idx += 1
+                i += 1
+        else:
+            i += 1
+    while orig_idx < len(original_lines):
+        result.append(original_lines[orig_idx])
+        orig_idx += 1
+    return result
 
 
 def create_app(config_dir: str = "configs") -> FastAPI:
@@ -5686,6 +5768,165 @@ indent_style = tab
 
         return {"query": q, "results": results, "total": len(results)}
 
+    # ── Phase 40: Code Snippet Library ────────────────────────────────────────
+
+    @app.post("/snippet")
+    async def snippet_save(req: SnippetSaveRequest) -> dict[str, Any]:
+        """Create a new snippet."""
+        global _snippet_id_counter
+        if not req.name.strip():
+            raise HTTPException(status_code=400, detail="name is required")
+        if not req.code.strip():
+            raise HTTPException(status_code=400, detail="code is required")
+        _snippet_id_counter += 1
+        sid = _snippet_id_counter
+        _snippets[str(sid)] = {
+            "id": sid,
+            "name": req.name.strip(),
+            "language": req.language.strip().lower(),
+            "code": req.code,
+            "tags": [t.strip() for t in req.tags if t.strip()],
+            "description": req.description.strip(),
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        return {"id": sid}
+
+    @app.get("/snippets/search")
+    async def snippets_search(q: str = Query(..., min_length=1)) -> dict[str, Any]:
+        """Search snippets by keyword in name, description, tags, and code."""
+        ql = q.lower()
+        results = [
+            s for s in _snippets.values()
+            if ql in s["name"].lower()
+            or ql in s["description"].lower()
+            or any(ql in t.lower() for t in s["tags"])
+            or ql in s["code"].lower()
+        ]
+        results.sort(key=lambda s: s["created_at"], reverse=True)
+        return {"query": q, "snippets": results, "total": len(results)}
+
+    @app.get("/snippets")
+    async def snippets_list(language: str = "", tag: str = "") -> dict[str, Any]:
+        """List all snippets with optional language/tag filter."""
+        items = list(_snippets.values())
+        if language:
+            items = [s for s in items if s["language"] == language.lower()]
+        if tag:
+            items = [s for s in items if tag in s["tags"]]
+        items.sort(key=lambda s: s["created_at"], reverse=True)
+        return {"snippets": items, "total": len(items)}
+
+    @app.get("/snippet/{sid}")
+    async def snippet_get(sid: int) -> dict[str, Any]:
+        """Get a specific snippet by ID."""
+        s = _snippets.get(str(sid))
+        if not s:
+            raise HTTPException(status_code=404, detail="Snippet not found")
+        return s
+
+    @app.put("/snippet/{sid}")
+    async def snippet_update(sid: int, req: SnippetUpdateRequest) -> dict[str, Any]:
+        """Update an existing snippet."""
+        s = _snippets.get(str(sid))
+        if not s:
+            raise HTTPException(status_code=404, detail="Snippet not found")
+        if req.name.strip():
+            s["name"] = req.name.strip()
+        if req.language.strip():
+            s["language"] = req.language.strip().lower()
+        if req.code.strip():
+            s["code"] = req.code
+        if req.tags:
+            s["tags"] = [t.strip() for t in req.tags if t.strip()]
+        if req.description.strip():
+            s["description"] = req.description.strip()
+        s["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return s
+
+    @app.delete("/snippet/{sid}")
+    async def snippet_delete(sid: int) -> dict[str, Any]:
+        """Delete a snippet."""
+        if str(sid) not in _snippets:
+            raise HTTPException(status_code=404, detail="Snippet not found")
+        del _snippets[str(sid)]
+        return {"deleted": sid}
+
+    # ── Phase 41: Diff & Patch Tool ───────────────────────────────────────────
+
+    @app.post("/diff")
+    async def diff_text(req: DiffRequest) -> dict[str, Any]:
+        """Compute a unified diff between two text blocks."""
+        import difflib
+        lines_a = req.original.splitlines(keepends=True)
+        lines_b = req.modified.splitlines(keepends=True)
+        diff_lines = list(difflib.unified_diff(
+            lines_a, lines_b,
+            fromfile=f"a/{req.filename}",
+            tofile=f"b/{req.filename}",
+            n=max(0, req.context_lines),
+        ))
+        patch = "".join(diff_lines)
+        changed = sum(1 for line in diff_lines if line.startswith(("+", "-")) and not line.startswith(("+++", "---")))
+        return {"patch": patch, "changed_lines": changed, "has_diff": bool(diff_lines)}
+
+    @app.post("/patch")
+    async def patch_text(req: PatchRequest) -> dict[str, Any]:
+        """Apply a unified diff patch to a text string."""
+        if not req.patch.strip():
+            raise HTTPException(status_code=400, detail="patch is required")
+        try:
+            lines_orig = req.original.splitlines(keepends=True)
+            patch_lines = req.patch.splitlines(keepends=True)
+            result_lines = _apply_unified_patch(lines_orig, patch_lines)
+            result = "".join(result_lines)
+            return {"result": result, "success": True}
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Patch failed: {exc}")
+
+    @app.post("/diff/files")
+    async def diff_files(req: DiffFilesRequest) -> dict[str, Any]:
+        """Compute a unified diff between two files on disk."""
+        import difflib
+        path_a = (base_dir / req.path_a).resolve()
+        path_b = (base_dir / req.path_b).resolve()
+        if not path_a.is_file():
+            raise HTTPException(status_code=404, detail="path_a not found")
+        if not path_b.is_file():
+            raise HTTPException(status_code=404, detail="path_b not found")
+        try:
+            lines_a = path_a.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+            lines_b = path_b.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Read error: {exc}")
+        diff_lines = list(difflib.unified_diff(
+            lines_a, lines_b,
+            fromfile=req.path_a,
+            tofile=req.path_b,
+            n=max(0, req.context_lines),
+        ))
+        patch = "".join(diff_lines)
+        changed = sum(1 for line in diff_lines if line.startswith(("+", "-")) and not line.startswith(("+++", "---")))
+        return {"patch": patch, "changed_lines": changed, "has_diff": bool(diff_lines)}
+
+    @app.post("/patch/file")
+    async def patch_file(req: PatchFileRequest) -> dict[str, Any]:
+        """Apply a unified diff patch to a file on disk (in-place)."""
+        if not req.patch.strip():
+            raise HTTPException(status_code=400, detail="patch is required")
+        path = (base_dir / req.path).resolve()
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="File not found")
+        try:
+            lines_orig = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+            patch_lines = req.patch.splitlines(keepends=True)
+            result_lines = _apply_unified_patch(lines_orig, patch_lines)
+            result = "".join(result_lines)
+            path.write_text(result, encoding="utf-8")
+            return {"path": req.path, "success": True, "lines": len(result_lines)}
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Patch failed: {exc}")
+
     return app
 
 
@@ -5847,3 +6088,7 @@ _brainstorm_id_counter: int = 0
 
 # ── Phase 39: Web Search ───────────────────────────────────────────────────────
 _WEB_SEARCH_TIMEOUT = 8  # seconds
+
+# ── Phase 40: Code Snippet Library ────────────────────────────────────────────
+_snippets: dict[str, Any] = {}
+_snippet_id_counter: int = 0
