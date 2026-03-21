@@ -2715,10 +2715,11 @@ def test_ai_personas_list(client):
     assert r.status_code == 200
     d = r.json()
     assert "personas" in d
-    assert d["total"] >= 13
-    assert d["builtin_count"] == 13
+    assert d["total"] >= 14
+    assert d["builtin_count"] == 14
     names = [p["name"] for p in d["personas"]]
     for expected in (
+        "swissagent_assistant",
         "senior_developer", "software_architect", "frontend_developer",
         "backend_developer", "database_engineer", "mobile_developer",
         "devops_engineer", "security_auditor", "test_engineer",
@@ -2743,9 +2744,20 @@ def test_ai_persona_get_not_found(client):
 def test_ai_persona_active_default(client):
     r = client.get("/ai/persona/active")
     assert r.status_code == 200
-    # May or may not have an active persona; just check shape
     d = r.json()
     assert "active" in d
+    # The SwissAgent Assistant persona is always returned as default
+    assert d["active"] is not None
+
+def test_ai_persona_default_is_swissagent_assistant(client):
+    """When no persona has been explicitly activated the platform default is used."""
+    # Reset any previously-activated persona so we get a clean default state
+    client.delete("/ai/persona/active")
+    r = client.get("/ai/persona/active")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["active"] == "swissagent_assistant"
+    assert d.get("is_default") is True
 
 def test_ai_persona_context_default(client):
     r = client.get("/ai/persona/context")
@@ -2753,6 +2765,16 @@ def test_ai_persona_context_default(client):
     d = r.json()
     assert "system_prompt" in d
     assert len(d["system_prompt"]) > 20
+    # There is always an active persona name (default or explicit)
+    assert d["active"] is not None
+
+def test_ai_persona_default_context_contains_swissagent(client):
+    """Default context system prompt is the SwissAgent Assistant persona."""
+    # Reset to default by not activating anything; the fixture gives a fresh client
+    r = client.get("/ai/persona/context")
+    assert r.status_code == 200
+    d = r.json()
+    assert "SwissAgent" in d["system_prompt"]
 
 def test_ai_persona_create_and_get(client):
     r = client.post("/ai/persona", json={
@@ -2840,3 +2862,369 @@ def test_ai_persona_context_with_active_persona(client):
     d = r.json()
     assert d["active"] == "devops_engineer"
     assert "DevOps" in d["system_prompt"]
+
+def test_ai_persona_patch(client):
+    """PATCH /ai/persona/{name} updates individual fields without full replacement."""
+    client.post("/ai/persona", json={
+        "name": "patch_test_persona",
+        "display_name": "Patch Test",
+        "role": "Original Role",
+        "system_prompt": "Original prompt.",
+    })
+    r = client.patch("/ai/persona/patch_test_persona", json={
+        "role": "Updated Role",
+        "display_name": "Patched Name",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["persona"]["role"] == "Updated Role"
+    assert d["persona"]["display_name"] == "Patched Name"
+    # system_prompt unchanged
+    assert d["persona"]["system_prompt"] == "Original prompt."
+
+def test_ai_persona_patch_builtin_forbidden(client):
+    """Patching a built-in persona should return 403."""
+    r = client.patch("/ai/persona/senior_developer", json={"role": "Hacker"})
+    assert r.status_code == 403
+
+def test_ai_persona_patch_not_found(client):
+    r = client.patch("/ai/persona/ghost_patch_xyz", json={"role": "Ghost"})
+    assert r.status_code == 404
+
+def test_ai_persona_patch_blank_prompt_rejected(client):
+    client.post("/ai/persona", json={
+        "name": "blank_prompt_patch_persona",
+        "system_prompt": "Valid prompt.",
+    })
+    r = client.patch("/ai/persona/blank_prompt_patch_persona", json={"system_prompt": "   "})
+    assert r.status_code == 400
+
+def test_ai_persona_clone_builtin(client):
+    """POST /ai/persona/{name}/clone creates an editable copy of a built-in."""
+    r = client.post("/ai/persona/senior_developer/clone", json={
+        "new_name": "my_senior_dev_clone",
+        "new_display_name": "My Senior Dev",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["persona"]["name"] == "my_senior_dev_clone"
+    assert d["persona"]["builtin"] is False
+    assert d["persona"]["cloned_from"] == "senior_developer"
+    assert d["persona"]["display_name"] == "My Senior Dev"
+    # system_prompt is a copy of the original
+    orig = client.get("/ai/persona/senior_developer").json()
+    assert d["persona"]["system_prompt"] == orig["system_prompt"]
+
+def test_ai_persona_clone_custom(client):
+    """Cloning a custom persona also works."""
+    client.post("/ai/persona", json={
+        "name": "source_clone_persona",
+        "system_prompt": "Source prompt for cloning.",
+        "role": "Source Role",
+    })
+    r = client.post("/ai/persona/source_clone_persona/clone", json={
+        "new_name": "cloned_persona_target",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["persona"]["name"] == "cloned_persona_target"
+    assert d["persona"]["system_prompt"] == "Source prompt for cloning."
+
+def test_ai_persona_clone_not_found(client):
+    r = client.post("/ai/persona/ghost_source_xyz/clone", json={"new_name": "anything"})
+    assert r.status_code == 404
+
+def test_ai_persona_clone_missing_new_name(client):
+    r = client.post("/ai/persona/senior_developer/clone", json={"new_name": ""})
+    assert r.status_code == 400
+
+def test_ai_persona_generate(client):
+    """POST /ai/persona/generate builds a project-specific persona."""
+    r = client.post("/ai/persona/generate", json={
+        "persona_name": "acme_app_ai",
+        "project_name": "Acme App",
+        "description": "An offline-first task management application for enterprise teams.",
+        "tech_stack": ["Python", "FastAPI", "React", "PostgreSQL"],
+        "goals": ["offline-first", "high performance", "WCAG AA accessibility"],
+        "conventions": "4-space indent, black formatter, type hints on all public APIs.",
+        "offline_model": "deepseek-coder-v2",
+        "llm_backend": "ollama",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["persona"]["name"] == "acme_app_ai"
+    assert "Acme App" in d["persona"]["system_prompt"]
+    assert "FastAPI" in d["persona"]["system_prompt"]
+    assert "offline-first" in d["persona"]["system_prompt"]
+    assert "black formatter" in d["persona"]["system_prompt"]
+    assert d["persona"]["builtin"] is False
+
+    # Generated persona can be retrieved
+    r2 = client.get("/ai/persona/acme_app_ai")
+    assert r2.status_code == 200
+    assert r2.json()["role"] == "Project AI for Acme App"
+
+def test_ai_persona_generate_missing_fields(client):
+    r = client.post("/ai/persona/generate", json={
+        "persona_name": "",
+        "project_name": "X",
+        "description": "Y",
+    })
+    assert r.status_code == 400
+
+    r2 = client.post("/ai/persona/generate", json={
+        "persona_name": "x",
+        "project_name": "",
+        "description": "Y",
+    })
+    assert r2.status_code == 400
+
+    r3 = client.post("/ai/persona/generate", json={
+        "persona_name": "x",
+        "project_name": "X",
+        "description": "",
+    })
+    assert r3.status_code == 400
+
+def test_ai_persona_generate_then_activate(client):
+    """A generated persona can be immediately activated."""
+    client.post("/ai/persona/generate", json={
+        "persona_name": "my_project_persona",
+        "project_name": "My Project",
+        "description": "A test project for the persona generate pipeline.",
+        "tech_stack": ["Go", "Vue 3"],
+    })
+    r = client.post("/ai/persona/my_project_persona/activate")
+    assert r.status_code == 200
+    assert r.json()["active"] == "my_project_persona"
+
+    ctx = client.get("/ai/persona/context").json()
+    assert "My Project" in ctx["system_prompt"]
+
+def test_ai_persona_swissagent_assistant_builtin(client):
+    """swissagent_assistant is present as a built-in and cannot be deleted."""
+    r = client.get("/ai/persona/swissagent_assistant")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["builtin"] is True
+    assert "SwissAgent" in d["system_prompt"]
+
+    r2 = client.delete("/ai/persona/swissagent_assistant")
+    assert r2.status_code == 403
+
+def test_ai_persona_deactivate(client):
+    """DELETE /ai/persona/active clears any explicit activation and reverts to default."""
+    # Activate something first
+    client.post("/ai/persona/senior_developer/activate")
+    assert client.get("/ai/persona/active").json()["active"] == "senior_developer"
+
+    r = client.delete("/ai/persona/active")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["previous"] == "senior_developer"
+    assert d["active"] == "swissagent_assistant"
+    assert d["is_default"] is True
+
+    # Active endpoint now reports default
+    r2 = client.get("/ai/persona/active")
+    assert r2.json()["active"] == "swissagent_assistant"
+    assert r2.json().get("is_default") is True
+
+    # Context now shows the default SwissAgent Assistant prompt
+    ctx = client.get("/ai/persona/context").json()
+    assert ctx["is_default"] is True
+    assert "SwissAgent" in ctx["system_prompt"]
+
+# ── Phase 44: Environment Variables Manager ───────────────────────────────────
+
+def test_env_files_list(client):
+    r = client.get("/env/files")
+    assert r.status_code == 200
+    d = r.json()
+    assert "files" in d
+    assert "total" in d
+
+def test_env_var_set_and_get(client):
+    # Set a variable
+    r = client.post("/env/var", json={"file": "workspace/test.env", "key": "MY_KEY", "value": "hello_world", "comment": "test var"})
+    assert r.status_code == 200
+    assert r.json()["success"] is True
+    # Read it back
+    r2 = client.get("/env/vars?file=workspace/test.env")
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert d2["exists"] is True
+    keys = [v["key"] for v in d2["vars"]]
+    assert "MY_KEY" in keys
+    val = next(v["value"] for v in d2["vars"] if v["key"] == "MY_KEY")
+    assert val == "hello_world"
+
+def test_env_var_update(client):
+    # Update existing key
+    client.post("/env/var", json={"file": "workspace/test_update.env", "key": "PORT", "value": "8000"})
+    client.post("/env/var", json={"file": "workspace/test_update.env", "key": "PORT", "value": "9000"})
+    r = client.get("/env/vars?file=workspace/test_update.env")
+    vars_list = r.json()["vars"]
+    port_vars = [v for v in vars_list if v["key"] == "PORT"]
+    assert len(port_vars) == 1, "Duplicate keys should be merged"
+    assert port_vars[0]["value"] == "9000"
+
+def test_env_var_delete(client):
+    client.post("/env/var", json={"file": "workspace/test_del.env", "key": "TO_DELETE", "value": "bye"})
+    r = client.delete("/env/var?file=workspace/test_del.env&key=TO_DELETE")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "TO_DELETE"
+    # Should be gone
+    r2 = client.get("/env/vars?file=workspace/test_del.env")
+    keys = [v["key"] for v in r2.json()["vars"]]
+    assert "TO_DELETE" not in keys
+
+def test_env_var_delete_not_found(client):
+    client.post("/env/var", json={"file": "workspace/test_notfound.env", "key": "EXISTS", "value": "yes"})
+    r = client.delete("/env/var?file=workspace/test_notfound.env&key=DOES_NOT_EXIST")
+    assert r.status_code == 404
+
+def test_env_export(client):
+    client.post("/env/var", json={"file": "workspace/test_export.env", "key": "EXPORT_KEY", "value": "exported"})
+    r = client.get("/env/export?file=workspace/test_export.env")
+    assert r.status_code == 200
+    d = r.json()
+    assert "content" in d
+    assert "EXPORT_KEY=exported" in d["content"]
+
+def test_env_export_not_found(client):
+    r = client.get("/env/export?file=workspace/nonexistent_file_xyz.env")
+    assert r.status_code == 404
+
+def test_env_import(client):
+    content = "DB_HOST=localhost\nDB_PORT=5432\n# comment\nDB_NAME=mydb\n"
+    r = client.post("/env/import", json={"file": "workspace/test_import.env", "content": content})
+    assert r.status_code == 200
+    assert r.json()["vars_imported"] == 3
+    r2 = client.get("/env/vars?file=workspace/test_import.env")
+    keys = [v["key"] for v in r2.json()["vars"]]
+    assert "DB_HOST" in keys
+    assert "DB_PORT" in keys
+    assert "DB_NAME" in keys
+
+def test_env_var_set_missing_key(client):
+    r = client.post("/env/var", json={"file": ".env", "key": "", "value": "val"})
+    assert r.status_code == 400
+
+def test_env_vars_nonexistent_file(client):
+    r = client.get("/env/vars?file=workspace/totally_missing_xyz.env")
+    assert r.status_code == 200
+    assert r.json()["exists"] is False
+
+# ── Phase 45: API Client / HTTP Playground ────────────────────────────────────
+
+def test_apiclient_send_get(client):
+    r = client.post("/apiclient/send", json={"method": "GET", "url": "https://httpbin.org/get"})
+    # If offline/blocked, expect 502 or 504; otherwise 200
+    assert r.status_code in (200, 502, 504)
+    if r.status_code == 200:
+        d = r.json()
+        assert "status_code" in d
+        assert "body" in d
+        assert "elapsed_ms" in d
+
+def test_apiclient_send_missing_url(client):
+    r = client.post("/apiclient/send", json={"method": "GET", "url": ""})
+    assert r.status_code == 400
+
+def test_apiclient_send_invalid_scheme(client):
+    """Non-http/https schemes must be rejected to prevent SSRF via file:// etc."""
+    for bad_url in ("file:///etc/passwd", "ftp://example.com/file", "javascript:alert(1)"):
+        r = client.post("/apiclient/send", json={"method": "GET", "url": bad_url})
+        assert r.status_code == 400, f"Expected 400 for {bad_url}"
+
+def test_apiclient_send_invalid_method(client):
+    r = client.post("/apiclient/send", json={"method": "INJECT", "url": "https://example.com"})
+    assert r.status_code == 400
+
+def test_apiclient_send_http_internal_allowed(client):
+    """http:// URLs (including localhost) are allowed — this is a developer tool."""
+    # We don't actually connect; we just check the URL passes scheme validation
+    # (it will fail with a connection error at the network level, not a 400)
+    r = client.post("/apiclient/send", json={"method": "GET", "url": "http://localhost:9999/nonexistent"})
+    # 400 = rejected by validation, 502/504 = rejected by network — both are OK
+    # What must NOT happen is a 400 due to scheme rejection
+    assert r.status_code != 400 or "scheme" not in r.json().get("detail", "").lower()
+
+def test_apiclient_collections_empty(client):
+    r = client.get("/apiclient/collections")
+    assert r.status_code == 200
+    d = r.json()
+    assert "collections" in d
+    assert isinstance(d["collections"], list)
+
+def test_apiclient_collection_crud(client):
+    # Create
+    r = client.post("/apiclient/collection", json={"name": "test_collection", "description": "A test collection"})
+    assert r.status_code == 200
+    assert r.json()["success"] is True
+
+    # List
+    r2 = client.get("/apiclient/collections")
+    names = [c["name"] for c in r2.json()["collections"]]
+    assert "test_collection" in names
+
+    # Get
+    r3 = client.get("/apiclient/collection/test_collection")
+    assert r3.status_code == 200
+    assert r3.json()["name"] == "test_collection"
+
+def test_apiclient_collection_duplicate(client):
+    client.post("/apiclient/collection", json={"name": "dupe_collection"})
+    r = client.post("/apiclient/collection", json={"name": "dupe_collection"})
+    assert r.status_code == 409
+
+def test_apiclient_collection_not_found(client):
+    r = client.get("/apiclient/collection/ghost_collection_xyz")
+    assert r.status_code == 404
+
+def test_apiclient_request_save_and_list(client):
+    client.post("/apiclient/collection", json={"name": "req_test_col"})
+    r = client.post("/apiclient/collection/req_test_col/request", json={
+        "name": "Get Users",
+        "method": "GET",
+        "url": "https://api.example.com/users",
+        "headers": {"Authorization": "Bearer token123"},
+        "body": "",
+        "body_type": "raw",
+    })
+    assert r.status_code == 200
+    assert r.json()["request"] == "Get Users"
+
+    r2 = client.get("/apiclient/collection/req_test_col")
+    assert "Get Users" in r2.json()["requests"]
+    assert r2.json()["requests"]["Get Users"]["method"] == "GET"
+
+def test_apiclient_request_delete(client):
+    client.post("/apiclient/collection", json={"name": "req_del_col"})
+    client.post("/apiclient/collection/req_del_col/request", json={
+        "name": "ToDelete", "method": "DELETE", "url": "https://api.example.com/item/1",
+    })
+    r = client.delete("/apiclient/collection/req_del_col/request/ToDelete")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "ToDelete"
+    r2 = client.get("/apiclient/collection/req_del_col")
+    assert "ToDelete" not in r2.json()["requests"]
+
+def test_apiclient_request_save_missing_url(client):
+    client.post("/apiclient/collection", json={"name": "val_test_col"})
+    r = client.post("/apiclient/collection/val_test_col/request", json={
+        "name": "BadReq", "method": "GET", "url": "",
+    })
+    assert r.status_code == 400
+
+def test_apiclient_collection_delete(client):
+    client.post("/apiclient/collection", json={"name": "to_delete_col"})
+    r = client.delete("/apiclient/collection/to_delete_col")
+    assert r.status_code == 200
+    r2 = client.get("/apiclient/collection/to_delete_col")
+    assert r2.status_code == 404

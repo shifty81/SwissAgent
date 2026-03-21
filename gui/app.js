@@ -5705,8 +5705,349 @@
     if (e.key === "Enter") $("btn-snip-search")?.click();
   });
 
-  // ── Phase 41: Diff & Patch panel ─────────────────────────────────────────
+  // ── Phase 44: Environment Variables Manager panel ────────────────────────
   (function () {
+    let _envCurrentFile = ".env";
+
+    async function _envLoadFiles() {
+      try {
+        const r = await fetch("/env/files");
+        const d = await r.json();
+        const sel = $("env-file-select");
+        if (!sel) return;
+        const existing = sel.value;
+        sel.innerHTML = d.files.length
+          ? d.files.map(f => `<option value="${escHtmlSimple(f)}">${escHtmlSimple(f)}</option>`).join("")
+          : `<option value=".env">.env</option>`;
+        if (d.files.includes(existing)) sel.value = existing;
+      } catch (_) {}
+    }
+
+    async function _envLoadVars(file) {
+      _envCurrentFile = file || _envCurrentFile;
+      const list = $("env-vars-list");
+      if (!list) return;
+      list.innerHTML = `<div style="color:var(--text-dim);font-size:11px">Loading…</div>`;
+      try {
+        const r = await fetch(`/env/vars?file=${encodeURIComponent(_envCurrentFile)}`);
+        const d = await r.json();
+        if (!d.exists || !d.vars.length) {
+          list.innerHTML = `<div style="color:var(--text-dim);font-size:11px">No variables found in <code>${escHtmlSimple(_envCurrentFile)}</code>.</div>`;
+          return;
+        }
+        list.innerHTML = d.vars.map(v => `
+          <div class="env-var-row" data-key="${escHtmlSimple(v.key)}" style="display:flex;align-items:center;gap:4px;padding:5px 6px;background:var(--surface);border-radius:4px;border:1px solid var(--border)">
+            <span style="font-family:var(--font-mono);font-size:11px;font-weight:bold;flex:0 0 auto;min-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtmlSimple(v.key)}">${escHtmlSimple(v.key)}</span>
+            <span style="color:var(--text-dim);margin:0 2px">=</span>
+            <input class="env-val-input" data-key="${escHtmlSimple(v.key)}" type="text" value="${escHtmlSimple(v.value)}"
+              style="flex:1;font-family:var(--font-mono);font-size:11px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:3px 5px;min-width:0" />
+            <button class="btn-env-save-inline" data-key="${escHtmlSimple(v.key)}" title="Save" style="font-size:10px;padding:2px 5px">✔</button>
+            <button class="btn-env-del" data-key="${escHtmlSimple(v.key)}" title="Delete" style="font-size:10px;padding:2px 5px;color:var(--danger,#f44336)">🗑</button>
+          </div>
+        `).join("");
+
+        list.querySelectorAll(".btn-env-save-inline").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const key = btn.dataset.key;
+            const valInput = list.querySelector(`.env-val-input[data-key="${key}"]`);
+            const val = valInput ? valInput.value : "";
+            await fetch("/env/var", {
+              method: "POST", headers: {"Content-Type":"application/json"},
+              body: JSON.stringify({ file: _envCurrentFile, key, value: val }),
+            });
+            _showToast?.(`${key} saved`);
+          });
+        });
+        list.querySelectorAll(".btn-env-del").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const key = btn.dataset.key;
+            if (!confirm(`Delete ${key}?`)) return;
+            const r2 = await fetch(`/env/var?file=${encodeURIComponent(_envCurrentFile)}&key=${encodeURIComponent(key)}`, {
+              method: "DELETE",
+            });
+            if (r2.ok) { _showToast?.(`${key} deleted`); _envLoadVars(); }
+          });
+        });
+      } catch (e) {
+        list.innerHTML = `<div style="color:var(--danger)">${escHtmlSimple(e.message)}</div>`;
+      }
+    }
+
+    document.getElementById("panel-envvars")?.addEventListener("sw-panel-shown", async () => {
+      await _envLoadFiles();
+      _envLoadVars();
+    });
+
+    $("btn-env-refresh")?.addEventListener("click", async () => { await _envLoadFiles(); _envLoadVars(); });
+    $("env-file-select")?.addEventListener("change", e => _envLoadVars(e.target.value));
+
+    $("btn-env-add")?.addEventListener("click", () => {
+      $("env-add-form")?.classList.remove("hidden");
+      $("env-new-key")?.focus();
+    });
+    $("btn-env-cancel-var")?.addEventListener("click", () => $("env-add-form")?.classList.add("hidden"));
+    $("btn-env-save-var")?.addEventListener("click", async () => {
+      const key = $("env-new-key")?.value.trim() ?? "";
+      const val = $("env-new-val")?.value ?? "";
+      const comment = $("env-new-comment")?.value.trim() ?? "";
+      if (!key) { _showToast?.("KEY is required"); return; }
+      const r = await fetch("/env/var", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ file: _envCurrentFile, key, value: val, comment }),
+      });
+      if (r.ok) {
+        $("env-add-form")?.classList.add("hidden");
+        if ($("env-new-key")) $("env-new-key").value = "";
+        if ($("env-new-val")) $("env-new-val").value = "";
+        if ($("env-new-comment")) $("env-new-comment").value = "";
+        _showToast?.(`${key} saved`);
+        _envLoadVars();
+      }
+    });
+
+    $("btn-env-export")?.addEventListener("click", async () => {
+      const r = await fetch(`/env/export?file=${encodeURIComponent(_envCurrentFile)}`);
+      if (!r.ok) { _showToast?.("Export failed"); return; }
+      const d = await r.json();
+      const blob = new Blob([d.content], { type: "text/plain" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = _envCurrentFile.split("/").pop() || ".env";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    $("btn-env-import")?.addEventListener("click", () => {
+      const inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".env,text/plain";
+      inp.onchange = async () => {
+        const file = inp.files[0]; if (!file) return;
+        const content = await file.text();
+        const r = await fetch("/env/import", {
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ file: _envCurrentFile, content }),
+        });
+        if (r.ok) { const d = await r.json(); _showToast?.(`Imported ${d.vars_imported} vars`); _envLoadVars(); }
+      };
+      inp.click();
+    });
+  })();
+
+  // ── Phase 45: API Client / HTTP Playground panel ──────────────────────────
+  (function () {
+    let _apcColsVisible = false;
+
+    function _apcParseHeaders(raw) {
+      const h = {};
+      for (const line of raw.split("\n")) {
+        const idx = line.indexOf(":");
+        if (idx > 0) {
+          const k = line.slice(0, idx).trim();
+          const v = line.slice(idx + 1).trim();
+          if (k) h[k] = v;
+        }
+      }
+      return h;
+    }
+
+    function _apcFormatResponse(d) {
+      const statusColor = d.status_code < 300 ? "var(--success,#4caf50)" : d.status_code < 400 ? "#ff9800" : "var(--danger,#f44336)";
+      let bodyDisplay = d.body ?? "";
+      // Pretty-print JSON
+      try {
+        const parsed = JSON.parse(bodyDisplay);
+        bodyDisplay = JSON.stringify(parsed, null, 2);
+      } catch (_) {}
+      return `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-weight:bold;font-size:13px;color:${statusColor}">${d.status_code}</span>
+          <span style="font-size:11px;color:var(--text-dim)">${escHtmlSimple(d.reason_phrase ?? "")}</span>
+          <span style="font-size:10px;color:var(--text-dim);margin-left:auto">${d.elapsed_ms}ms</span>
+        </div>
+        <details style="margin-bottom:6px">
+          <summary style="font-size:11px;cursor:pointer;color:var(--text-dim)">Response Headers (${Object.keys(d.headers ?? {}).length})</summary>
+          <pre style="font-size:10px;font-family:var(--font-mono);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:5px;overflow-x:auto;margin-top:4px;max-height:120px">${escHtmlSimple(Object.entries(d.headers ?? {}).map(([k,v]) => `${k}: ${v}`).join("\n"))}</pre>
+        </details>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">Body:</div>
+        <pre style="font-size:10px;font-family:var(--font-mono);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:5px;overflow:auto;max-height:260px;white-space:pre-wrap;word-break:break-all">${escHtmlSimple(bodyDisplay)}</pre>
+        <button id="btn-apc-copy-body" style="font-size:11px;padding:3px 8px;margin-top:4px">📋 Copy Body</button>
+      `;
+    }
+
+    async function _apcLoadCollections() {
+      const list = $("apc-col-list");
+      if (!list) return;
+      try {
+        const r = await fetch("/apiclient/collections");
+        const d = await r.json();
+        if (!d.collections.length) {
+          list.innerHTML = `<div style="font-size:11px;color:var(--text-dim)">No collections yet. Click + New to create one.</div>`;
+          return;
+        }
+        list.innerHTML = d.collections.map(c => `
+          <div style="padding:5px 6px;background:var(--surface);border-radius:4px;border:1px solid var(--border)">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <button class="btn-apc-col-toggle" data-col="${escHtmlSimple(c.name)}" style="font-size:11px;font-weight:bold;background:none;border:none;color:var(--text);cursor:pointer;text-align:left;padding:0">▶ ${escHtmlSimple(c.name)} <span style="font-size:10px;color:var(--text-dim)">(${c.request_count})</span></button>
+              <button class="btn-apc-col-del" data-col="${escHtmlSimple(c.name)}" style="font-size:10px;padding:1px 5px;color:var(--danger,#f44336)" title="Delete collection">🗑</button>
+            </div>
+            <div class="apc-col-requests hidden" id="apc-col-reqs-${escHtmlSimple(c.name)}" style="margin-top:5px;display:flex;flex-direction:column;gap:3px"></div>
+          </div>
+        `).join("");
+
+        list.querySelectorAll(".btn-apc-col-toggle").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const colName = btn.dataset.col;
+            const reqs = document.getElementById(`apc-col-reqs-${colName}`);
+            if (!reqs) return;
+            const isHidden = reqs.classList.toggle("hidden");
+            btn.textContent = `${isHidden ? "▶" : "▾"} ${colName} `;
+            if (!isHidden && !reqs.children.length) {
+              const r2 = await fetch(`/apiclient/collection/${encodeURIComponent(colName)}`);
+              const d2 = await r2.json();
+              const reqlList = Object.values(d2.requests ?? {});
+              reqs.innerHTML = reqlList.length
+                ? reqlList.map(req => `
+                  <div style="display:flex;align-items:center;gap:4px;padding:3px 5px;border-radius:3px;background:var(--bg)">
+                    <span style="font-size:10px;font-weight:bold;color:${req.method==='GET'?'#4caf50':req.method==='POST'?'#2196f3':req.method==='DELETE'?'#f44336':'#ff9800'};min-width:40px">${req.method}</span>
+                    <button class="btn-apc-load-req" data-col="${escHtmlSimple(colName)}" data-req="${escHtmlSimple(req.name)}" style="flex:1;text-align:left;font-size:11px;background:none;border:none;color:var(--text);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtmlSimple(req.name)}</button>
+                    <button class="btn-apc-del-req" data-col="${escHtmlSimple(colName)}" data-req="${escHtmlSimple(req.name)}" style="font-size:10px;padding:1px 4px;color:var(--danger,#f44336)">✕</button>
+                  </div>
+                `).join("")
+                : `<div style="font-size:10px;color:var(--text-dim);padding:3px 5px">No saved requests</div>`;
+
+              reqs.querySelectorAll(".btn-apc-load-req").forEach(rb => {
+                rb.addEventListener("click", async () => {
+                  const r3 = await fetch(`/apiclient/collection/${encodeURIComponent(rb.dataset.col)}`);
+                  const d3 = await r3.json();
+                  const saved = d3.requests[rb.dataset.req];
+                  if (!saved) return;
+                  const methodSel = $("apc-method");
+                  if (methodSel) methodSel.value = saved.method;
+                  const urlInp = $("apc-url");
+                  if (urlInp) urlInp.value = saved.url;
+                  const headersTA = $("apc-headers");
+                  if (headersTA) headersTA.value = Object.entries(saved.headers ?? {}).map(([k,v]) => `${k}: ${v}`).join("\n");
+                  const bodyTA = $("apc-body");
+                  if (bodyTA) bodyTA.value = saved.body ?? "";
+                  const bodyTypeSel = $("apc-body-type");
+                  if (bodyTypeSel) bodyTypeSel.value = saved.body_type ?? "raw";
+                  _showToast?.("Request loaded");
+                });
+              });
+
+              reqs.querySelectorAll(".btn-apc-del-req").forEach(rb => {
+                rb.addEventListener("click", async () => {
+                  if (!confirm(`Delete request '${rb.dataset.req}'?`)) return;
+                  await fetch(`/apiclient/collection/${encodeURIComponent(rb.dataset.col)}/request/${encodeURIComponent(rb.dataset.req)}`, { method: "DELETE" });
+                  reqs.innerHTML = "";
+                  _showToast?.("Request deleted");
+                  _apcLoadCollections();
+                });
+              });
+            }
+          });
+        });
+
+        list.querySelectorAll(".btn-apc-col-del").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const colName = btn.dataset.col;
+            if (!confirm(`Delete collection '${colName}' and all its requests?`)) return;
+            await fetch(`/apiclient/collection/${encodeURIComponent(colName)}`, { method: "DELETE" });
+            _showToast?.("Collection deleted");
+            _apcLoadCollections();
+          });
+        });
+      } catch (e) {
+        list.innerHTML = `<div style="color:var(--danger)">${escHtmlSimple(e.message)}</div>`;
+      }
+    }
+
+    // Tab switching
+    document.querySelectorAll(".apc-tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".apc-tab-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        const tab = btn.dataset.apcTab;
+        $("apc-tab-headers")?.classList.toggle("hidden", tab !== "headers");
+        $("apc-tab-body")?.classList.toggle("hidden", tab !== "body");
+      });
+    });
+
+    // Send request
+    $("btn-apc-send")?.addEventListener("click", async () => {
+      const method = $("apc-method")?.value ?? "GET";
+      const url = $("apc-url")?.value.trim() ?? "";
+      const headersRaw = $("apc-headers")?.value ?? "";
+      const body = $("apc-body")?.value ?? "";
+      const bodyType = $("apc-body-type")?.value ?? "raw";
+      const respEl = $("apc-response");
+      if (!url) { if (respEl) respEl.innerHTML = `<div style="color:var(--danger)">URL is required</div>`; return; }
+      if (respEl) respEl.innerHTML = `<div style="color:var(--text-dim)">Sending…</div>`;
+      try {
+        const r = await fetch("/apiclient/send", {
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ method, url, headers: _apcParseHeaders(headersRaw), body, body_type: bodyType }),
+        });
+        const d = await r.json();
+        if (!r.ok) { if (respEl) respEl.innerHTML = `<div style="color:var(--danger)">${escHtmlSimple(d.detail ?? "Error")}</div>`; return; }
+        if (respEl) { respEl.innerHTML = _apcFormatResponse(d); }
+        const bodyText = d.body ?? "";
+        document.getElementById("btn-apc-copy-body")?.addEventListener("click", () => {
+          navigator.clipboard.writeText(bodyText).then(() => _showToast?.("Body copied!"));
+        });
+      } catch (e) {
+        if (respEl) respEl.innerHTML = `<div style="color:var(--danger)">Error: ${escHtmlSimple(e.message)}</div>`;
+      }
+    });
+
+    // Toggle collections panel
+    $("btn-apc-collections")?.addEventListener("click", async () => {
+      _apcColsVisible = !_apcColsVisible;
+      $("apc-collections-view")?.classList.toggle("hidden", !_apcColsVisible);
+      if (_apcColsVisible) await _apcLoadCollections();
+    });
+
+    // New collection
+    $("btn-apc-new-col")?.addEventListener("click", async () => {
+      const name = prompt("Collection name:");
+      if (!name?.trim()) return;
+      const r = await fetch("/apiclient/collection", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      if (r.ok) { _showToast?.("Collection created"); _apcLoadCollections(); }
+      else { const d = await r.json(); _showToast?.(`Error: ${d.detail}`); }
+    });
+
+    // Save current request to collection
+    $("btn-apc-save-req")?.addEventListener("click", async () => {
+      const r0 = await fetch("/apiclient/collections");
+      const d0 = await r0.json();
+      if (!d0.collections.length) {
+        _showToast?.("Create a collection first (click 📂)");
+        return;
+      }
+      const colName = d0.collections.length === 1
+        ? d0.collections[0].name
+        : prompt(`Collection (${d0.collections.map(c => c.name).join(", ")}):`);
+      if (!colName) return;
+      const reqName = prompt("Request name:");
+      if (!reqName?.trim()) return;
+      const method = $("apc-method")?.value ?? "GET";
+      const url = $("apc-url")?.value.trim() ?? "";
+      const headersRaw = $("apc-headers")?.value ?? "";
+      const body = $("apc-body")?.value ?? "";
+      const bodyType = $("apc-body-type")?.value ?? "raw";
+      const r2 = await fetch(`/apiclient/collection/${encodeURIComponent(colName)}/request`, {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ name: reqName.trim(), method, url, headers: _apcParseHeaders(headersRaw), body, body_type: bodyType }),
+      });
+      if (r2.ok) { _showToast?.(`Saved to '${colName}'`); if (_apcColsVisible) _apcLoadCollections(); }
+      else { const d2 = await r2.json(); _showToast?.(`Error: ${d2.detail}`); }
+    });
+  })();
+
+})();
     function _dpSetMode(mode) {
       $("dp-diff-mode")?.classList.toggle("hidden", mode !== "diff");
       $("dp-patch-mode")?.classList.toggle("hidden", mode !== "patch");

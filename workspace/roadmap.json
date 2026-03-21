@@ -2066,6 +2066,129 @@
           "description": "GUI panel with Diff and Patch modes, text inputs, diff viewer"
         }
       ]
+    },
+    {
+      "id": "m44",
+      "title": "Phase 44 \u2014 Environment Variables Manager",
+      "status": "done",
+      "priority": "high",
+      "description": "Create, read, update and delete variables in .env files via the IDE",
+      "tasks": [
+        {
+          "id": "t44-1",
+          "title": "GET /env/files \u2014 list .env files in workspace",
+          "status": "done",
+          "priority": "medium",
+          "description": "Discover .env files in root and one level deep"
+        },
+        {
+          "id": "t44-2",
+          "title": "GET /env/vars \u2014 read and parse a .env file",
+          "status": "done",
+          "priority": "high",
+          "description": "Return key/value/comment list for a given file"
+        },
+        {
+          "id": "t44-3",
+          "title": "POST /env/var \u2014 set a variable",
+          "status": "done",
+          "priority": "high",
+          "description": "Create or update KEY=VALUE in a .env file"
+        },
+        {
+          "id": "t44-4",
+          "title": "DELETE /env/var \u2014 remove a variable",
+          "status": "done",
+          "priority": "high",
+          "description": "Remove a key from a .env file"
+        },
+        {
+          "id": "t44-5",
+          "title": "GET /env/export \u2014 export .env file content",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return raw text of a .env file for download"
+        },
+        {
+          "id": "t44-6",
+          "title": "POST /env/import \u2014 import .env content",
+          "status": "done",
+          "priority": "medium",
+          "description": "Overwrite a .env file with provided content"
+        },
+        {
+          "id": "t44-7",
+          "title": "Env Variables panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "File selector, variable list with inline edit/delete, add form, import/export"
+        }
+      ]
+    },
+    {
+      "id": "m45",
+      "title": "Phase 45 \u2014 API Client / HTTP Playground",
+      "status": "done",
+      "priority": "high",
+      "description": "Built-in Postman-like HTTP client for testing and exploring APIs",
+      "tasks": [
+        {
+          "id": "t45-1",
+          "title": "POST /apiclient/send \u2014 send HTTP request",
+          "status": "done",
+          "priority": "high",
+          "description": "Proxy any HTTP request (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS) and return full response"
+        },
+        {
+          "id": "t45-2",
+          "title": "GET /apiclient/collections \u2014 list collections",
+          "status": "done",
+          "priority": "medium",
+          "description": "List all saved request collections"
+        },
+        {
+          "id": "t45-3",
+          "title": "POST /apiclient/collection \u2014 create collection",
+          "status": "done",
+          "priority": "medium",
+          "description": "Create a named collection for grouping saved requests"
+        },
+        {
+          "id": "t45-4",
+          "title": "GET /apiclient/collection/{name} \u2014 get collection",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return collection details including all saved requests"
+        },
+        {
+          "id": "t45-5",
+          "title": "DELETE /apiclient/collection/{name} \u2014 delete collection",
+          "status": "done",
+          "priority": "low",
+          "description": "Remove a collection and all its requests"
+        },
+        {
+          "id": "t45-6",
+          "title": "POST /apiclient/collection/{name}/request \u2014 save request",
+          "status": "done",
+          "priority": "medium",
+          "description": "Add or replace a named request inside a collection"
+        },
+        {
+          "id": "t45-7",
+          "title": "DELETE /apiclient/collection/{name}/request/{rname} \u2014 delete request",
+          "status": "done",
+          "priority": "low",
+          "description": "Remove a saved request from a collection"
+        },
+        {
+          "id": "t45-8",
+          "title": "API Client panel in IDE",
+          "status": "done",
+          "priority": "high",
+          "description": "Method picker, URL bar, headers/body tabs, response viewer, saved collections sidebar"
+        }
+      ]
     }
   ]
 }

@@ -705,7 +705,66 @@ class PersonaCreateRequest(BaseModel):
     llm_backend: str = ""
 
 
-# ── Phase 7: AI action prompt templates ───────────────────────────────────────
+class PersonaPatchRequest(BaseModel):
+    display_name: str | None = None
+    role: str | None = None
+    domain: str | None = None
+    system_prompt: str | None = None
+    offline_model: str | None = None
+    llm_backend: str | None = None
+
+
+class PersonaCloneRequest(BaseModel):
+    new_name: str
+    new_display_name: str = ""
+
+
+class PersonaGenerateRequest(BaseModel):
+    persona_name: str
+    project_name: str
+    description: str
+    tech_stack: list[str] = []
+    goals: list[str] = []
+    conventions: str = ""
+    display_name: str = ""
+    offline_model: str = ""
+    llm_backend: str = ""
+
+
+# ── Phase 44: Environment Variables Manager request models ────────────────────
+
+class EnvVarSetRequest(BaseModel):
+    file: str = ".env"        # relative path inside the workspace root
+    key: str
+    value: str
+    comment: str = ""         # optional inline comment
+
+class EnvImportRequest(BaseModel):
+    file: str = ".env"
+    content: str              # raw .env file text to write / overwrite
+
+# ── Phase 45: API Client / HTTP Playground request models ─────────────────────
+
+class ApiClientSendRequest(BaseModel):
+    method: str = "GET"
+    url: str
+    headers: dict[str, str] = {}
+    body: str = ""
+    body_type: str = "raw"    # raw | json | form
+    timeout: int = 30
+
+class ApiClientCollectionSaveRequest(BaseModel):
+    name: str
+    description: str = ""
+
+class ApiClientRequestSaveRequest(BaseModel):
+    name: str
+    method: str = "GET"
+    url: str
+    headers: dict[str, str] = {}
+    body: str = ""
+    body_type: str = "raw"
+    description: str = ""
 
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
@@ -5951,45 +6010,48 @@ indent_style = tab
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Patch failed: {exc}")
 
-    # ── Phase 42: AI Persona (hive-mind) ──────────────────────────────────────
+    # ── Phase 42 + 43: AI Persona (hive-mind + project-aware custom personas) ──
 
     @app.get("/ai/personas")
     async def ai_personas_list() -> dict[str, Any]:
-        """List all AI personas — 13 built-in specialists plus any custom ones."""
+        """List all AI personas — 14 built-in specialists plus any custom ones."""
         from modules.ai_persona.src.ai_persona_tools import persona_list
         return persona_list()
 
     @app.get("/ai/persona/active")
     async def ai_persona_active_get() -> dict[str, Any]:
-        """Return lightweight metadata of the currently active persona."""
-        from modules.ai_persona.src.ai_persona_tools import get_active_persona_info, _load_active_name
+        """Return lightweight metadata of the currently active persona.
+
+        When no persona has been explicitly activated the SwissAgent Assistant
+        (the platform default) is returned with ``is_default: true``.
+        """
+        from modules.ai_persona.src.ai_persona_tools import (
+            get_active_persona_info,
+            _load_active_name,
+            _DEFAULT_PERSONA_NAME,
+        )
         info = get_active_persona_info()
-        if not info:
-            return {"active": None, "message": "No persona is currently active."}
-        return {"active": _load_active_name(), **info}
+        explicit = _load_active_name()
+        active_name = explicit or _DEFAULT_PERSONA_NAME
+        return {"active": active_name, **info}
 
     @app.get("/ai/persona/context")
     async def ai_persona_context() -> dict[str, Any]:
-        """Return the full resolved system prompt that will be sent to the LLM."""
+        """Return the full resolved system prompt that will be sent to the LLM.
+
+        Always returns a non-empty prompt — falls back to the built-in
+        SwissAgent Assistant persona when nothing is explicitly activated.
+        """
         from modules.ai_persona.src.ai_persona_tools import (
             load_active_persona_prompt,
             get_active_persona_info,
         )
         prompt = load_active_persona_prompt()
         info = get_active_persona_info()
-        if not prompt:
-            return {
-                "active": None,
-                "system_prompt": (
-                    "You are SwissAgent, an AI-powered offline development platform assistant. "
-                    "You help with code generation, build automation, asset pipelines, and development tasks. "
-                    "Think step-by-step and use available tools to complete tasks."
-                ),
-                "message": "No persona active — showing default SwissAgent system prompt.",
-            }
         return {
             "active": info.get("name"),
             "display_name": info.get("display_name"),
+            "is_default": info.get("is_default", False),
             "system_prompt": prompt,
         }
 
@@ -6023,6 +6085,84 @@ indent_style = tab
             raise HTTPException(status_code=400, detail=result["error"])
         return result
 
+    @app.patch("/ai/persona/{name}")
+    async def ai_persona_patch(name: str, req: PersonaPatchRequest) -> dict[str, Any]:
+        """Update individual fields of an existing custom persona.
+
+        Only the fields provided in the request body are changed; all others
+        remain unchanged.  Built-in personas cannot be patched — clone one
+        first (``POST /ai/persona/{name}/clone``), then patch the clone.
+        """
+        from modules.ai_persona.src.ai_persona_tools import persona_patch
+        result = persona_patch(
+            name,
+            display_name=req.display_name,
+            role=req.role,
+            domain=req.domain,
+            system_prompt=req.system_prompt,
+            offline_model=req.offline_model,
+            llm_backend=req.llm_backend,
+        )
+        if "error" in result:
+            if "cannot be patched" in result["error"]:
+                code = 403
+            elif "not found" in result["error"]:
+                code = 404
+            else:
+                code = 400
+            raise HTTPException(status_code=code, detail=result["error"])
+        return result
+
+    @app.post("/ai/persona/{name}/clone")
+    async def ai_persona_clone(name: str, req: PersonaCloneRequest) -> dict[str, Any]:
+        """Clone an existing persona (built-in or custom) as a new custom persona.
+
+        The clone is fully editable — use ``PATCH /ai/persona/{new_name}`` to
+        layer project-specific instructions on top of the cloned baseline.
+        """
+        from modules.ai_persona.src.ai_persona_tools import persona_clone
+        if not req.new_name or not req.new_name.strip():
+            raise HTTPException(status_code=400, detail="new_name is required")
+        result = persona_clone(
+            source_name=name,
+            new_name=req.new_name,
+            new_display_name=req.new_display_name,
+        )
+        if "error" in result:
+            code = 400 if "built-in name" in result["error"] else 404
+            raise HTTPException(status_code=code, detail=result["error"])
+        return result
+
+    @app.post("/ai/persona/generate")
+    async def ai_persona_generate(req: PersonaGenerateRequest) -> dict[str, Any]:
+        """Generate a project-specific custom persona from project metadata.
+
+        Builds a tailored system prompt that makes the AI deeply aware of the
+        project — its purpose, technology stack, goals, and coding conventions
+        — and saves it as a new custom persona ready to activate.
+        """
+        from modules.ai_persona.src.ai_persona_tools import persona_generate
+        if not req.persona_name or not req.persona_name.strip():
+            raise HTTPException(status_code=400, detail="persona_name is required")
+        if not req.project_name or not req.project_name.strip():
+            raise HTTPException(status_code=400, detail="project_name is required")
+        if not req.description or not req.description.strip():
+            raise HTTPException(status_code=400, detail="description is required")
+        result = persona_generate(
+            persona_name=req.persona_name,
+            project_name=req.project_name,
+            description=req.description,
+            tech_stack=req.tech_stack,
+            goals=req.goals,
+            conventions=req.conventions,
+            display_name=req.display_name,
+            offline_model=req.offline_model,
+            llm_backend=req.llm_backend,
+        )
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
     @app.post("/ai/persona/{name}/activate")
     async def ai_persona_activate(name: str) -> dict[str, Any]:
         """Set a persona as globally active for all subsequent agent calls."""
@@ -6031,6 +6171,16 @@ indent_style = tab
         if "error" in result:
             raise HTTPException(status_code=404, detail=result["error"])
         return result
+
+    @app.delete("/ai/persona/active")
+    async def ai_persona_deactivate() -> dict[str, Any]:
+        """Clear the explicitly-set active persona and revert to the platform default.
+
+        After this call, all AI requests will use the built-in
+        *SwissAgent Assistant* persona until a new persona is activated.
+        """
+        from modules.ai_persona.src.ai_persona_tools import persona_deactivate
+        return persona_deactivate()
 
     @app.delete("/ai/persona/{name}")
     async def ai_persona_delete(name: str) -> dict[str, Any]:
@@ -6041,6 +6191,301 @@ indent_style = tab
             code = 403 if "cannot be deleted" in result["error"] else 404
             raise HTTPException(status_code=code, detail=result["error"])
         return result
+
+    # ── Phase 44: Environment Variables Manager ───────────────────────────────
+
+    def _env_workspace_root(config_dir: str) -> Path:
+        """Return the workspace root used for .env file paths."""
+        return Path(config_dir).resolve().parent
+
+    def _env_resolve_path(config_dir: str, rel: str) -> Path:
+        """Resolve a relative .env file path safely within the workspace."""
+        root = _env_workspace_root(config_dir)
+        candidate = (root / rel).resolve()
+        # Prevent directory traversal
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Path outside workspace")
+        return candidate
+
+    def _env_parse(content: str) -> list[dict[str, Any]]:
+        """Parse .env file text into a list of variable records."""
+        vars_list: list[dict[str, Any]] = []
+        for raw_line in content.splitlines():
+            line = raw_line.rstrip()
+            # Skip blanks
+            if not line:
+                continue
+            # Comment-only line
+            if line.lstrip().startswith("#"):
+                continue
+            # Strip inline comment
+            comment = ""
+            if " #" in line:
+                parts = line.split(" #", 1)
+                line = parts[0].rstrip()
+                comment = parts[1].strip()
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if not key:
+                continue
+            # Strip surrounding quotes
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                value = value[1:-1]
+            vars_list.append({"key": key, "value": value, "comment": comment})
+        return vars_list
+
+    def _env_write_var(content: str, key: str, value: str, comment: str) -> str:
+        """Set or add a key=value in .env content; returns updated content."""
+        new_line = f'{key}={value}' + (f'  # {comment}' if comment else '')
+        lines = content.splitlines(keepends=True)
+        for i, line in enumerate(lines):
+            stripped = line.rstrip()
+            if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
+                lines[i] = new_line + "\n"
+                return "".join(lines)
+        # Append
+        sep = "\n" if content and not content.endswith("\n") else ""
+        return content + sep + new_line + "\n"
+
+    def _env_delete_var(content: str, key: str) -> str:
+        """Remove a key from .env content; returns updated content."""
+        lines = content.splitlines(keepends=True)
+        filtered = [
+            l for l in lines
+            if not (l.rstrip().startswith(f"{key}=") or l.rstrip().startswith(f"{key} ="))
+        ]
+        return "".join(filtered)
+
+    @app.get("/env/files")
+    async def env_list_files() -> dict[str, Any]:
+        """List .env files found in the workspace root and project subdirectories."""
+        root = _env_workspace_root(config_dir)
+        env_files: list[str] = []
+        # Root .env files
+        for pattern in ("*.env", ".env", ".env.*"):
+            for p in root.glob(pattern):
+                if p.is_file():
+                    env_files.append(str(p.relative_to(root)))
+        # One level deep (project directories)
+        for subdir in root.iterdir():
+            if subdir.is_dir() and not subdir.name.startswith("."):
+                for pattern in ("*.env", ".env", ".env.*"):
+                    for p in subdir.glob(pattern):
+                        if p.is_file():
+                            env_files.append(str(p.relative_to(root)))
+        env_files = sorted(set(env_files))
+        return {"files": env_files, "total": len(env_files)}
+
+    @app.get("/env/vars")
+    async def env_list_vars(file: str = ".env") -> dict[str, Any]:
+        """Read and parse a .env file, returning its variables."""
+        path = _env_resolve_path(config_dir, file)
+        if not path.is_file():
+            return {"file": file, "vars": [], "exists": False}
+        content = path.read_text(encoding="utf-8", errors="replace")
+        return {
+            "file": file,
+            "vars": _env_parse(content),
+            "exists": True,
+            "total": len(_env_parse(content)),
+        }
+
+    @app.post("/env/var")
+    async def env_set_var(req: EnvVarSetRequest) -> dict[str, Any]:
+        """Set (create or update) a variable in a .env file."""
+        if not req.key.strip():
+            raise HTTPException(status_code=400, detail="key is required")
+        path = _env_resolve_path(config_dir, req.file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        content = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+        content = _env_write_var(content, req.key.strip(), req.value, req.comment)
+        path.write_text(content, encoding="utf-8")
+        return {"success": True, "file": req.file, "key": req.key.strip()}
+
+    @app.delete("/env/var")
+    async def env_delete_var(file: str = ".env", key: str = "") -> dict[str, Any]:
+        """Remove a variable from a .env file."""
+        if not key.strip():
+            raise HTTPException(status_code=400, detail="key is required")
+        path = _env_resolve_path(config_dir, file)
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail=f"File '{file}' not found")
+        content = path.read_text(encoding="utf-8", errors="replace")
+        updated = _env_delete_var(content, key.strip())
+        if updated == content:
+            raise HTTPException(status_code=404, detail=f"Key '{key}' not found")
+        path.write_text(updated, encoding="utf-8")
+        return {"success": True, "file": file, "deleted": key.strip()}
+
+    @app.get("/env/export")
+    async def env_export(file: str = ".env") -> dict[str, Any]:
+        """Return the raw text content of a .env file for export/download."""
+        path = _env_resolve_path(config_dir, file)
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail=f"File '{file}' not found")
+        content = path.read_text(encoding="utf-8", errors="replace")
+        return {"file": file, "content": content}
+
+    @app.post("/env/import")
+    async def env_import(req: EnvImportRequest) -> dict[str, Any]:
+        """Import (overwrite) a .env file with provided content."""
+        path = _env_resolve_path(config_dir, req.file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(req.content, encoding="utf-8")
+        parsed = _env_parse(req.content)
+        return {"success": True, "file": req.file, "vars_imported": len(parsed)}
+
+    # ── Phase 45: API Client / HTTP Playground ────────────────────────────────
+
+    @app.post("/apiclient/send")
+    async def apiclient_send(req: ApiClientSendRequest) -> dict[str, Any]:
+        """Send an HTTP request and return the full response.
+
+        Supports GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS.
+        Set ``body_type`` to ``json`` to auto-set Content-Type header.
+        """
+        import httpx, time
+        from urllib.parse import urlparse
+        url = req.url.strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="url is required")
+        # Only allow http/https schemes to prevent file://, ftp://, etc.
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise HTTPException(
+                status_code=400,
+                detail="Only http:// and https:// URLs are allowed",
+            )
+        method = req.method.upper()
+        if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}:
+            raise HTTPException(status_code=400, detail=f"Unsupported HTTP method: {method}")
+        headers = dict(req.headers)
+        content: bytes | None = None
+        if req.body:
+            if req.body_type == "json":
+                headers.setdefault("Content-Type", "application/json")
+            elif req.body_type == "form":
+                headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
+            content = req.body.encode("utf-8")
+        try:
+            t0 = time.monotonic()
+            async with httpx.AsyncClient(follow_redirects=True, timeout=req.timeout) as cli:
+                resp = await cli.request(
+                    method,
+                    url,  # validated above: http/https only
+                    headers=headers,
+                    content=content,
+                )
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            # Try to decode body as text
+            try:
+                body_text = resp.text
+            except Exception:
+                body_text = resp.content.decode("utf-8", errors="replace")
+            return {
+                "status_code": resp.status_code,
+                "reason_phrase": resp.reason_phrase,
+                "headers": dict(resp.headers),
+                "body": body_text,
+                "elapsed_ms": elapsed_ms,
+                "url": str(resp.url),
+                "success": resp.is_success,
+            }
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Request timed out")
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=502, detail=f"Request error: {exc}")
+
+    @app.get("/apiclient/collections")
+    async def apiclient_collections_list() -> dict[str, Any]:
+        """List all saved API request collections."""
+        cols = [
+            {
+                "name": c["name"],
+                "description": c.get("description", ""),
+                "request_count": len(c.get("requests", {})),
+                "created_at": c.get("created_at", ""),
+            }
+            for c in _apiclient_collections.values()
+        ]
+        cols.sort(key=lambda c: c["created_at"])
+        return {"collections": cols, "total": len(cols)}
+
+    @app.post("/apiclient/collection")
+    async def apiclient_collection_create(req: ApiClientCollectionSaveRequest) -> dict[str, Any]:
+        """Create a new (empty) request collection."""
+        if not req.name.strip():
+            raise HTTPException(status_code=400, detail="name is required")
+        name = req.name.strip()
+        if name in _apiclient_collections:
+            raise HTTPException(status_code=409, detail=f"Collection '{name}' already exists")
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _apiclient_collections[name] = {
+            "name": name,
+            "description": req.description,
+            "requests": {},
+            "created_at": now,
+            "updated_at": now,
+        }
+        return {"success": True, "collection": _apiclient_collections[name]}
+
+    @app.get("/apiclient/collection/{name}")
+    async def apiclient_collection_get(name: str) -> dict[str, Any]:
+        """Get a collection with all its saved requests."""
+        col = _apiclient_collections.get(name)
+        if not col:
+            raise HTTPException(status_code=404, detail=f"Collection '{name}' not found")
+        return col
+
+    @app.delete("/apiclient/collection/{name}")
+    async def apiclient_collection_delete(name: str) -> dict[str, Any]:
+        """Delete a collection and all its requests."""
+        if name not in _apiclient_collections:
+            raise HTTPException(status_code=404, detail=f"Collection '{name}' not found")
+        del _apiclient_collections[name]
+        return {"success": True, "deleted": name}
+
+    @app.post("/apiclient/collection/{name}/request")
+    async def apiclient_request_save(name: str, req: ApiClientRequestSaveRequest) -> dict[str, Any]:
+        """Add or replace a saved request inside a collection."""
+        col = _apiclient_collections.get(name)
+        if not col:
+            raise HTTPException(status_code=404, detail=f"Collection '{name}' not found")
+        if not req.name.strip():
+            raise HTTPException(status_code=400, detail="request name is required")
+        if not req.url.strip():
+            raise HTTPException(status_code=400, detail="url is required")
+        rname = req.name.strip()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        col["requests"][rname] = {
+            "name": rname,
+            "method": req.method.upper(),
+            "url": req.url.strip(),
+            "headers": req.headers,
+            "body": req.body,
+            "body_type": req.body_type,
+            "description": req.description,
+            "saved_at": now,
+        }
+        col["updated_at"] = now
+        return {"success": True, "collection": name, "request": rname}
+
+    @app.delete("/apiclient/collection/{name}/request/{rname}")
+    async def apiclient_request_delete(name: str, rname: str) -> dict[str, Any]:
+        """Delete a saved request from a collection."""
+        col = _apiclient_collections.get(name)
+        if not col:
+            raise HTTPException(status_code=404, detail=f"Collection '{name}' not found")
+        if rname not in col["requests"]:
+            raise HTTPException(status_code=404, detail=f"Request '{rname}' not found")
+        del col["requests"][rname]
+        col["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "deleted": rname}
 
     return app
 
@@ -6210,3 +6655,11 @@ _snippet_id_counter: int = 0
 
 # ── Phase 42: AI Persona (hive-mind) — no in-process state;
 #    all state is persisted by modules/ai_persona/src/ai_persona_tools.py
+
+# ── Phase 44: Environment Variables Manager ────────────────────────────────────
+# (No in-process state — reads/writes directly to files on disk)
+
+# ── Phase 45: API Client / HTTP Playground ────────────────────────────────────
+_apiclient_collections: dict[str, Any] = {}  # name → {name, description, requests: {}}
+
+# ── End of module-level state ─────────────────────────────────────────────────

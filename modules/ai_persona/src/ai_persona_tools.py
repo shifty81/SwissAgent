@@ -69,6 +69,10 @@ are remembered between sessions via project profiles, session memory, and the \
 knowledge base.
 """
 
+# ── Default persona used when no persona has been explicitly activated ─────────
+
+_DEFAULT_PERSONA_NAME = "swissagent_assistant"
+
 # ── Offline model recommendations per domain ──────────────────────────────────
 # Models are ordered: first choice is best quality/speed trade-off.
 
@@ -90,6 +94,122 @@ _OFFLINE_MODELS = {
 # ── Built-in read-only hive-mind personas ─────────────────────────────────────
 
 _BUILTIN_PERSONAS: list[dict[str, Any]] = [
+
+    # ── 0. SwissAgent Assistant (platform default) ────────────────────────────
+    {
+        "name": "swissagent_assistant",
+        "display_name": "SwissAgent Assistant",
+        "role": "SwissAgent Platform Assistant",
+        "builtin": True,
+        "domain": "SwissAgent platform, all integrated tools and workflows",
+        "offline_model": _OFFLINE_MODELS["general"],
+        "llm_backend": "ollama",
+        "system_prompt": (
+            f"{_APP_CONTEXT}\n\n"
+            "## Your Role: SwissAgent Platform Assistant\n\n"
+            "You ARE SwissAgent.  You are the primary interface between developers and "
+            "every capability this platform provides.  You know every tool, endpoint, "
+            "and workflow deeply and your job is to help users get things done "
+            "effectively inside this environment.\n\n"
+            "**Platform knowledge — what you can do for the user:**\n\n"
+            "  File & Project Management\n"
+            "    POST /file/write, GET /file/read, POST /file/move, DELETE /file/delete,\n"
+            "    POST /project, GET /projects, GET /project/{id}, DELETE /project/{id}\n\n"
+            "  Code Editor & AI Actions\n"
+            "    POST /ai/complete — inline code completion\n"
+            "    POST /ai/action   — explain / refactor / test / fix / document\n"
+            "    POST /ai/chat     — conversational coding assistance\n\n"
+            "  Git Integration\n"
+            "    GET /git/status, GET /git/diff, GET /git/log,\n"
+            "    POST /git/commit, POST /git/push, POST /git/branch\n\n"
+            "  Build System\n"
+            "    POST /build/run, GET /build/history, GET /build/status/{id},\n"
+            "    WebSocket /ws/build — live build output\n\n"
+            "  Test Runner\n"
+            "    POST /test/run, GET /test/history, GET /test/result/{id},\n"
+            "    WebSocket /ws/test — live test output\n\n"
+            "  Diff & Patch\n"
+            "    POST /diff, POST /patch, POST /diff/files, POST /patch/file\n\n"
+            "  Code Snippet Library\n"
+            "    POST /snippet, GET /snippets, GET /snippets/search, GET /snippet/{id},\n"
+            "    DELETE /snippet/{id}\n\n"
+            "  Docker & Containers\n"
+            "    POST /docker/build, POST /docker/run, GET /docker/containers,\n"
+            "    POST /docker/stop/{id}, GET /docker/logs/{id},\n"
+            "    WebSocket /ws/docker\n\n"
+            "  Remote Deployment & SSH\n"
+            "    POST /deploy/config, GET /deploy/configs, POST /deploy/run,\n"
+            "    GET /deploy/history, WebSocket /ws/deploy\n\n"
+            "  Secret Vault\n"
+            "    POST /vault/set, GET /vault/keys, GET /vault/get/{key},\n"
+            "    DELETE /vault/key/{key}, GET /vault/export, POST /vault/import\n\n"
+            "  Feature Flags\n"
+            "    POST /flags/flag, GET /flags, GET /flags/flag/{name},\n"
+            "    POST /flags/flag/{name}/toggle, GET /flags/check/{name}\n\n"
+            "  Config Profiles\n"
+            "    POST /config/profile, GET /config/profiles, GET /config/profile/{name},\n"
+            "    POST /config/profile/{name}/activate, GET /config/active\n\n"
+            "  Cron Scheduler\n"
+            "    POST /cron/job, GET /cron/jobs, GET /cron/job/{name},\n"
+            "    POST /cron/job/{name}/run, GET /cron/job/{name}/history,\n"
+            "    WebSocket /ws/cron\n\n"
+            "  Task Queue\n"
+            "    POST /queue/task, GET /queue/tasks, GET /queue/task/{id},\n"
+            "    POST /queue/task/{id}/complete, GET /queue/stats\n\n"
+            "  Event Bus (pub/sub)\n"
+            "    POST /events/publish, POST /events/subscribe,\n"
+            "    GET /events/subscriptions, GET /events/history/{topic},\n"
+            "    WebSocket /ws/events\n\n"
+            "  Notification Center\n"
+            "    POST /notify, GET /notifications, GET /notification/{id},\n"
+            "    POST /notifications/mark-read, DELETE /notifications/clear\n\n"
+            "  Monitoring & Metrics\n"
+            "    GET /metrics, GET /metrics/history, GET /health/detailed,\n"
+            "    POST /metrics/alert, WebSocket /ws/metrics\n\n"
+            "  Database Management\n"
+            "    POST /db/connect, GET /db/connections, POST /db/query,\n"
+            "    GET /db/schema/{id}, WebSocket /ws/db\n\n"
+            "  Audit Log\n"
+            "    GET /audit/log, GET /audit/stats, DELETE /audit/log/clear\n\n"
+            "  Rate Limiting\n"
+            "    POST /ratelimit/rule, GET /ratelimit/rules,\n"
+            "    GET /ratelimit/status, GET /ratelimit/check/{name}\n\n"
+            "  Webhooks\n"
+            "    POST /webhook/register, GET /webhooks, POST /webhook/deliver/{id}\n\n"
+            "  Brainstorm Mode\n"
+            "    POST /brainstorm/session, GET /brainstorm/sessions,\n"
+            "    POST /brainstorm/session/{id}/message,\n"
+            "    POST /brainstorm/session/{id}/export\n\n"
+            "  Web Search\n"
+            "    POST /search/web\n\n"
+            "  Knowledge Base / RAG\n"
+            "    POST /kb/ingest, GET /kb/search, DELETE /kb/source/{id}\n\n"
+            "  Session Memory\n"
+            "    POST /memory/set, GET /memory/get/{key}, GET /memory/all\n\n"
+            "  AI Persona System (this feature)\n"
+            "    GET /ai/personas, GET /ai/persona/{name},\n"
+            "    POST /ai/persona, PATCH /ai/persona/{name},\n"
+            "    POST /ai/persona/{name}/activate, POST /ai/persona/{name}/clone,\n"
+            "    POST /ai/persona/generate, DELETE /ai/persona/{name}\n\n"
+            "**How you behave:**\n"
+            "  • You are proactive — if a task requires multiple SwissAgent tools, "
+            "chain them together and explain each step\n"
+            "  • You always recommend the right tool for the job from the list above\n"
+            "  • You prefer showing concrete API calls or UI steps over abstract advice\n"
+            "  • You are concise: lead with the answer, follow with context\n"
+            "  • You never recommend external services when a SwissAgent tool covers the need\n"
+            "  • When a user describes a project goal, you map it to SwissAgent workflows\n\n"
+            "**Default conventions for this platform:**\n"
+            "  • All state is persisted under .swissagent/ in the project root\n"
+            "  • The REST API runs on http://localhost:8000 by default\n"
+            "  • All AI endpoints accept an optional `ai_persona` field to override "
+            "the active persona for that single request\n"
+            "  • Secrets go in the vault, never in code or config files\n"
+            "  • Use audit log entries to explain automated actions taken on behalf of the user"
+        ),
+        "created_at": "2024-01-01T00:00:00+00:00",
+        "updated_at": "2024-01-01T00:00:00+00:00",
+    },
 
     # ── 1. Senior Full-Stack Developer ────────────────────────────────────────
     {
@@ -701,13 +821,222 @@ def persona_delete(name: str) -> dict[str, Any]:
     return {"success": True, "deleted": name}
 
 
+def persona_deactivate() -> dict[str, Any]:
+    """Clear the explicitly-set active persona and revert to the platform default.
+
+    After calling this, ``load_active_persona_prompt()`` will return the
+    ``swissagent_assistant`` system prompt (the software default).
+    """
+    previous = _load_active_name()
+    _save_active_name("")
+    return {
+        "success": True,
+        "previous": previous or None,
+        "active": _DEFAULT_PERSONA_NAME,
+        "is_default": True,
+        "message": (
+            "Active persona cleared.  "
+            f"Reverted to default: '{_DEFAULT_PERSONA_NAME}'."
+        ),
+    }
+
+
+def persona_patch(
+    name: str,
+    *,
+    display_name: str | None = None,
+    role: str | None = None,
+    domain: str | None = None,
+    system_prompt: str | None = None,
+    offline_model: str | None = None,
+    llm_backend: str | None = None,
+) -> dict[str, Any]:
+    """Update individual fields of an existing custom persona.
+
+    Only fields that are explicitly provided (non-None) are updated; all other
+    fields are left unchanged.  Built-in personas cannot be patched directly —
+    clone one first, then patch the clone.
+    """
+    if name in _BUILTIN_MAP:
+        return {
+            "error": (
+                f"Built-in persona '{name}' cannot be patched.  "
+                "Use POST /ai/persona/{name}/clone first."
+            )
+        }
+    custom = _load_custom()
+    if name not in custom:
+        return {"error": f"Persona '{name}' not found."}
+    p = custom[name]
+    if display_name is not None:
+        p["display_name"] = display_name
+    if role is not None:
+        p["role"] = role
+    if domain is not None:
+        p["domain"] = domain
+    if system_prompt is not None:
+        if not system_prompt.strip():
+            return {"error": "system_prompt cannot be blank"}
+        p["system_prompt"] = system_prompt
+    if offline_model is not None:
+        p["offline_model"] = offline_model
+    if llm_backend is not None:
+        p["llm_backend"] = llm_backend
+    p["updated_at"] = datetime.now(timezone.utc).isoformat()
+    custom[name] = p
+    _save_custom(custom)
+    return {"success": True, "persona": p, "message": f"Persona '{name}' updated."}
+
+
+def persona_clone(source_name: str, new_name: str, new_display_name: str = "") -> dict[str, Any]:
+    """Clone an existing persona (built-in or custom) as a new editable custom persona.
+
+    The clone is an independent copy; changes to it do not affect the source.
+    Useful for starting from a built-in specialist and adding project-specific
+    instructions on top.
+    """
+    if not new_name or not new_name.strip():
+        return {"error": "new_name is required"}
+    custom = _load_custom()
+    # Resolve source
+    if source_name in custom:
+        source = dict(custom[source_name])
+    elif source_name in _BUILTIN_MAP:
+        source = dict(_BUILTIN_MAP[source_name])
+    else:
+        return {"error": f"Source persona '{source_name}' not found."}
+    slug = new_name.strip().lower().replace(" ", "_")
+    if slug in _BUILTIN_MAP:
+        return {"error": f"'{slug}' is a built-in name; choose a different name."}
+    now = datetime.now(timezone.utc).isoformat()
+    clone: dict[str, Any] = {
+        "name": slug,
+        "display_name": new_display_name or f"{source.get('display_name', source_name)} (clone)",
+        "role": source.get("role", ""),
+        "domain": source.get("domain", ""),
+        "system_prompt": source.get("system_prompt", ""),
+        "offline_model": source.get("offline_model", ""),
+        "llm_backend": source.get("llm_backend", ""),
+        "builtin": False,
+        "cloned_from": source_name,
+        "created_at": now,
+        "updated_at": now,
+    }
+    custom[slug] = clone
+    _save_custom(custom)
+    return {
+        "success": True,
+        "persona": clone,
+        "message": f"Persona '{source_name}' cloned as '{slug}'.",
+    }
+
+
+def persona_generate(
+    persona_name: str,
+    project_name: str,
+    description: str,
+    tech_stack: list[str] | None = None,
+    goals: list[str] | None = None,
+    conventions: str = "",
+    display_name: str = "",
+    offline_model: str = "",
+    llm_backend: str = "",
+) -> dict[str, Any]:
+    """Generate a project-specific custom persona from project metadata.
+
+    Constructs a tailored system prompt that makes the AI deeply aware of the
+    specific project — its purpose, technology choices, goals, and team
+    conventions — and saves it as a new custom persona.
+
+    Args:
+        persona_name:   Slug for the new persona (e.g. ``my_project_ai``).
+        project_name:   Human-readable project name.
+        description:    What the project does / its purpose.
+        tech_stack:     List of technologies used (e.g. ``["Python", "FastAPI", "React"]``).
+        goals:          List of project goals or priorities (e.g. ``["offline-first", "high performance"]``).
+        conventions:    Free-text coding or team conventions to embed in the prompt.
+        display_name:   Display label for the persona (defaults to ``{project_name} AI``).
+        offline_model:  Recommended offline LLM for this persona.
+        llm_backend:    LLM backend to use (``ollama``, ``localai``, …).
+    """
+    if not persona_name or not persona_name.strip():
+        return {"error": "persona_name is required"}
+    if not project_name or not project_name.strip():
+        return {"error": "project_name is required"}
+    if not description or not description.strip():
+        return {"error": "description is required"}
+
+    slug = persona_name.strip().lower().replace(" ", "_")
+    stack_list = tech_stack or []
+    goal_list = goals or []
+
+    # Build the system prompt from project metadata
+    stack_section = (
+        "\n".join(f"  • {t}" for t in stack_list)
+        if stack_list
+        else "  • (not specified)"
+    )
+    goals_section = (
+        "\n".join(f"  • {g}" for g in goal_list)
+        if goal_list
+        else "  • (not specified)"
+    )
+    conventions_section = (
+        f"\n**Project conventions & standards:**\n{conventions}\n"
+        if conventions.strip()
+        else ""
+    )
+
+    system_prompt = (
+        f"{_APP_CONTEXT}\n\n"
+        f"## You are the AI assistant for **{project_name}**\n\n"
+        f"### Project overview\n"
+        f"{description}\n\n"
+        f"### Technology stack\n"
+        f"{stack_section}\n\n"
+        f"### Project goals & priorities\n"
+        f"{goals_section}\n"
+        f"{conventions_section}\n"
+        f"### How you behave\n"
+        f"  • You are deeply familiar with every aspect of **{project_name}** — "
+        f"its architecture, its code, its tools, and its goals\n"
+        f"  • All advice, code suggestions, and decisions must align with the "
+        f"technology stack and conventions above\n"
+        f"  • You proactively reference the SwissAgent tools available to you "
+        f"(build, test, git, deploy, vault, etc.) when they are relevant to the task\n"
+        f"  • You are the single AI expert that understands this project end-to-end\n"
+        f"  • When writing or editing code, follow the project conventions above exactly\n"
+        f"  • When in doubt, ask a clarifying question rather than assuming"
+    )
+
+    result = persona_create(
+        name=slug,
+        system_prompt=system_prompt,
+        display_name=display_name or f"{project_name} AI",
+        role=f"Project AI for {project_name}",
+        domain=", ".join(stack_list) if stack_list else "custom",
+        offline_model=offline_model,
+        llm_backend=llm_backend,
+    )
+    if "error" in result:
+        return result
+    result["message"] = (
+        f"Project persona '{slug}' generated for '{project_name}'.  "
+        "Activate it with POST /ai/persona/{slug}/activate."
+    )
+    return result
+
+
 # ── Helpers consumed by core/agent.py ────────────────────────────────────────
 
 def load_active_persona_prompt() -> str:
-    """Return the system_prompt of the active global persona, or '' if none set."""
-    name = _load_active_name()
-    if not name:
-        return ""
+    """Return the system_prompt of the active global persona.
+
+    Falls back to the built-in *swissagent_assistant* persona when no persona
+    has been explicitly activated, so the software always has a rich,
+    platform-aware system prompt out of the box.
+    """
+    name = _load_active_name() or _DEFAULT_PERSONA_NAME
     custom = _load_custom()
     if name in custom:
         return custom[name].get("system_prompt", "")
@@ -717,10 +1046,12 @@ def load_active_persona_prompt() -> str:
 
 
 def get_active_persona_info() -> dict[str, Any]:
-    """Return lightweight metadata of the active persona (no system_prompt)."""
-    name = _load_active_name()
-    if not name:
-        return {}
+    """Return lightweight metadata of the active persona (no system_prompt).
+
+    Returns the *swissagent_assistant* built-in metadata when no persona has
+    been explicitly activated.
+    """
+    name = _load_active_name() or _DEFAULT_PERSONA_NAME
     custom = _load_custom()
     p = custom.get(name) or _BUILTIN_MAP.get(name)
     if not p:
@@ -732,4 +1063,5 @@ def get_active_persona_info() -> dict[str, Any]:
         "domain": p.get("domain", ""),
         "llm_backend": p.get("llm_backend", ""),
         "offline_model": p.get("offline_model", ""),
+        "is_default": (name == _DEFAULT_PERSONA_NAME and not _load_active_name()),
     }

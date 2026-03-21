@@ -50,3 +50,6 @@ electron/dist/
 # SwissAgent runtime state (chat history, session memory, persona state, etc.)
 # These are created at runtime and should not be version-controlled.
 .swissagent/
+# Test-generated .env files (created by Phase 44 test suite)
+workspace/test*.env
+workspace/test_*.env
