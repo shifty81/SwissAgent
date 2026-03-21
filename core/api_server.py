@@ -76,6 +76,7 @@ _BUILD_DETECTORS: list[tuple[str, str, str, str]] = [
 class RunRequest(BaseModel):
     prompt: str
     llm_backend: str = "ollama"
+    project_path: str = ""
 
 
 class RunResponse(BaseModel):
@@ -889,9 +890,18 @@ def create_app(config_dir: str = "configs") -> FastAPI:
         from core.agent import Agent
         from llm.factory import create_llm
         llm = create_llm(req.llm_backend, config)
-        agent = Agent(llm, registry, permissions, runner, config)
+        project_path = req.project_path or ""
+        agent = Agent(llm, registry, permissions, runner, config, project_path)
+        chat_history = _load_chat_history(base_dir, project_path)
         result = await asyncio.get_event_loop().run_in_executor(
-            None, agent.run, req.prompt
+            None, agent.run, req.prompt, project_path, chat_history
+        )
+        _append_chat_history(
+            base_dir, project_path,
+            [
+                {"role": "user", "content": req.prompt},
+                {"role": "assistant", "content": result},
+            ],
         )
         return RunResponse(result=result)
 
@@ -911,6 +921,9 @@ def create_app(config_dir: str = "configs") -> FastAPI:
 
             llm = create_llm(backend, config)
 
+            # Load prior conversation so the AI has full context
+            chat_history = _load_chat_history(base_dir, project_path)
+
             # Use a queue so the agent thread can push LLM tokens to the WS
             token_queue: queue.Queue[str | None] = queue.Queue()
 
@@ -922,7 +935,7 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             loop = asyncio.get_event_loop()
 
             def _run() -> str:
-                result = agent.run(prompt, project_path)
+                result = agent.run(prompt, project_path, chat_history)
                 token_queue.put(None)  # sentinel
                 return result
 
