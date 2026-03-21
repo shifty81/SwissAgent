@@ -93,6 +93,38 @@ class AssistantChatResponse(BaseModel):
     backend_used: str
 
 
+# ── Agentic chat models ──────────────────────────────────────────────────────
+
+class AgenticTodoItem(BaseModel):
+    id: str
+    text: str
+    done: bool = False
+
+
+class AgenticFileChange(BaseModel):
+    path: str
+    additions: int
+    deletions: int
+    diff: str
+    original_content: str
+    new_content: str
+
+
+class AgenticChatRequest(BaseModel):
+    message: str
+    session_id: str = ""
+    project_path: str = ""
+    llm_backend: str = ""
+
+
+class AgenticChatResponse(BaseModel):
+    reply: str
+    session_id: str
+    backend_used: str
+    todos: list[AgenticTodoItem] = []
+    file_changes: list[AgenticFileChange] = []
+
+
 class RunResponse(BaseModel):
     result: str
 
@@ -1043,6 +1075,152 @@ def create_app(config_dir: str = "configs") -> FastAPI:
             session_id=session_id,
             backend_used=backend,
         )
+
+    # ── Agentic chat (POST /assistant/chat/agentic) ──────────────────────
+    @app.post("/assistant/chat/agentic", response_model=AgenticChatResponse)
+    async def assistant_chat_agentic(req: AgenticChatRequest) -> AgenticChatResponse:
+        """Agentic assistant: plans tasks, edits files, returns structured result.
+
+        The response includes:
+        - ``reply``: human-readable summary of what was done
+        - ``todos``: the planned task list with completion status
+        - ``file_changes``: files that were created/edited with diff stats
+        """
+        import uuid as _uuid
+        from core.agentic_agent import AgenticChatEngine
+        from llm.factory import create_llm
+
+        backend = (
+            req.llm_backend.strip()
+            or str(config.get("agent.default_llm_backend", "ollama"))
+        )
+        llm = create_llm(backend, config)
+        project_path = req.project_path or ""
+        session_id = req.session_id or str(_uuid.uuid4())
+
+        engine = AgenticChatEngine(llm, Path(base_dir), project_path)
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, engine.run, req.message, None
+        )
+
+        _append_chat_history(
+            base_dir, project_path,
+            [
+                {"role": "user", "content": req.message},
+                {"role": "assistant", "content": result.reply},
+            ],
+        )
+
+        return AgenticChatResponse(
+            reply=result.reply,
+            session_id=session_id,
+            backend_used=backend,
+            todos=[
+                AgenticTodoItem(id=t.id, text=t.text, done=t.done)
+                for t in result.todos
+            ],
+            file_changes=[
+                AgenticFileChange(
+                    path=c.path,
+                    additions=c.additions,
+                    deletions=c.deletions,
+                    diff=c.diff,
+                    original_content=c.original_content,
+                    new_content=c.new_content,
+                )
+                for c in result.file_changes
+            ],
+        )
+
+    # ── Agentic chat (WebSocket streaming) ─────────────────────────────────
+    @app.websocket("/ws/assistant/chat/agentic")
+    async def ws_assistant_chat_agentic(websocket: WebSocket) -> None:
+        """Stream agentic events to the client in real time.
+
+        Client sends:  ``{"message": "...", "llm_backend": "...", "project_path": "..."}``
+        Server sends a series of JSON packets:
+          ``{"type": "thinking",      "text": "..."}``
+          ``{"type": "todos",         "todos": [...]}``
+          ``{"type": "todo_active",   "id": "...", "text": "..."}``
+          ``{"type": "generating_patch", "path": "..."}``
+          ``{"type": "file_edited",   "path": "...", "additions": N, "deletions": N}``
+          ``{"type": "todo_done",     "id": "..."}``
+          ``{"type": "reply",         "text": "..."}``
+          ``{"type": "done"}``
+          ``{"type": "error",         "text": "..."}``
+        """
+        await websocket.accept()
+        try:
+            raw = await websocket.receive_text()
+            data = json.loads(raw)
+            message = data.get("message", "")
+            backend_name = data.get("llm_backend", "").strip() or str(
+                config.get("agent.default_llm_backend", "ollama")
+            )
+            project_path = data.get("project_path", "")
+
+            from core.agentic_agent import AgenticChatEngine
+            from llm.factory import create_llm
+
+            llm = create_llm(backend_name, config)
+            engine = AgenticChatEngine(llm, Path(base_dir), project_path)
+
+            collected: list[dict] = []
+
+            def on_event(event: dict) -> None:
+                collected.append(event)
+
+            loop = asyncio.get_event_loop()
+
+            # Run in executor so we don't block the event loop; stream events
+            # by polling the collected list.  A proper implementation would use
+            # a queue but this is sufficient for current LLM backends that block
+            # on each generate() call anyway.
+            result = await loop.run_in_executor(
+                None, engine.run, message, on_event
+            )
+
+            # Send all collected events
+            for evt in collected:
+                await websocket.send_text(json.dumps(evt))
+
+            # Send the final reply
+            await websocket.send_text(json.dumps({
+                "type": "reply",
+                "text": result.reply,
+                "todos": [{"id": t.id, "text": t.text, "done": t.done} for t in result.todos],
+                "file_changes": [
+                    {
+                        "path": c.path,
+                        "additions": c.additions,
+                        "deletions": c.deletions,
+                        "diff": c.diff,
+                        "original_content": c.original_content,
+                        "new_content": c.new_content,
+                    }
+                    for c in result.file_changes
+                ],
+            }))
+            await websocket.send_text(json.dumps({"type": "done"}))
+
+            _append_chat_history(
+                base_dir, project_path,
+                [
+                    {"role": "user", "content": message},
+                    {"role": "assistant", "content": result.reply},
+                ],
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("ws_assistant_chat_agentic error: %s", exc)
+            try:
+                await websocket.send_text(json.dumps({"type": "error", "text": str(exc)}))
+            except Exception:  # noqa: BLE001
+                pass
+        finally:
+            try:
+                await websocket.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     # ── Run agent (WebSocket, streaming) ──────────────────────────────────
     @app.websocket("/ws/run")

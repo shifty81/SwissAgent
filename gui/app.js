@@ -856,6 +856,343 @@
   }
 
   // ── "Run agent on file" ────────────────────────────────────────────────────
+  // ── Agentic mode ──────────────────────────────────────────────────────────
+
+  let _agenticMode = false;
+
+  /** Toggle agentic mode on/off. */
+  function _setAgenticMode(on) {
+    _agenticMode = on;
+    const btn = $("btn-agentic-toggle");
+    if (!btn) return;
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.classList.toggle("active", on);
+    btn.title = on
+      ? "Agentic mode ON — AI will plan tasks and edit files directly"
+      : "Toggle Agentic mode (AI edits files)";
+  }
+
+  /** Build the agentic thinking indicator element. */
+  function _mkThinking(text) {
+    const el = document.createElement("div");
+    el.className = "ag-thinking";
+    el.textContent = text;
+    return el;
+  }
+
+  /** Render a Todo list card inside an agent message element. */
+  function _renderTodos(todos, containerEl) {
+    const done = todos.filter((t) => t.done).length;
+    const wrapper = document.createElement("div");
+    wrapper.className = "ag-todos";
+    wrapper.dataset.agTodos = "1";
+
+    wrapper.innerHTML = `
+      <div class="ag-todos-header">
+        <span class="ag-todos-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          Todos (${done}/${todos.length})
+        </span>
+        <span class="ag-todos-badge">${todos.length - done} left</span>
+      </div>
+      <div class="ag-todos-list"></div>
+    `;
+
+    const list = wrapper.querySelector(".ag-todos-list");
+    todos.forEach((t) => {
+      const item = document.createElement("div");
+      item.className = "ag-todo-item" + (t.done ? " done" : "");
+      item.dataset.todoId = t.id;
+      item.innerHTML = `
+        <span class="ag-todo-check">${t.done ? "✓" : ""}</span>
+        <span>${escHtmlSimple(t.text)}</span>
+      `;
+      list.appendChild(item);
+    });
+
+    // Toggle expand/collapse
+    wrapper.querySelector(".ag-todos-header").addEventListener("click", () => {
+      list.style.display = list.style.display === "none" ? "" : "none";
+    });
+
+    containerEl.appendChild(wrapper);
+    return wrapper;
+  }
+
+  /** Update an existing todo list card with fresh state. */
+  function _updateTodos(wrapper, todos) {
+    if (!wrapper) return;
+    const done = todos.filter((t) => t.done).length;
+    const title = wrapper.querySelector(".ag-todos-title");
+    if (title) title.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+      </svg>
+      Todos (${done}/${todos.length})
+    `;
+    const badge = wrapper.querySelector(".ag-todos-badge");
+    if (badge) badge.textContent = `${todos.length - done} left`;
+    const list = wrapper.querySelector(".ag-todos-list");
+    if (!list) return;
+    todos.forEach((t) => {
+      const item = list.querySelector(`[data-todo-id="${t.id}"]`);
+      if (item) {
+        item.classList.toggle("done", t.done);
+        item.classList.toggle("active", false);
+        const check = item.querySelector(".ag-todo-check");
+        if (check) check.textContent = t.done ? "✓" : "";
+      }
+    });
+  }
+
+  /** Mark one todo item as active (in progress). */
+  function _setTodoActive(wrapper, id) {
+    if (!wrapper) return;
+    wrapper.querySelectorAll(".ag-todo-item").forEach((el) => {
+      el.classList.toggle("active", el.dataset.todoId === id);
+    });
+  }
+
+  /** Render a file-changes card inside an agent message element.
+   *  Returns the wrapper so the caller can update it. */
+  function _renderFileChanges(fileChanges, containerEl) {
+    const totalAdd = fileChanges.reduce((s, f) => s + (f.additions || 0), 0);
+    const totalDel = fileChanges.reduce((s, f) => s + (f.deletions || 0), 0);
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "ag-changes";
+    wrapper.dataset.agChanges = "1";
+
+    wrapper.innerHTML = `
+      <div class="ag-changes-header">
+        <span class="ag-changes-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+          </svg>
+          ${fileChanges.length} file${fileChanges.length !== 1 ? "s" : ""} changed
+        </span>
+        <span class="ag-changes-stats">
+          <span class="ag-stat-add">+${totalAdd}</span>
+          <span class="ag-stat-del">-${totalDel}</span>
+        </span>
+        <div class="ag-changes-actions">
+          <button class="ag-btn-keep" title="Keep all changes">Keep</button>
+          <button class="ag-btn-undo" title="Undo all changes — restore original files">Undo</button>
+        </div>
+      </div>
+      <div class="ag-changes-list"></div>
+    `;
+
+    const list = wrapper.querySelector(".ag-changes-list");
+    fileChanges.forEach((fc) => {
+      const entry = document.createElement("div");
+      entry.className = "ag-file-entry";
+      entry.innerHTML = `
+        <span class="ag-file-bullet">◆</span>
+        <span class="ag-file-path">${escHtmlSimple(fc.path)}</span>
+        <span class="ag-file-add">+${fc.additions}</span>
+        <span class="ag-file-del">-${fc.deletions}</span>
+      `;
+      // Click to open the diff view
+      entry.addEventListener("click", () => {
+        if (fc.path) openFile(fc.path).catch(() => {});
+      });
+      list.appendChild(entry);
+    });
+
+    // Toggle expand/collapse
+    wrapper.querySelector(".ag-changes-header").addEventListener("click", (e) => {
+      if (e.target.closest(".ag-changes-actions")) return;
+      list.style.display = list.style.display === "none" ? "" : "none";
+    });
+
+    // Keep: just disable the undo button to signal acceptance
+    wrapper.querySelector(".ag-btn-keep").addEventListener("click", async () => {
+      wrapper.querySelector(".ag-btn-keep").disabled = true;
+      wrapper.querySelector(".ag-btn-undo").disabled = true;
+      wrapper.querySelector(".ag-btn-keep").textContent = "✓ Kept";
+    });
+
+    // Undo: restore each file's original content
+    wrapper.querySelector(".ag-btn-undo").addEventListener("click", async () => {
+      const undoBtn = wrapper.querySelector(".ag-btn-undo");
+      undoBtn.disabled = true;
+      undoBtn.textContent = "Undoing…";
+      let allOk = true;
+      for (const fc of fileChanges) {
+        try {
+          const r = await fetch("/files/write", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: fc.path, content: fc.original_content }),
+          });
+          if (!r.ok) { allOk = false; }
+        } catch { allOk = false; }
+      }
+      undoBtn.textContent = allOk ? "✓ Undone" : "⚠ Partial";
+      wrapper.querySelector(".ag-btn-keep").disabled = true;
+      // Reload the active file if it was changed
+      if (state.activeFile && fileChanges.some((f) => f.path === state.activeFile)) {
+        openFile(state.activeFile).catch(() => {});
+      }
+    });
+
+    containerEl.appendChild(wrapper);
+    return wrapper;
+  }
+
+  /**
+   * Run the agentic chat flow via WebSocket, falling back to REST.
+   * Returns the final AgenticChatResponse data.
+   */
+  async function sendAgenticPrompt(promptText) {
+    if (!promptText.trim()) return;
+
+    appendChat(promptText, "user");
+    chatInput.value = "";
+    setStatus("running");
+    $("btn-send-prompt").disabled = true;
+    $("btn-run-file").disabled = true;
+    document.dispatchEvent(new CustomEvent("sa:chatSent", { detail: { prompt: promptText } }));
+
+    // Create the agent message container
+    const agentMsg = document.createElement("div");
+    agentMsg.className = "chat-msg agent";
+    chatMessages.appendChild(agentMsg);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    const backend = llmSelect.value;
+    const wsProto = location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = `${wsProto}://${location.host}/ws/assistant/chat/agentic`;
+
+    let todosWrapper = null;
+    let changesWrapper = null;
+    let thinkingEl = null;
+
+    function removeThinking() {
+      if (thinkingEl && thinkingEl.parentNode) thinkingEl.parentNode.removeChild(thinkingEl);
+      thinkingEl = null;
+    }
+
+    function handleEvent(evt) {
+      if (evt.type === "thinking") {
+        removeThinking();
+        thinkingEl = _mkThinking(evt.text || "Thinking…");
+        agentMsg.appendChild(thinkingEl);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      } else if (evt.type === "todos" && evt.todos) {
+        removeThinking();
+        if (todosWrapper) todosWrapper.parentNode && todosWrapper.parentNode.removeChild(todosWrapper);
+        todosWrapper = _renderTodos(evt.todos, agentMsg);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      } else if (evt.type === "todo_active") {
+        _setTodoActive(todosWrapper, evt.id);
+      } else if (evt.type === "generating_patch") {
+        removeThinking();
+        thinkingEl = document.createElement("div");
+        thinkingEl.className = "ag-patch-indicator";
+        thinkingEl.textContent = `Generating patch for ${evt.path || "file"}…`;
+        agentMsg.appendChild(thinkingEl);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      } else if (evt.type === "file_edited" && evt.path) {
+        removeThinking();
+        appendOutput(`Edited ${evt.path} +${evt.additions} -${evt.deletions}\n`);
+      } else if (evt.type === "todo_done") {
+        // Individual todo marked done — update will come in the "reply" packet
+      } else if (evt.type === "reply") {
+        removeThinking();
+        // Update todos with final state
+        if (evt.todos && todosWrapper) _updateTodos(todosWrapper, evt.todos);
+        else if (evt.todos && !todosWrapper) todosWrapper = _renderTodos(evt.todos, agentMsg);
+        // Render file changes card
+        if (evt.file_changes && evt.file_changes.length > 0) {
+          changesWrapper = _renderFileChanges(evt.file_changes, agentMsg);
+        }
+        // Render the final text reply
+        if (evt.text) {
+          const replyEl = document.createElement("div");
+          replyEl.className = "chat-msg agent";
+          replyEl.style.marginTop = "6px";
+          replyEl.innerHTML = _renderCodeBlocks(evt.text);
+          _bindCodeButtons(replyEl);
+          agentMsg.appendChild(replyEl);
+        }
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    }
+
+    try {
+      await _agenticStreamWS(wsUrl, promptText, backend, handleEvent);
+    } catch {
+      // WebSocket unavailable — use REST fallback
+      await _agenticFetch(promptText, backend, agentMsg, handleEvent);
+    }
+
+    removeThinking();
+    setStatus("idle");
+    $("btn-send-prompt").disabled = false;
+    $("btn-run-file").disabled = false;
+    document.dispatchEvent(new CustomEvent("sa:chatDone"));
+  }
+
+  /** Stream agentic events via WebSocket. */
+  function _agenticStreamWS(wsUrl, message, backend, onEvent) {
+    return new Promise((resolve, reject) => {
+      let ws;
+      try { ws = new WebSocket(wsUrl); }
+      catch { reject(new Error("WebSocket unavailable")); return; }
+
+      ws.onopen = () => ws.send(JSON.stringify({
+        message,
+        llm_backend: backend,
+        project_path: state.activeProject || "",
+      }));
+
+      ws.onmessage = (ev) => {
+        try {
+          const pkt = JSON.parse(ev.data);
+          onEvent(pkt);
+          if (pkt.type === "done") { ws.close(); resolve(); }
+          else if (pkt.type === "error") { ws.close(); resolve(); }
+        } catch { /* ignore non-JSON */ }
+      };
+
+      ws.onerror = () => { ws.close(); reject(new Error("ws error")); };
+    });
+  }
+
+  /** Agentic fallback via REST POST. */
+  async function _agenticFetch(message, backend, containerEl, onEvent) {
+    onEvent({ type: "thinking", text: "Sending request…" });
+    try {
+      const res = await fetch("/assistant/chat/agentic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          llm_backend: backend,
+          project_path: state.activeProject || "",
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      // Simulate event stream from REST response
+      if (data.todos) onEvent({ type: "todos", todos: data.todos });
+      onEvent({
+        type: "reply",
+        text: data.reply,
+        todos: data.todos,
+        file_changes: data.file_changes,
+      });
+      onEvent({ type: "done" });
+    } catch (e) {
+      containerEl.innerHTML += `<div class="chat-msg error">⚠ ${escHtmlSimple(e.message)}</div>`;
+    }
+  }
+
+  // ── "Run agent on file" ────────────────────────────────────────────────────
   function runAgentOnFile() {
     const path = state.activeFile;
     if (!path) {
@@ -1514,13 +1851,26 @@
 
   // ── Slash-command quick buttons ─────────────────────────────────────────
   document.querySelectorAll(".slash-btn").forEach((btn) => {
-    btn.addEventListener("click", () => sendPrompt(btn.dataset.cmd));
+    btn.addEventListener("click", () => {
+      _agenticMode ? sendAgenticPrompt(btn.dataset.cmd) : sendPrompt(btn.dataset.cmd);
+    });
   });
 
-  $("btn-send-prompt").addEventListener("click", () => sendPrompt(chatInput.value));
-  chatInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPrompt(chatInput.value); }
+  $("btn-send-prompt").addEventListener("click", () => {
+    _agenticMode ? sendAgenticPrompt(chatInput.value) : sendPrompt(chatInput.value);
   });
+  chatInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      _agenticMode ? sendAgenticPrompt(chatInput.value) : sendPrompt(chatInput.value);
+    }
+  });
+
+  // ── Agentic toggle button ──────────────────────────────────────────────────
+  const _agenticToggleBtn = $("btn-agentic-toggle");
+  if (_agenticToggleBtn) {
+    _agenticToggleBtn.addEventListener("click", () => _setAgenticMode(!_agenticMode));
+  }
 
   $("btn-new-file").addEventListener("click", () => {
     newFilePath.value = "workspace/";

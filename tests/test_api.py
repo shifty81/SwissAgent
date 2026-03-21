@@ -3654,3 +3654,71 @@ def test_deps_path_traversal_blocked(client):
     r = client.post("/deps/analyze", json={"project_path": "../etc"})
     # Should return 404 (path doesn't exist) not expose system files
     assert r.status_code == 404
+
+# ── Agentic chat endpoint tests ───────────────────────────────────────────────
+
+def test_agentic_chat_returns_structure(client):
+    """POST /assistant/chat/agentic returns reply, todos, file_changes, session_id."""
+    res = client.post("/assistant/chat/agentic", json={"message": "hello"})
+    assert res.status_code == 200
+    data = res.json()
+    assert "reply" in data
+    assert "session_id" in data
+    assert "backend_used" in data
+    assert "todos" in data
+    assert "file_changes" in data
+    assert isinstance(data["todos"], list)
+    assert isinstance(data["file_changes"], list)
+
+
+def test_agentic_chat_accepts_session_id(client):
+    """Supplied session_id is echoed back."""
+    res = client.post(
+        "/assistant/chat/agentic",
+        json={"message": "ping", "session_id": "agentic-test-1"},
+    )
+    assert res.status_code == 200
+    assert res.json()["session_id"] == "agentic-test-1"
+
+
+def test_agentic_chat_empty_message_rejected(client):
+    """Request with no 'message' field must be rejected."""
+    res = client.post("/assistant/chat/agentic", json={})
+    assert res.status_code == 422
+
+
+def test_agentic_chat_local_backend(client):
+    """Local stub backend returns a helpful message in agentic mode."""
+    res = client.post(
+        "/assistant/chat/agentic",
+        json={"message": "what can you do?", "llm_backend": "local"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["backend_used"] == "local"
+    assert data["reply"]
+
+
+def test_agentic_chat_todos_are_valid(client):
+    """Each todo item has id, text, done fields; at least one todo is always returned."""
+    res = client.post("/assistant/chat/agentic", json={"message": "fix my code", "llm_backend": "local"})
+    assert res.status_code == 200
+    todos = res.json()["todos"]
+    assert len(todos) > 0, "Agentic engine must return at least one todo item"
+    for t in todos:
+        assert "id" in t
+        assert "text" in t
+        assert "done" in t
+
+
+def test_agentic_chat_file_changes_are_valid(client):
+    """Each file_change entry has required fields (list may be empty with stub LLM)."""
+    res = client.post("/assistant/chat/agentic", json={"message": "update readme", "llm_backend": "local"})
+    assert res.status_code == 200
+    for fc in res.json()["file_changes"]:
+        assert "path" in fc
+        assert "additions" in fc
+        assert "deletions" in fc
+        assert "diff" in fc
+        assert "original_content" in fc
+        assert "new_content" in fc
