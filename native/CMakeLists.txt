@@ -62,7 +62,6 @@ if(SA_USE_WEBVIEW2)
     FetchContent_Declare(
         webview2_sdk
         URL            ${WEBVIEW2_URL}
-        URL_HASH       SHA256=0                  # hash verified at first configure
         DOWNLOAD_NAME  ${WEBVIEW2_ZIPNAME}
         SOURCE_DIR     ${WEBVIEW2_DIR}
     )

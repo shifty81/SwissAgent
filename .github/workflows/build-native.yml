@@ -1,0 +1,53 @@
+name: Build Native C++
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'native/**'
+      - '.github/workflows/build-native.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'native/**'
+      - '.github/workflows/build-native.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Windows x64 (MSVC)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        working-directory: native
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 -DSA_USE_WEBVIEW2=OFF
+        shell: cmd
+
+      - name: Build
+        working-directory: native
+        run: |
+          cmake --build build --config Release --parallel -- /v:minimal /bl:build\msbuild.binlog
+        shell: cmd
+
+      - name: Upload executable
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwissAgent-win-x64
+          path: native/build/Release/SwissAgent.exe
+          if-no-files-found: warn
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: native/build/msbuild.binlog
+          if-no-files-found: ignore
