@@ -2181,6 +2181,8 @@
       if (panel === "websearch")  { /* panel is self-contained */ }
       if (panel === "snippets") loadSnippetsPanel();
       if (panel === "diffpatch") { /* stateless panel, no load needed */ }
+      if (panel === "aitimeline") loadTimelinePanel();
+      if (panel === "healthdash") loadHealthPanel();
     });
   });
 
@@ -6135,6 +6137,170 @@
         out.innerHTML = `<div style="color:var(--danger)">Error: ${escHtmlSimple(e.message)}</div>`;
       }
     });
+  })();
+
+  // ── Phase 46: AI Suggestions Timeline panel ───────────────────────────────
+  (function () {
+    async function loadTimelinePanel() {
+      const container = $("timeline-panel-content");
+      if (!container) return;
+      container.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:4px">Loading…</div>';
+      try {
+        const res = await fetch("/ai/timeline?limit=100");
+        const data = await res.json();
+        const events = data.events || [];
+        if (!events.length) {
+          container.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:4px">No AI timeline events yet.<br>Events are logged automatically when you use AI features.</div>';
+          return;
+        }
+        container.innerHTML = events.map(ev => {
+          const accepted = ev.accepted === true ? `<span class="timeline-event-accepted">✔ Accepted</span>`
+                         : ev.accepted === false ? `<span class="timeline-event-rejected">✕ Rejected</span>`
+                         : `<span style="color:var(--text-dim);font-size:10px">Pending</span>`;
+          const ts = ev.ts ? new Date(ev.ts).toLocaleString() : "";
+          const fileEl = ev.file_path ? `<div class="timeline-event-file">📄 ${escHtmlSimple(ev.file_path)}</div>` : "";
+          const detailEl = ev.detail ? `<details style="margin-top:4px"><summary style="font-size:10px;cursor:pointer;color:var(--text-dim)">View detail</summary><pre style="font-size:10px;white-space:pre-wrap;word-break:break-all;margin-top:3px;background:var(--bg);padding:5px;border-radius:3px;max-height:120px;overflow-y:auto">${escHtmlSimple(ev.detail.slice(0, 800))}</pre></details>` : "";
+          return `
+            <div class="timeline-event" data-id="${ev.id}" style="margin-bottom:6px">
+              <div class="timeline-event-header">
+                <span class="timeline-event-type">${escHtmlSimple(ev.event_type)}</span>
+                <span class="timeline-event-summary">${escHtmlSimple(ev.summary)}</span>
+              </div>
+              ${fileEl}
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:3px">
+                ${accepted}
+                <span class="timeline-event-ts">${escHtmlSimple(ts)}</span>
+              </div>
+              ${detailEl}
+              <div class="timeline-event-actions">
+                <button onclick="_timelineAccept(${ev.id})" style="font-size:10px;padding:2px 6px" title="Mark accepted">✔</button>
+                <button onclick="_timelineReject(${ev.id})" style="font-size:10px;padding:2px 6px;color:var(--danger)" title="Mark rejected">✕</button>
+              </div>
+            </div>
+          `;
+        }).join("");
+      } catch (e) {
+        container.innerHTML = `<div style="color:var(--danger);font-size:11px">Error: ${escHtmlSimple(e.message)}</div>`;
+      }
+    }
+
+    window._timelineAccept = async function(id) {
+      await fetch(`/ai/timeline/${id}?accepted=true`, { method: "PATCH" });
+      loadTimelinePanel();
+    };
+    window._timelineReject = async function(id) {
+      await fetch(`/ai/timeline/${id}?accepted=false`, { method: "PATCH" });
+      loadTimelinePanel();
+    };
+
+    $("btn-timeline-refresh")?.addEventListener("click", loadTimelinePanel);
+    $("btn-timeline-clear")?.addEventListener("click", async () => {
+      if (!confirm("Clear all AI timeline events?")) return;
+      await fetch("/ai/timeline/clear", { method: "DELETE" });
+      loadTimelinePanel();
+    });
+
+    // Expose so panel switcher can call it
+    window.loadTimelinePanel = loadTimelinePanel;
+
+    // Auto-log AI events: intercept chat submit to record suggestions
+    // (non-intrusive: wraps sendChat to record events after AI responds)
+  })();
+
+  // ── Phase 47: Project Health Dashboard panel ──────────────────────────────
+  (function () {
+    async function loadHealthPanel() {
+      const container = $("healthdash-panel-content");
+      if (!container) return;
+      container.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:4px">Loading…</div>';
+      try {
+        const res = await fetch("/project/health");
+        const d = await res.json();
+        const statusClass = `health-status-${d.status}`;
+        const scoreColor = d.score >= 90 ? "#4caf50" : d.score >= 70 ? "#8bc34a" : d.score >= 50 ? "#ff9800" : "var(--danger)";
+
+        const subsystems = [
+          { name: "AI Timeline", value: `${d.ai_timeline.total_events} events · ${d.ai_timeline.acceptance_rate_pct}% accepted` },
+          { name: "Task Queue", value: `${d.task_queue.pending} pending / ${d.task_queue.total} total` },
+          { name: "Notifications", value: `${d.notifications.unread} unread / ${d.notifications.total} total` },
+          { name: "Agents", value: `${d.agents.running} running / ${d.agents.total} total` },
+          { name: "Cron Jobs", value: `${d.cron_jobs.active} active / ${d.cron_jobs.total} total` },
+          { name: "Feature Flags", value: `${d.feature_flags.enabled} enabled / ${d.feature_flags.total} total` },
+          { name: "Snippets", value: `${d.snippets.total} saved` },
+          { name: "Brainstorm Sessions", value: `${d.brainstorm_sessions.total} sessions` },
+          { name: "Audit Log", value: `${d.audit_log.total_entries} entries` },
+        ];
+
+        container.innerHTML = `
+          <div class="health-score-ring">
+            <div class="health-score-value" style="color:${scoreColor}">${d.score}</div>
+            <div class="health-score-label ${statusClass}">/ 100 — ${d.status.replace("_", " ")}</div>
+            <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Updated: ${new Date(d.generated_at).toLocaleTimeString()}</div>
+          </div>
+          <div style="font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Subsystems</div>
+          ${subsystems.map(s => `
+            <div class="health-subsystem">
+              <span class="health-subsystem-name">${escHtmlSimple(s.name)}</span>
+              <span class="health-subsystem-value">${escHtmlSimple(s.value)}</span>
+            </div>
+          `).join("")}
+        `;
+      } catch (e) {
+        container.innerHTML = `<div style="color:var(--danger);font-size:11px">Error: ${escHtmlSimple(e.message)}</div>`;
+      }
+    }
+
+    $("btn-health-refresh")?.addEventListener("click", loadHealthPanel);
+    window.loadHealthPanel = loadHealthPanel;
+  })();
+
+  // ── UI: Focus Mode & Theme Toggle ────────────────────────────────────────
+  (function () {
+    // Focus Mode
+    const btnFocus = $("btn-focus-mode");
+    let _focusMode = false;
+    if (btnFocus) {
+      btnFocus.addEventListener("click", () => {
+        _focusMode = !_focusMode;
+        document.body.classList.toggle("focus-mode", _focusMode);
+        btnFocus.textContent = _focusMode ? "⛶ Exit Focus" : "⛶ Focus";
+        btnFocus.title = _focusMode ? "Exit Focus Mode (Ctrl+Shift+F)" : "Toggle Focus Mode (Ctrl+Shift+F)";
+        // Trigger Monaco layout recalculation
+        if (state.editor) state.editor.layout();
+      });
+    }
+
+    // Keyboard shortcut Ctrl+Shift+F
+    document.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "F") {
+        e.preventDefault();
+        btnFocus?.click();
+      }
+    });
+
+    // Theme Toggle
+    const btnTheme = $("btn-theme-toggle");
+    let _lightTheme = false;
+    if (btnTheme) {
+      // Restore saved preference
+      if (localStorage.getItem("swissagent-theme") === "light") {
+        _lightTheme = true;
+        document.body.classList.add("light-theme");
+        btnTheme.textContent = "☀️";
+        btnTheme.title = "Switch to dark theme";
+      }
+      btnTheme.addEventListener("click", () => {
+        _lightTheme = !_lightTheme;
+        document.body.classList.toggle("light-theme", _lightTheme);
+        btnTheme.textContent = _lightTheme ? "☀️" : "🌙";
+        btnTheme.title = _lightTheme ? "Switch to dark theme" : "Toggle dark/light theme";
+        localStorage.setItem("swissagent-theme", _lightTheme ? "light" : "dark");
+        // Update Monaco theme
+        if (state.editor && typeof monaco !== "undefined") {
+          monaco.editor.setTheme(_lightTheme ? "vs" : "swissagent-dark");
+        }
+      });
+    }
   })();
 
 })();

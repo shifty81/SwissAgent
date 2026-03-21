@@ -2189,6 +2189,94 @@
           "description": "Method picker, URL bar, headers/body tabs, response viewer, saved collections sidebar"
         }
       ]
+    },
+    {
+      "id": "m46",
+      "title": "Phase 46 \u2014 AI Suggestions Timeline",
+      "status": "done",
+      "priority": "high",
+      "description": "Track and review all AI suggestions/actions with accept/reject feedback",
+      "tasks": [
+        {
+          "id": "t46-1",
+          "title": "POST /ai/timeline/event \u2014 log AI event",
+          "status": "done",
+          "priority": "high",
+          "description": "Record AI suggestion, apply, refactor, chat, or generate events"
+        },
+        {
+          "id": "t46-2",
+          "title": "GET /ai/timeline \u2014 list events",
+          "status": "done",
+          "priority": "high",
+          "description": "List timeline events newest-first with optional type/file filters"
+        },
+        {
+          "id": "t46-3",
+          "title": "GET /ai/timeline/{id} \u2014 get single event",
+          "status": "done",
+          "priority": "medium",
+          "description": "Retrieve a single event by ID"
+        },
+        {
+          "id": "t46-4",
+          "title": "PATCH /ai/timeline/{id} \u2014 update accepted status",
+          "status": "done",
+          "priority": "medium",
+          "description": "Mark event as accepted or rejected"
+        },
+        {
+          "id": "t46-5",
+          "title": "DELETE /ai/timeline/clear \u2014 clear timeline",
+          "status": "done",
+          "priority": "low",
+          "description": "Remove all timeline events"
+        },
+        {
+          "id": "t46-6",
+          "title": "Timeline panel UI",
+          "status": "done",
+          "priority": "high",
+          "description": "Sidebar panel showing scrollable AI history with accept/reject buttons"
+        }
+      ]
+    },
+    {
+      "id": "m47",
+      "title": "Phase 47 \u2014 Project Health Dashboard",
+      "status": "done",
+      "priority": "high",
+      "description": "Aggregate project health score from all subsystems (tasks, agents, notifications, etc.)",
+      "tasks": [
+        {
+          "id": "t47-1",
+          "title": "GET /project/health \u2014 health summary",
+          "status": "done",
+          "priority": "high",
+          "description": "Aggregate metrics: AI timeline, task queue, notifications, agents, cron, flags, snippets"
+        },
+        {
+          "id": "t47-2",
+          "title": "Health dashboard panel UI",
+          "status": "done",
+          "priority": "high",
+          "description": "Visual dashboard showing score, status, and per-subsystem breakdowns"
+        },
+        {
+          "id": "t47-3",
+          "title": "Focus Mode toggle",
+          "status": "done",
+          "priority": "medium",
+          "description": "Toolbar button to hide sidebars and maximize the editor/chat area"
+        },
+        {
+          "id": "t47-4",
+          "title": "Theme toggle (dark/light)",
+          "status": "done",
+          "priority": "medium",
+          "description": "Switch between dark and light color themes"
+        }
+      ]
     }
   ]
 }

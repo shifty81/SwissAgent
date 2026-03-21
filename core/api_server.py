@@ -766,6 +766,15 @@ class ApiClientRequestSaveRequest(BaseModel):
     body_type: str = "raw"
     description: str = ""
 
+# ── Phase 46: AI Suggestions Timeline request models ──────────────────────────
+
+class AiTimelineEventRequest(BaseModel):
+    event_type: str           # e.g. "suggestion", "apply", "refactor", "chat", "generate"
+    summary: str              # short human-readable summary
+    detail: str = ""          # full AI output or prompt (optional)
+    file_path: str = ""       # file affected, if any
+    accepted: Optional[bool] = None  # True = user accepted, False = rejected, None = pending
+
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
 # needs enough to understand what follows the cursor.
@@ -6487,6 +6496,168 @@ indent_style = tab
         col["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         return {"success": True, "deleted": rname}
 
+    # ── Phase 46: AI Suggestions Timeline ─────────────────────────────────────
+
+    @app.post("/ai/timeline/event")
+    async def ai_timeline_add(req: AiTimelineEventRequest) -> dict[str, Any]:
+        """Log an AI suggestion or action event to the timeline."""
+        global _ai_timeline_id_counter
+        if not req.event_type.strip():
+            raise HTTPException(status_code=400, detail="event_type is required")
+        if not req.summary.strip():
+            raise HTTPException(status_code=400, detail="summary is required")
+        _ai_timeline_id_counter += 1
+        event: dict[str, Any] = {
+            "id": _ai_timeline_id_counter,
+            "event_type": req.event_type.strip(),
+            "summary": req.summary.strip(),
+            "detail": req.detail,
+            "file_path": req.file_path,
+            "accepted": req.accepted,
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _ai_timeline.append(event)
+        # Keep within cap
+        if len(_ai_timeline) > _MAX_AI_TIMELINE:
+            _ai_timeline[:] = _ai_timeline[-_MAX_AI_TIMELINE:]
+        return {"success": True, "id": event["id"]}
+
+    @app.get("/ai/timeline")
+    async def ai_timeline_list(
+        event_type: str = Query("", description="Filter by event_type"),
+        file_path: str = Query("", description="Filter by file_path"),
+        limit: int = Query(100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """Return the AI suggestion timeline, newest-first."""
+        events = list(reversed(_ai_timeline))
+        if event_type:
+            events = [e for e in events if e["event_type"] == event_type]
+        if file_path:
+            events = [e for e in events if e["file_path"] == file_path]
+        return {"events": events[:limit], "total": len(events)}
+
+    @app.get("/ai/timeline/{event_id}")
+    async def ai_timeline_get(event_id: int) -> dict[str, Any]:
+        """Get a single AI timeline event by ID."""
+        for ev in _ai_timeline:
+            if ev["id"] == event_id:
+                return ev
+        raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+
+    @app.patch("/ai/timeline/{event_id}")
+    async def ai_timeline_update(event_id: int, accepted: Optional[bool] = None) -> dict[str, Any]:
+        """Update the accepted/rejected status of a timeline event."""
+        for ev in _ai_timeline:
+            if ev["id"] == event_id:
+                ev["accepted"] = accepted
+                ev["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                return {"success": True, "event": ev}
+        raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+
+    @app.delete("/ai/timeline/clear")
+    async def ai_timeline_clear() -> dict[str, Any]:
+        """Clear all AI timeline events."""
+        count = len(_ai_timeline)
+        _ai_timeline.clear()
+        return {"success": True, "cleared": count}
+
+    # ── Phase 47: Project Health Dashboard ────────────────────────────────────
+
+    @app.get("/project/health")
+    async def project_health_dashboard() -> dict[str, Any]:
+        """Return an aggregate project health summary across all subsystems."""
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # AI timeline stats
+        total_events = len(_ai_timeline)
+        accepted = sum(1 for e in _ai_timeline if e.get("accepted") is True)
+        rejected = sum(1 for e in _ai_timeline if e.get("accepted") is False)
+        acceptance_rate = round(accepted / total_events * 100, 1) if total_events else 0.0
+
+        # Task queue stats
+        tq_total = len(_task_queue)
+        tq_pending = sum(1 for t in _task_queue if t.get("status") == "pending")
+        tq_done = sum(1 for t in _task_queue if t.get("status") == "done")
+
+        # Notification stats
+        notif_total = len(_notifications)
+        notif_unread = sum(1 for n in _notifications if not n.get("read", False))
+
+        # Audit log stats
+        audit_total = len(_audit_log)
+
+        # Snippets
+        snippet_count = len(_snippets)
+
+        # Cron jobs
+        cron_active = sum(1 for j in _cron_jobs.values() if j.get("enabled", True))
+        cron_total = len(_cron_jobs)
+
+        # Feature flags
+        flags_total = len(_feature_flags)
+        flags_enabled = sum(1 for f in _feature_flags.values() if f.get("enabled", False))
+
+        # Agents
+        agents_total = len(_agents)
+        agents_running = sum(1 for a in _agents.values() if a.get("status") == "running")
+
+        # Brainstorm sessions
+        brainstorm_total = len(_brainstorm_sessions)
+
+        # Compute overall health score (0-100)
+        score = 100
+        if tq_pending > 10:
+            score -= min(20, tq_pending)
+        if notif_unread > 5:
+            score -= min(10, notif_unread)
+        if agents_running > 0:
+            score = max(score, 60)   # healthy if agents are working
+        score = max(0, min(100, score))
+
+        status = "excellent" if score >= 90 else "good" if score >= 70 else "fair" if score >= 50 else "needs_attention"
+
+        return {
+            "score": score,
+            "status": status,
+            "generated_at": now,
+            "ai_timeline": {
+                "total_events": total_events,
+                "accepted": accepted,
+                "rejected": rejected,
+                "acceptance_rate_pct": acceptance_rate,
+            },
+            "task_queue": {
+                "total": tq_total,
+                "pending": tq_pending,
+                "done": tq_done,
+            },
+            "notifications": {
+                "total": notif_total,
+                "unread": notif_unread,
+            },
+            "audit_log": {
+                "total_entries": audit_total,
+            },
+            "snippets": {
+                "total": snippet_count,
+            },
+            "cron_jobs": {
+                "total": cron_total,
+                "active": cron_active,
+            },
+            "feature_flags": {
+                "total": flags_total,
+                "enabled": flags_enabled,
+            },
+            "agents": {
+                "total": agents_total,
+                "running": agents_running,
+            },
+            "brainstorm_sessions": {
+                "total": brainstorm_total,
+            },
+        }
+
     return app
 
 
@@ -6661,5 +6832,10 @@ _snippet_id_counter: int = 0
 
 # ── Phase 45: API Client / HTTP Playground ────────────────────────────────────
 _apiclient_collections: dict[str, Any] = {}  # name → {name, description, requests: {}}
+
+# ── Phase 46: AI Suggestions Timeline ─────────────────────────────────────────
+_ai_timeline: list[dict[str, Any]] = []
+_MAX_AI_TIMELINE = 500
+_ai_timeline_id_counter: int = 0
 
 # ── End of module-level state ─────────────────────────────────────────────────
