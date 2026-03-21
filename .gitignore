@@ -53,3 +53,4 @@ electron/dist/
 # Test-generated .env files (created by Phase 44 test suite)
 workspace/test*.env
 workspace/test_*.env
+/projects/NovaForge
