@@ -47,3 +47,6 @@ _test_mem_*/
 # Electron build artifacts
 electron/node_modules/
 electron/dist/
+# SwissAgent runtime state (chat history, session memory, persona state, etc.)
+# These are created at runtime and should not be version-controlled.
+.swissagent/

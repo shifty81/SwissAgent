@@ -80,3 +80,23 @@ default_system = "cmake"
 
 [cache]
 max_size_mb = 512
+
+[ai_persona]
+# Name of the globally active AI persona.  Leave blank to use the default
+# SwissAgent identity.  Activate a persona via the API:
+#   POST /ai/persona/{name}/activate
+# Built-in persona names (hive-mind specialists):
+#   senior_developer    — Full-stack developer, idiomatic code, TDD
+#   software_architect  — System design, ADRs, trade-off analysis
+#   frontend_developer  — HTML/CSS/JS, React/Vue/Svelte, accessibility
+#   backend_developer   — APIs, auth, queues, REST/gRPC/GraphQL
+#   database_engineer   — SQL/NoSQL, schema design, query optimisation
+#   mobile_developer    — React Native, Flutter, Swift, Kotlin
+#   devops_engineer     — Docker, Kubernetes, CI/CD, IaC, observability
+#   security_auditor    — OWASP, CVE analysis, secure code review
+#   test_engineer       — TDD, pytest/jest, coverage, mutation testing
+#   code_reviewer       — Code review with severity ratings and suggestions
+#   performance_engineer — Profiling, benchmarking, algorithmic optimisation
+#   documentation_writer — README, API docs, ADRs, runbooks
+#   ai_ml_engineer      — LLM integration, RAG, fine-tuning, offline inference
+active = ""

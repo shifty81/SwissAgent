@@ -2707,3 +2707,136 @@ def test_diff_files_not_found(client):
 def test_patch_file_not_found(client):
     r = client.post("/patch/file", json={"path": "nonexistent_file.txt", "patch": "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n"})
     assert r.status_code == 404
+
+# ── Phase 42: AI Persona (hive-mind) ──────────────────────────────────────────
+
+def test_ai_personas_list(client):
+    r = client.get("/ai/personas")
+    assert r.status_code == 200
+    d = r.json()
+    assert "personas" in d
+    assert d["total"] >= 13
+    assert d["builtin_count"] == 13
+    names = [p["name"] for p in d["personas"]]
+    for expected in (
+        "senior_developer", "software_architect", "frontend_developer",
+        "backend_developer", "database_engineer", "mobile_developer",
+        "devops_engineer", "security_auditor", "test_engineer",
+        "code_reviewer", "performance_engineer", "documentation_writer",
+        "ai_ml_engineer",
+    ):
+        assert expected in names, f"Built-in persona '{expected}' missing"
+
+def test_ai_persona_get_builtin(client):
+    r = client.get("/ai/persona/senior_developer")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["name"] == "senior_developer"
+    assert d["builtin"] is True
+    assert "system_prompt" in d
+    assert len(d["system_prompt"]) > 100
+
+def test_ai_persona_get_not_found(client):
+    r = client.get("/ai/persona/nonexistent_persona_xyz")
+    assert r.status_code == 404
+
+def test_ai_persona_active_default(client):
+    r = client.get("/ai/persona/active")
+    assert r.status_code == 200
+    # May or may not have an active persona; just check shape
+    d = r.json()
+    assert "active" in d
+
+def test_ai_persona_context_default(client):
+    r = client.get("/ai/persona/context")
+    assert r.status_code == 200
+    d = r.json()
+    assert "system_prompt" in d
+    assert len(d["system_prompt"]) > 20
+
+def test_ai_persona_create_and_get(client):
+    r = client.post("/ai/persona", json={
+        "name": "test_custom_persona",
+        "display_name": "Test Custom",
+        "role": "Test Role",
+        "domain": "Testing",
+        "system_prompt": "You are a test persona for automated tests.",
+        "offline_model": "llama3",
+        "llm_backend": "ollama",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["persona"]["name"] == "test_custom_persona"
+
+    # Retrieve it
+    r2 = client.get("/ai/persona/test_custom_persona")
+    assert r2.status_code == 200
+    assert r2.json()["display_name"] == "Test Custom"
+    assert r2.json()["builtin"] is False
+
+def test_ai_persona_create_missing_name(client):
+    r = client.post("/ai/persona", json={"name": "", "system_prompt": "hello"})
+    assert r.status_code == 400
+
+def test_ai_persona_create_missing_prompt(client):
+    r = client.post("/ai/persona", json={"name": "noprompt_persona", "system_prompt": ""})
+    assert r.status_code == 400
+
+def test_ai_persona_activate_builtin(client):
+    r = client.post("/ai/persona/software_architect/activate")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["active"] == "software_architect"
+
+    # Confirm active endpoint reflects change
+    r2 = client.get("/ai/persona/active")
+    assert r2.status_code == 200
+    assert r2.json()["active"] == "software_architect"
+
+    # Context should now show architect's prompt
+    r3 = client.get("/ai/persona/context")
+    assert r3.status_code == 200
+    assert "Software Architect" in r3.json()["system_prompt"]
+
+def test_ai_persona_activate_not_found(client):
+    r = client.post("/ai/persona/ghost_persona_xyz/activate")
+    assert r.status_code == 404
+
+def test_ai_persona_delete_custom(client):
+    # Create then delete
+    client.post("/ai/persona", json={
+        "name": "deleteme_persona",
+        "system_prompt": "Temporary persona to be deleted.",
+    })
+    r = client.delete("/ai/persona/deleteme_persona")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == "deleteme_persona"
+    # Confirm gone
+    r2 = client.get("/ai/persona/deleteme_persona")
+    assert r2.status_code == 404
+
+def test_ai_persona_delete_builtin_forbidden(client):
+    r = client.delete("/ai/persona/senior_developer")
+    assert r.status_code == 403
+
+def test_ai_personas_list_includes_custom(client):
+    client.post("/ai/persona", json={
+        "name": "list_check_persona",
+        "system_prompt": "Listed persona.",
+        "domain": "Testing",
+    })
+    r = client.get("/ai/personas")
+    assert r.status_code == 200
+    names = [p["name"] for p in r.json()["personas"]]
+    assert "list_check_persona" in names
+
+def test_ai_persona_context_with_active_persona(client):
+    # Activate a built-in and confirm system prompt changes
+    client.post("/ai/persona/devops_engineer/activate")
+    r = client.get("/ai/persona/context")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["active"] == "devops_engineer"
+    assert "DevOps" in d["system_prompt"]

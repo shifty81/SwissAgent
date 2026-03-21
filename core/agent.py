@@ -44,6 +44,18 @@ class Agent:
         self.config = config
         self._project_context = self._load_project_context(project_path)
         self._session_memory = self._load_session_memory(project_path)
+        self._active_persona_prompt = self._load_active_persona_prompt()
+
+    # ── Active global persona injection ──────────────────────────────────────
+    @staticmethod
+    def _load_active_persona_prompt() -> str:
+        """Load the active global AI persona system prompt."""
+        try:
+            from modules.ai_persona.src.ai_persona_tools import load_active_persona_prompt
+            return load_active_persona_prompt()
+        except Exception as exc:
+            logger.debug("Could not load active persona: %s", exc)
+            return ""
 
     # ── Session memory injection (t10-6) ──────────────────────────────────────
     @staticmethod
@@ -163,11 +175,16 @@ class Agent:
         return messages
 
     def _system_prompt(self, include_tools: bool = False) -> str:
-        base = (
-            "You are SwissAgent, an AI-powered offline development platform assistant. "
-            "You help with code generation, build automation, asset pipelines, and development tasks. "
-            "Think step-by-step and use available tools to complete tasks."
-        )
+        # If an active persona is set it provides the full role + app-context
+        # description.  Otherwise fall back to the generic SwissAgent identity.
+        if self._active_persona_prompt:
+            base = self._active_persona_prompt
+        else:
+            base = (
+                "You are SwissAgent, an AI-powered offline development platform assistant. "
+                "You help with code generation, build automation, asset pipelines, and development tasks. "
+                "Think step-by-step and use available tools to complete tasks."
+            )
         if self._project_context:
             base += f"\n\n{self._project_context}"
         if self._session_memory:
