@@ -146,7 +146,7 @@
         </div>
       </div>
 
-      <!-- Group: Insights (Phase 46-47) -->
+      <!-- Group: Insights (Phase 46-49) -->
       <div class="ab-group" id="abg-insights">
         <button type="button" class="ab-group-hdr" data-group="insights">
           <span class="ab-group-icon">📈</span>
@@ -156,6 +156,8 @@
         <div class="ab-group-items">
           <button class="ab-btn" data-panel="aitimeline" title="AI Timeline">🕒</button>
           <button class="ab-btn" data-panel="healthdash" title="Project Health">💚</button>
+          <button class="ab-btn" data-panel="docgen" title="Doc Generator">📝</button>
+          <button class="ab-btn" data-panel="depsanalyzer" title="Dependency Analyzer">📦</button>
         </div>
       </div>
 
@@ -1064,6 +1066,63 @@
         </div>
         <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="healthdash-panel-content">
           <div style="color:var(--text-dim);font-size:11px;padding:4px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Code Documentation Generator (Phase 48) ───────────────── -->
+      <div class="sb-panel" id="panel-docgen">
+        <div class="sidebar-header">
+          <span>📝 Doc Generator</span>
+          <div class="sidebar-buttons">
+            <button id="btn-docgen-history" title="History">🕒</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="docgen-panel-body">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <select id="docgen-language" style="font-size:11px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px">
+              <option value="">Auto-detect language</option>
+              <option value="python">Python</option>
+              <option value="javascript">JavaScript</option>
+              <option value="typescript">TypeScript</option>
+              <option value="java">Java</option>
+              <option value="cpp">C++</option>
+              <option value="csharp">C#</option>
+              <option value="go">Go</option>
+              <option value="rust">Rust</option>
+              <option value="lua">Lua</option>
+            </select>
+            <select id="docgen-style" style="font-size:11px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px">
+              <option value="docstring">Docstring</option>
+              <option value="jsdoc">JSDoc</option>
+              <option value="javadoc">Javadoc</option>
+              <option value="inline">Inline Comments</option>
+              <option value="readme">README section</option>
+            </select>
+            <input id="docgen-context" type="text" placeholder="Optional context / hint…"
+              style="font-size:11px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px" />
+            <textarea id="docgen-code" rows="8" placeholder="Paste code here…"
+              style="font-size:11px;font-family:var(--font-mono);resize:vertical;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px"></textarea>
+            <button id="btn-docgen-generate" style="font-size:12px;padding:5px">📝 Generate Documentation</button>
+            <div id="docgen-result" style="font-size:11px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Dependency Analyzer (Phase 49) ─────────────────────────── -->
+      <div class="sb-panel" id="panel-depsanalyzer">
+        <div class="sidebar-header">
+          <span>📦 Dependencies</span>
+          <div class="sidebar-buttons">
+            <button id="btn-deps-reports" title="Past reports">🕒</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="deps-panel-body">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <input id="deps-project-path" type="text" placeholder="Project path (blank = workspace root)"
+              style="font-size:11px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px" />
+            <button id="btn-deps-analyze" style="font-size:12px;padding:5px">🔍 Analyze Dependencies</button>
+            <div id="deps-result" style="font-size:11px"></div>
+          </div>
         </div>
       </div>
 

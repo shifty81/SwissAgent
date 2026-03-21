@@ -775,6 +775,19 @@ class AiTimelineEventRequest(BaseModel):
     file_path: str = ""       # file affected, if any
     accepted: Optional[bool] = None  # True = user accepted, False = rejected, None = pending
 
+# ── Phase 48: Code Documentation Generator request models ─────────────────────
+
+class DocGenRequest(BaseModel):
+    code: str                 # source code to document
+    language: str = ""        # e.g. "python", "javascript", "java" (auto-detected if empty)
+    style: str = "docstring"  # "docstring" | "jsdoc" | "javadoc" | "inline" | "readme"
+    context: str = ""         # optional surrounding context / description hint
+
+# ── Phase 49: Dependency Analyzer request models ───────────────────────────────
+
+class DepsAnalyzeRequest(BaseModel):
+    project_path: str = ""    # sub-path under workspace/ (empty = workspace root)
+
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
 # needs enough to understand what follows the cursor.
@@ -6658,6 +6671,333 @@ indent_style = tab
             },
         }
 
+    # ── Phase 48: Code Documentation Generator ────────────────────────────────
+
+    def _docgen_detect_language(code: str, hint: str) -> str:
+        """Best-effort language detection from a hint or code content."""
+        hint = hint.lower().strip()
+        if hint in {"python", "py"}:
+            return "python"
+        if hint in {"javascript", "js", "jsx"}:
+            return "javascript"
+        if hint in {"typescript", "ts", "tsx"}:
+            return "typescript"
+        if hint in {"java"}:
+            return "java"
+        if hint in {"c", "cpp", "c++"}:
+            return "cpp"
+        if hint in {"csharp", "c#", "cs"}:
+            return "csharp"
+        if hint in {"go", "golang"}:
+            return "go"
+        if hint in {"rust", "rs"}:
+            return "rust"
+        if hint in {"lua"}:
+            return "lua"
+        # Auto-detect from code content
+        if "def " in code or "import " in code or ("class " in code and ":" in code):
+            return "python"
+        if "function " in code or "const " in code or "=>" in code:
+            return "javascript"
+        if "public class " in code or "public static void" in code:
+            return "java"
+        if "#include" in code:
+            return "cpp"
+        return "unknown"
+
+    def _docgen_build_doc(code: str, language: str, style: str, context: str) -> str:
+        """Generate documentation from code without an LLM (rule-based fallback)."""
+        lines = [l for l in code.splitlines() if l.strip()]
+        summary = context.strip() or "Documented code block."
+        param_lines: list[str] = []
+        return_hint = ""
+
+        if language == "python":
+            # Extract def signature
+            for ln in lines:
+                stripped = ln.strip()
+                if stripped.startswith("def ") or stripped.startswith("async def "):
+                    # Parse params
+                    try:
+                        sig = stripped.split("(", 1)[1].rsplit(")", 1)[0]
+                        for p in sig.split(","):
+                            p = p.split(":")[0].split("=")[0].strip()
+                            if p and p not in ("self", "cls", "*args", "**kwargs", ""):
+                                param_lines.append(f"    :param {p}: TODO")
+                    except Exception:
+                        pass
+                    if "->" in stripped:
+                        try:
+                            return_hint = stripped.split("->")[1].split(":")[0].strip()
+                        except Exception:
+                            pass
+                    break
+
+            if style == "docstring":
+                parts = [f'    """{summary}']
+                if param_lines:
+                    parts.append("")
+                    parts.extend(param_lines)
+                if return_hint:
+                    parts.append(f"    :return: {return_hint}")
+                parts.append('    """')
+                return "\n".join(parts)
+
+        if language in {"javascript", "typescript"}:
+            if style in {"jsdoc", "docstring"}:
+                parts = ["/**", f" * {summary}"]
+                for p in param_lines:
+                    nm = p.split()[-1] if p.split() else "param"
+                    parts.append(f" * @param {{{nm}}} {nm} - TODO")
+                if return_hint:
+                    parts.append(f" * @returns {{{return_hint}}}")
+                parts.append(" */")
+                return "\n".join(parts)
+
+        if language == "java":
+            if style in {"javadoc", "docstring"}:
+                parts = ["/**", f" * {summary}"]
+                for p in param_lines:
+                    nm = p.split()[-1] if p.split() else "param"
+                    parts.append(f" * @param {nm} TODO")
+                if return_hint:
+                    parts.append(" * @return TODO")
+                parts.append(" */")
+                return "\n".join(parts)
+
+        if style == "readme":
+            return f"## Documentation\n\n{summary}\n\n```{language}\n{code[:500]}\n```\n"
+
+        # Fallback: inline comment block
+        return f"// {summary}\n// Language: {language}\n"
+
+    @app.post("/docgen/generate")
+    async def docgen_generate(req: DocGenRequest) -> dict[str, Any]:
+        """Generate documentation for a submitted code block."""
+        global _docgen_id_counter
+        if not req.code.strip():
+            raise HTTPException(status_code=400, detail="code is required")
+        valid_styles = {"docstring", "jsdoc", "javadoc", "inline", "readme"}
+        if req.style not in valid_styles:
+            raise HTTPException(
+                status_code=400,
+                detail=f"style must be one of: {', '.join(sorted(valid_styles))}",
+            )
+        lang = _docgen_detect_language(req.code, req.language)
+        doc = _docgen_build_doc(req.code, lang, req.style, req.context)
+        _docgen_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": _docgen_id_counter,
+            "language": lang,
+            "style": req.style,
+            "code_preview": req.code[:120],
+            "documentation": doc,
+            "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _docgen_history.append(entry)
+        if len(_docgen_history) > _MAX_DOCGEN_HISTORY:
+            _docgen_history[:] = _docgen_history[-_MAX_DOCGEN_HISTORY:]
+        return {"success": True, "id": entry["id"], "language": lang, "documentation": doc}
+
+    @app.get("/docgen/history")
+    async def docgen_history_list(
+        language: str = Query("", description="Filter by language"),
+        limit: int = Query(50, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """List past documentation generation entries, newest-first."""
+        entries = list(reversed(_docgen_history))
+        if language:
+            entries = [e for e in entries if e["language"] == language]
+        return {"entries": entries[:limit], "total": len(entries)}
+
+    @app.get("/docgen/history/{entry_id}")
+    async def docgen_history_get(entry_id: int) -> dict[str, Any]:
+        """Retrieve a single docgen history entry by ID."""
+        for entry in _docgen_history:
+            if entry["id"] == entry_id:
+                return entry
+        raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found")
+
+    @app.delete("/docgen/history")
+    async def docgen_history_clear() -> dict[str, Any]:
+        """Clear all documentation generation history."""
+        count = len(_docgen_history)
+        _docgen_history.clear()
+        return {"success": True, "cleared": count}
+
+    # ── Phase 49: Dependency Analyzer ─────────────────────────────────────────
+
+    def _is_go_mod_dep_line(line: str) -> bool:
+        """Return True if a go.mod line looks like an inline dependency (name version)."""
+        if not line:
+            return False
+        skip_prefixes = ("//", "module", "go ", ")", "(", "require")
+        for prefix in skip_prefixes:
+            if line.startswith(prefix):
+                return False
+        return " " in line
+
+    def _deps_detect_manifests(project_dir: Path) -> list[dict[str, Any]]:
+        """Scan project_dir for dependency manifest files and parse them."""
+        manifests: list[dict[str, Any]] = []
+
+        def _safe_read(path: Path) -> str:
+            try:
+                return path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                return ""
+
+        # Python: requirements.txt
+        req_file = project_dir / "requirements.txt"
+        if req_file.is_file():
+            deps: list[dict[str, str]] = []
+            for line in _safe_read(req_file).splitlines():
+                line = line.split("#")[0].strip()
+                if not line:
+                    continue
+                for sep in ("==", ">=", "<=", "~=", "!=", ">", "<"):
+                    if sep in line:
+                        name, ver = line.split(sep, 1)
+                        deps.append({"name": name.strip(), "version": ver.strip(), "constraint": sep})
+                        break
+                else:
+                    deps.append({"name": line.strip(), "version": "", "constraint": ""})
+            manifests.append({"file": "requirements.txt", "ecosystem": "python", "dependencies": deps})
+
+        # Python: pyproject.toml
+        pyproj_file = project_dir / "pyproject.toml"
+        if pyproj_file.is_file() and _HAS_TOML:
+            try:
+                data = _toml.loads(_safe_read(pyproj_file))
+                raw_deps = (
+                    data.get("project", {}).get("dependencies", [])
+                    or data.get("tool", {}).get("poetry", {}).get("dependencies", {})
+                )
+                deps = []
+                if isinstance(raw_deps, list):
+                    for item in raw_deps:
+                        for sep in ("==", ">=", "<=", "~=", "!=", ">", "<"):
+                            if sep in item:
+                                name, ver = item.split(sep, 1)
+                                deps.append({"name": name.strip(), "version": ver.strip(), "constraint": sep})
+                                break
+                        else:
+                            deps.append({"name": item.strip(), "version": "", "constraint": ""})
+                elif isinstance(raw_deps, dict):
+                    for name, ver in raw_deps.items():
+                        if name == "python":
+                            continue
+                        ver_str = ver if isinstance(ver, str) else ""
+                        deps.append({"name": name, "version": ver_str.lstrip("^~>=<"), "constraint": ""})
+                if deps:
+                    manifests.append({"file": "pyproject.toml", "ecosystem": "python", "dependencies": deps})
+            except Exception:
+                pass
+
+        # Node.js: package.json
+        pkg_file = project_dir / "package.json"
+        if pkg_file.is_file():
+            try:
+                pkg = json.loads(_safe_read(pkg_file))
+                deps = []
+                for section in ("dependencies", "devDependencies"):
+                    for name, ver in pkg.get(section, {}).items():
+                        deps.append({"name": name, "version": ver.lstrip("^~>=<"), "constraint": section})
+                if deps:
+                    manifests.append({"file": "package.json", "ecosystem": "npm", "dependencies": deps})
+            except Exception:
+                pass
+
+        # Rust: Cargo.toml
+        cargo_file = project_dir / "Cargo.toml"
+        if cargo_file.is_file() and _HAS_TOML:
+            try:
+                data = _toml.loads(_safe_read(cargo_file))
+                deps = []
+                for name, spec in data.get("dependencies", {}).items():
+                    ver = spec if isinstance(spec, str) else spec.get("version", "")
+                    deps.append({"name": name, "version": ver.lstrip("^~>=<"), "constraint": ""})
+                if deps:
+                    manifests.append({"file": "Cargo.toml", "ecosystem": "rust", "dependencies": deps})
+            except Exception:
+                pass
+
+        # Go: go.mod
+        go_mod = project_dir / "go.mod"
+        if go_mod.is_file():
+            deps = []
+            for line in _safe_read(go_mod).splitlines():
+                line = line.strip()
+                if line.startswith("require ") and " " in line:
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        deps.append({"name": parts[1], "version": parts[2], "constraint": ""})
+                elif _is_go_mod_dep_line(line):
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[0] not in ("replace", "exclude"):
+                        deps.append({"name": parts[0], "version": parts[1], "constraint": ""})
+            if deps:
+                manifests.append({"file": "go.mod", "ecosystem": "go", "dependencies": deps})
+
+        return manifests
+
+    @app.post("/deps/analyze")
+    async def deps_analyze(req: DepsAnalyzeRequest) -> dict[str, Any]:
+        """Scan a project directory for dependency manifests and return a report."""
+        global _deps_report_id_counter
+        base = Path("workspace")
+        if req.project_path:
+            parts = Path(req.project_path).parts
+            safe = "/".join(p for p in parts if p not in ("..", "."))
+            project_dir = base / safe
+        else:
+            project_dir = base
+
+        if not project_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Project path '{req.project_path}' not found")
+
+        manifests = _deps_detect_manifests(project_dir)
+        total_deps = sum(len(m["dependencies"]) for m in manifests)
+
+        _deps_report_id_counter += 1
+        report: dict[str, Any] = {
+            "id": _deps_report_id_counter,
+            "project_path": req.project_path or "/",
+            "manifests": manifests,
+            "total_dependencies": total_deps,
+            "manifest_count": len(manifests),
+            "analyzed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _deps_reports.append(report)
+        if len(_deps_reports) > _MAX_DEPS_REPORTS:
+            _deps_reports[:] = _deps_reports[-_MAX_DEPS_REPORTS:]
+        return {"success": True, "id": report["id"], "report": report}
+
+    @app.get("/deps/reports")
+    async def deps_reports_list(
+        limit: int = Query(20, ge=1, le=50),
+    ) -> dict[str, Any]:
+        """List all dependency analysis reports, newest-first."""
+        reports = list(reversed(_deps_reports))
+        return {"reports": reports[:limit], "total": len(reports)}
+
+    @app.get("/deps/report/{report_id}")
+    async def deps_report_get(report_id: int) -> dict[str, Any]:
+        """Get a single dependency analysis report by ID."""
+        for r in _deps_reports:
+            if r["id"] == report_id:
+                return r
+        raise HTTPException(status_code=404, detail=f"Report {report_id} not found")
+
+    @app.delete("/deps/report/{report_id}")
+    async def deps_report_delete(report_id: int) -> dict[str, Any]:
+        """Delete a dependency analysis report by ID."""
+        for i, r in enumerate(_deps_reports):
+            if r["id"] == report_id:
+                _deps_reports.pop(i)
+                return {"success": True, "deleted": report_id}
+        raise HTTPException(status_code=404, detail=f"Report {report_id} not found")
+
     return app
 
 
@@ -6837,5 +7177,15 @@ _apiclient_collections: dict[str, Any] = {}  # name → {name, description, requ
 _ai_timeline: list[dict[str, Any]] = []
 _MAX_AI_TIMELINE = 500
 _ai_timeline_id_counter: int = 0
+
+# ── Phase 48: Code Documentation Generator ────────────────────────────────────
+_docgen_history: list[dict[str, Any]] = []
+_MAX_DOCGEN_HISTORY = 200
+_docgen_id_counter: int = 0
+
+# ── Phase 49: Dependency Analyzer ─────────────────────────────────────────────
+_deps_reports: list[dict[str, Any]] = []
+_MAX_DEPS_REPORTS = 50
+_deps_report_id_counter: int = 0
 
 # ── End of module-level state ─────────────────────────────────────────────────

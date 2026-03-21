@@ -6254,6 +6254,126 @@
     window.loadHealthPanel = loadHealthPanel;
   })();
 
+  // ── Phase 48: Code Documentation Generator panel ──────────────────────────
+  (function () {
+    const resultEl = $("docgen-result");
+
+    async function generateDoc() {
+      const code = $("docgen-code")?.value.trim() || "";
+      if (!code) { if (resultEl) resultEl.innerHTML = '<span style="color:var(--danger)">Paste some code first.</span>'; return; }
+      const language = $("docgen-language")?.value || "";
+      const style = $("docgen-style")?.value || "docstring";
+      const context = $("docgen-context")?.value || "";
+      if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-dim)">Generating…</span>';
+      try {
+        const res = await fetch("/docgen/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code, language, style, context }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.detail || "Error");
+        if (resultEl) resultEl.innerHTML = `
+          <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Language: <b>${escHtmlSimple(d.language)}</b> · Style: <b>${escHtmlSimple(style)}</b></div>
+          <pre style="background:var(--bg-alt,var(--bg));border:1px solid var(--border);border-radius:4px;padding:8px;font-size:11px;overflow-x:auto;white-space:pre-wrap">${escHtmlSimple(d.documentation)}</pre>
+          <button id="btn-docgen-copy" style="font-size:10px;padding:2px 8px;margin-top:4px">📋 Copy</button>
+        `;
+        $("btn-docgen-copy")?.addEventListener("click", () => {
+          navigator.clipboard.writeText(d.documentation).then(() => _showToast?.("Copied!"));
+        });
+      } catch (e) {
+        if (resultEl) resultEl.innerHTML = `<span style="color:var(--danger)">${escHtmlSimple(e.message)}</span>`;
+      }
+    }
+
+    async function showDocHistory() {
+      if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-dim)">Loading history…</span>';
+      try {
+        const res = await fetch("/docgen/history?limit=20");
+        const d = await res.json();
+        if (!d.entries || d.entries.length === 0) {
+          if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-dim)">No history yet.</span>';
+          return;
+        }
+        if (resultEl) resultEl.innerHTML = d.entries.map(e => `
+          <div style="border:1px solid var(--border);border-radius:4px;padding:6px;margin-bottom:4px">
+            <div style="font-size:10px;color:var(--text-dim)">#${e.id} · ${escHtmlSimple(e.language)} · ${escHtmlSimple(e.style)} · ${new Date(e.generated_at).toLocaleTimeString()}</div>
+            <pre style="margin:4px 0 0;font-size:10px;white-space:pre-wrap;overflow-x:auto">${escHtmlSimple(e.documentation.slice(0, 300))}${e.documentation.length > 300 ? "…" : ""}</pre>
+          </div>
+        `).join("");
+      } catch (e) {
+        if (resultEl) resultEl.innerHTML = `<span style="color:var(--danger)">${escHtmlSimple(e.message)}</span>`;
+      }
+    }
+
+    $("btn-docgen-generate")?.addEventListener("click", generateDoc);
+    $("btn-docgen-history")?.addEventListener("click", showDocHistory);
+  })();
+
+  // ── Phase 49: Dependency Analyzer panel ───────────────────────────────────
+  (function () {
+    const resultEl = $("deps-result");
+
+    async function analyzeProject() {
+      const projectPath = $("deps-project-path")?.value.trim() || "";
+      if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-dim)">Analyzing…</span>';
+      try {
+        const res = await fetch("/deps/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_path: projectPath }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.detail || "Error");
+        const r = d.report;
+        if (!r.manifests || r.manifests.length === 0) {
+          if (resultEl) resultEl.innerHTML = `<span style="color:var(--text-dim)">No dependency manifests found in <b>${escHtmlSimple(r.project_path)}</b>.</span>`;
+          return;
+        }
+        if (resultEl) resultEl.innerHTML = `
+          <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">
+            Report #${r.id} · ${escHtmlSimple(r.project_path)} · ${r.total_dependencies} deps across ${r.manifest_count} file(s)
+          </div>
+          ${r.manifests.map(m => `
+            <div style="border:1px solid var(--border);border-radius:4px;padding:6px;margin-bottom:6px">
+              <div style="font-size:11px;font-weight:bold;margin-bottom:4px">📄 ${escHtmlSimple(m.file)} <span style="font-weight:normal;color:var(--text-dim)">[${escHtmlSimple(m.ecosystem)}]</span></div>
+              ${m.dependencies.map(dep => `
+                <div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0;border-bottom:1px solid var(--border)">
+                  <span>${escHtmlSimple(dep.name)}</span>
+                  <span style="color:var(--text-dim)">${escHtmlSimple(dep.version || "any")}</span>
+                </div>
+              `).join("")}
+            </div>
+          `).join("")}
+        `;
+      } catch (e) {
+        if (resultEl) resultEl.innerHTML = `<span style="color:var(--danger)">${escHtmlSimple(e.message)}</span>`;
+      }
+    }
+
+    async function showReports() {
+      if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-dim)">Loading reports…</span>';
+      try {
+        const res = await fetch("/deps/reports?limit=10");
+        const d = await res.json();
+        if (!d.reports || d.reports.length === 0) {
+          if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-dim)">No reports yet.</span>';
+          return;
+        }
+        if (resultEl) resultEl.innerHTML = d.reports.map(r => `
+          <div style="border:1px solid var(--border);border-radius:4px;padding:6px;margin-bottom:4px;font-size:11px">
+            <span style="font-weight:bold">#${r.id}</span> — ${escHtmlSimple(r.project_path)} · ${r.total_dependencies} deps · ${new Date(r.analyzed_at).toLocaleString()}
+          </div>
+        `).join("");
+      } catch (e) {
+        if (resultEl) resultEl.innerHTML = `<span style="color:var(--danger)">${escHtmlSimple(e.message)}</span>`;
+      }
+    }
+
+    $("btn-deps-analyze")?.addEventListener("click", analyzeProject);
+    $("btn-deps-reports")?.addEventListener("click", showReports);
+  })();
+
   // ── UI: Focus Mode & Theme Toggle ────────────────────────────────────────
   (function () {
     // Focus Mode
