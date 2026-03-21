@@ -3228,3 +3228,113 @@ def test_apiclient_collection_delete(client):
     assert r.status_code == 200
     r2 = client.get("/apiclient/collection/to_delete_col")
     assert r2.status_code == 404
+
+# ── Phase 46: AI Suggestions Timeline ─────────────────────────────────────────
+
+def test_ai_timeline_empty(client):
+    r = client.get("/ai/timeline")
+    assert r.status_code == 200
+    d = r.json()
+    assert "events" in d
+    assert isinstance(d["events"], list)
+
+def test_ai_timeline_add_event(client):
+    r = client.post("/ai/timeline/event", json={
+        "event_type": "suggestion",
+        "summary": "Refactor loop to list comprehension",
+        "detail": "for x in y: arr.append(x)  →  arr = [x for x in y]",
+        "file_path": "workspace/main.py",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert isinstance(d["id"], int)
+
+def test_ai_timeline_missing_summary(client):
+    r = client.post("/ai/timeline/event", json={"event_type": "chat", "summary": ""})
+    assert r.status_code == 400
+
+def test_ai_timeline_missing_type(client):
+    r = client.post("/ai/timeline/event", json={"event_type": "", "summary": "hello"})
+    assert r.status_code == 400
+
+def test_ai_timeline_list_and_filter(client):
+    client.post("/ai/timeline/event", json={"event_type": "apply", "summary": "Applied patch", "file_path": "workspace/app.py"})
+    r = client.get("/ai/timeline?event_type=apply")
+    assert r.status_code == 200
+    events = r.json()["events"]
+    assert all(e["event_type"] == "apply" for e in events)
+
+def test_ai_timeline_get_single(client):
+    r = client.post("/ai/timeline/event", json={"event_type": "generate", "summary": "Generated tests"})
+    event_id = r.json()["id"]
+    r2 = client.get(f"/ai/timeline/{event_id}")
+    assert r2.status_code == 200
+    assert r2.json()["id"] == event_id
+
+def test_ai_timeline_get_not_found(client):
+    r = client.get("/ai/timeline/999999")
+    assert r.status_code == 404
+
+def test_ai_timeline_update_accepted(client):
+    r = client.post("/ai/timeline/event", json={"event_type": "refactor", "summary": "Simplified function"})
+    event_id = r.json()["id"]
+    r2 = client.patch(f"/ai/timeline/{event_id}?accepted=true")
+    assert r2.status_code == 200
+    assert r2.json()["event"]["accepted"] is True
+
+def test_ai_timeline_update_rejected(client):
+    r = client.post("/ai/timeline/event", json={"event_type": "refactor", "summary": "Remove unused import"})
+    event_id = r.json()["id"]
+    r2 = client.patch(f"/ai/timeline/{event_id}?accepted=false")
+    assert r2.status_code == 200
+    assert r2.json()["event"]["accepted"] is False
+
+def test_ai_timeline_update_not_found(client):
+    r = client.patch("/ai/timeline/999999?accepted=true")
+    assert r.status_code == 404
+
+def test_ai_timeline_clear(client):
+    client.post("/ai/timeline/event", json={"event_type": "chat", "summary": "Test event to clear"})
+    r = client.delete("/ai/timeline/clear")
+    assert r.status_code == 200
+    assert r.json()["success"] is True
+    r2 = client.get("/ai/timeline")
+    assert r2.json()["events"] == []
+
+# ── Phase 47: Project Health Dashboard ────────────────────────────────────────
+
+def test_project_health(client):
+    r = client.get("/project/health")
+    assert r.status_code == 200
+    d = r.json()
+    assert "score" in d
+    assert isinstance(d["score"], (int, float))
+    assert 0 <= d["score"] <= 100
+    assert "status" in d
+    assert d["status"] in ("excellent", "good", "fair", "needs_attention")
+    assert "generated_at" in d
+    assert "ai_timeline" in d
+    assert "task_queue" in d
+    assert "notifications" in d
+    assert "agents" in d
+    assert "cron_jobs" in d
+    assert "feature_flags" in d
+    assert "snippets" in d
+    assert "brainstorm_sessions" in d
+    assert "audit_log" in d
+
+def test_project_health_ai_timeline_stats(client):
+    """After adding accepted/rejected events, acceptance_rate should be computed."""
+    client.delete("/ai/timeline/clear")
+    r1 = client.post("/ai/timeline/event", json={"event_type": "suggestion", "summary": "Accepted event"})
+    client.patch(f"/ai/timeline/{r1.json()['id']}?accepted=true")
+    r2 = client.post("/ai/timeline/event", json={"event_type": "suggestion", "summary": "Rejected event"})
+    client.patch(f"/ai/timeline/{r2.json()['id']}?accepted=false")
+
+    r = client.get("/project/health")
+    tl = r.json()["ai_timeline"]
+    assert tl["total_events"] == 2
+    assert tl["accepted"] == 1
+    assert tl["rejected"] == 1
+    assert tl["acceptance_rate_pct"] == 50.0

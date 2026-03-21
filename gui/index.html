@@ -33,6 +33,8 @@
         <option value="local">⚙ Local stub</option>
       </select>
       <span id="status-indicator" class="status-idle">● Idle</span>
+      <button id="btn-focus-mode" title="Toggle Focus Mode — hide sidebars (Ctrl+Shift+F)">⛶ Focus</button>
+      <button id="btn-theme-toggle" title="Toggle dark/light theme">🌙</button>
     </div>
   </header>
 
@@ -141,6 +143,19 @@
           <button class="ab-btn" data-panel="cfgprofile" title="Config Profiles">⚙️</button>
           <button class="ab-btn" data-panel="notify"    title="Notifications">🔔</button>
           <button class="ab-btn" data-panel="taskqueue" title="Task Queue">📬</button>
+        </div>
+      </div>
+
+      <!-- Group: Insights (Phase 46-47) -->
+      <div class="ab-group" id="abg-insights">
+        <button type="button" class="ab-group-hdr" data-group="insights">
+          <span class="ab-group-icon">📈</span>
+          <span class="ab-group-label">Insights</span>
+          <span class="ab-group-arrow">▾</span>
+        </button>
+        <div class="ab-group-items">
+          <button class="ab-btn" data-panel="aitimeline" title="AI Timeline">🕒</button>
+          <button class="ab-btn" data-panel="healthdash" title="Project Health">💚</button>
         </div>
       </div>
 
@@ -1022,6 +1037,33 @@
             </div>
             <div id="apc-col-list" style="display:flex;flex-direction:column;gap:4px"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- ── Panel: AI Timeline (Phase 46) ───────────────────────────────── -->
+      <div class="sb-panel" id="panel-aitimeline">
+        <div class="sidebar-header">
+          <span>🕒 AI Timeline</span>
+          <div class="sidebar-buttons">
+            <button id="btn-timeline-refresh" title="Refresh">↺</button>
+            <button id="btn-timeline-clear" title="Clear all events" style="color:var(--danger)">🗑</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="timeline-panel-content">
+          <div style="color:var(--text-dim);font-size:11px;padding:4px">Loading…</div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Project Health Dashboard (Phase 47) ───────────────────── -->
+      <div class="sb-panel" id="panel-healthdash">
+        <div class="sidebar-header">
+          <span>💚 Project Health</span>
+          <div class="sidebar-buttons">
+            <button id="btn-health-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="healthdash-panel-content">
+          <div style="color:var(--text-dim);font-size:11px;padding:4px">Loading…</div>
         </div>
       </div>
 
