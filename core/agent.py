@@ -23,6 +23,7 @@ class AgentState:
     iteration: int = 0
     max_iterations: int = 20
     done: bool = False
+    chat_history: list[dict[str, Any]] = field(default_factory=list)
 
 
 class Agent:
@@ -107,8 +108,14 @@ class Agent:
             logger.debug("Knowledge retrieval failed: %s", exc)
             return ""
 
-    def run(self, prompt: str, project_path: str = "") -> str:
+    def run(
+        self,
+        prompt: str,
+        project_path: str = "",
+        chat_history: list[dict[str, Any]] | None = None,
+    ) -> str:
         state = AgentState(prompt=prompt)
+        state.chat_history = chat_history or []
         # Prepend relevant knowledge to the prompt if available
         knowledge = self._retrieve_knowledge(prompt, project_path)
         if knowledge:
@@ -166,8 +173,14 @@ class Agent:
     def _build_messages(self, state: AgentState, include_tools: bool = False) -> list[dict[str, str]]:
         messages: list[dict[str, str]] = [
             {"role": "system", "content": self._system_prompt(include_tools)},
-            {"role": "user", "content": state.prompt},
         ]
+        # Inject prior conversation turns so the AI has context
+        for entry in state.chat_history:
+            role = entry.get("role", "user")
+            content = entry.get("content", "")
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": state.prompt})
         for entry in state.history:
             messages.append(
                 {"role": "assistant", "content": f"Tool {entry['tool']} returned: {entry['result']}"}
@@ -176,14 +189,58 @@ class Agent:
 
     def _system_prompt(self, include_tools: bool = False) -> str:
         # If an active persona is set it provides the full role + app-context
-        # description.  Otherwise fall back to the generic SwissAgent identity.
+        # description.  Otherwise fall back to the full SwissAgent app-aware identity.
         if self._active_persona_prompt:
             base = self._active_persona_prompt
         else:
             base = (
-                "You are SwissAgent, an AI-powered offline development platform assistant. "
-                "You help with code generation, build automation, asset pipelines, and development tasks. "
-                "Think step-by-step and use available tools to complete tasks."
+                "You are SwissAgent, the built-in AI assistant of the SwissAgent IDE — "
+                "a self-hosted, fully offline AI-powered development platform.\n\n"
+                "## What you know about SwissAgent\n"
+                "SwissAgent is a local-first IDE with a Monaco code editor, AI chat panel, "
+                "file explorer, git integration, build/test runners, and a rich REST API. "
+                "It runs on FastAPI and exposes every capability as an HTTP endpoint. "
+                "The user interacts with you through the AI Agent panel on the right side of the IDE.\n\n"
+                "## SwissAgent capabilities you can help with\n"
+                "- **Code generation & editing**: write, refactor, explain, or fix code in any language\n"
+                "- **Build & test automation**: CMake/Make/Ninja builds, pytest/unittest test runners\n"
+                "- **File system**: read/write/copy/move/delete files and directories\n"
+                "- **Git**: init, commit, push, pull, diff, log, branch management\n"
+                "- **Project management**: multi-project workspace, templates, scaffolding\n"
+                "- **Package management**: pip, npm, cargo, gem, go install/list\n"
+                "- **Image processing**: resize, convert, crop (Pillow via /image/*)\n"
+                "- **Audio processing**: convert, trim, normalise (FFmpeg/pydub via /audio/*)\n"
+                "- **Archive & packaging**: ZIP/TAR/7z via /archive/*\n"
+                "- **Documentation generation**: auto-generate Markdown/HTML docs from Python source\n"
+                "- **Docker management**: build/run containers, view logs via /docker/*\n"
+                "- **Remote deployment & SSH**: deploy to servers via /deploy/*\n"
+                "- **Database tools**: SQLite/SQL query and schema management via /db/*\n"
+                "- **CI/CD pipelines**: trigger and monitor CI runs via /ci/*\n"
+                "- **Monitoring & metrics**: system metrics, health checks via /metrics/*\n"
+                "- **Secret vault**: encrypted key-value secret storage via /vault/*\n"
+                "- **Webhooks**: register and deliver webhooks via /webhook/*\n"
+                "- **Event bus**: publish/subscribe messaging via /events/*\n"
+                "- **Task queue**: background task scheduling via /queue/*\n"
+                "- **Cron scheduler**: recurring jobs via /cron/*\n"
+                "- **Brainstorm mode**: collaborative idea sessions via /brainstorm/*\n"
+                "- **Web search**: search the web for documentation and answers via /search/web\n"
+                "- **Code snippets**: save and reuse code snippets via /snippet/*\n"
+                "- **Diff & patch**: compare and apply patches via /diff, /patch\n"
+                "- **AI personas**: specialist AI roles (senior_developer, architect, etc.) via /ai/persona/*\n"
+                "- **Knowledge base**: project documentation RAG search via /knowledge/*\n"
+                "- **Memory**: persistent key-value memory across sessions via /memory\n"
+                "- **Feature flags**: runtime feature toggles via /flags/*\n"
+                "- **Config profiles**: named configuration profiles via /config/*\n"
+                "- **Audit log**: track all operations via /audit/*\n"
+                "- **Stable Diffusion**: image generation via AUTOMATIC1111 API\n"
+                "- **Plugin system**: drop Python files in plugins/ for auto-loaded custom tools\n\n"
+                "## How to respond\n"
+                "- You are CONTEXT-AWARE: you remember this entire conversation and can refer back to earlier messages.\n"
+                "- Respond concisely and helpfully. Use markdown with code blocks when showing code.\n"
+                "- When the user asks about the project they have open, use context from the project profile.\n"
+                "- If you need to perform an action (write a file, run a build, etc.) describe what you would do "
+                "and use the available tools.\n"
+                "- Never say you are starting fresh or that you don't have context — you have full conversation history."
             )
         if self._project_context:
             base += f"\n\n{self._project_context}"

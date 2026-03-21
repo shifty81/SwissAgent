@@ -8,18 +8,19 @@
   <img src="https://img.shields.io/badge/Offline-First-2ea043?logo=circle&logoColor=white" alt="Offline-First"/>
   <img src="https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white" alt="FastAPI"/>
   <img src="https://img.shields.io/badge/Monaco-Editor-007acc?logo=visual-studio-code&logoColor=white" alt="Monaco Editor"/>
-  <img src="https://img.shields.io/badge/Modules-35-ff6b6b?logo=puzzle&logoColor=white" alt="35 Modules"/>
-  <img src="https://img.shields.io/badge/Phase-16%20Complete-8957e5?logo=checkmarx&logoColor=white" alt="Phase 16"/>
+  <img src="https://img.shields.io/badge/Modules-42%2B-ff6b6b?logo=puzzle&logoColor=white" alt="42+ Modules"/>
+  <img src="https://img.shields.io/badge/Phase-42%20Complete-8957e5?logo=checkmarx&logoColor=white" alt="Phase 42"/>
 </p>
 
 <p align="center">
   <strong>SwissAgent</strong> is a self-hosted, fully offline AI development platform.<br/>
-  Give it a prompt and it plans, calls tools, writes code, runs builds, processes assets, and reports back — <em>all without sending anything to the cloud.</em>
+  Give it a prompt and it plans, calls tools, writes code, runs builds, processes assets, and reports back —<br/>
+  <em>all without sending anything to the cloud.</em>
 </p>
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/984d9731-5366-41ed-8058-fbf418953941"
-       alt="SwissAgent IDE running — Monaco editor, activity-bar panels, and AI Agent chat panel"
+  <img src="https://github.com/user-attachments/assets/683c01e0-f2c9-4e9f-9794-aa58480d9b84"
+       alt="SwissAgent IDE — Monaco editor, activity-bar panels, model downloads, and context-aware AI Agent chat"
        width="100%"/>
 </p>
 
@@ -32,24 +33,31 @@
 
 ## ✨ What can SwissAgent do?
 
-| Capability | Details |
+| Category | Capability |
 |---|---|
-| 🤖 **Agentic AI loop** | plan → tool-call → execute → reflect, up to 20 iterations per task |
-| 🧩 **35 built-in modules** | 195+ tools: filesystem, git, build, image, audio, zip, docs, packages, debug, render, and more |
-| 🖥️ **Monaco Web IDE** | VS Code–style editor with AI chat panel, inline ghost-text completions, and 6 activity-bar panels |
+| 🤖 **Context-Aware AI Chat** | Fully persistent conversation — the AI remembers your entire session, knows the active project, and is aware of every SwissAgent feature |
+| 🧠 **AI Persona System** | 13 built-in specialist personas (Senior Developer, Architect, DevOps, Security Auditor, and more) with full app context baked in |
+| 🔄 **Agentic AI loop** | plan → tool-call → execute → reflect, up to 20 iterations per task |
+| 🧩 **42+ built-in modules** | 200+ tools: filesystem, git, build, image, audio, zip, docs, packages, debug, render, docker, deploy, and more |
+| 🖥️ **Monaco Web IDE** | VS Code-style editor with AI chat panel, inline ghost-text completions, and rich activity-bar panels |
 | 🔌 **Plugin system** | Drop a Python file into `plugins/` — auto-loaded with no restart needed |
 | 🔒 **Permission system** | Fine-grained allow/block control over tools and file paths |
 | 🏗️ **Self-build loop** | Reads its own roadmap, writes code, tests in Docker sandbox, commits — fully autonomously |
-| 📦 **Archive & packaging** | ZIP / TAR / 7z via `/archive/*` — pack releases, extract downloads, distribute builds |
-| 📄 **Doc generator** | Auto-generate Markdown / HTML / JSON docs from Python source via `/doc/generate` |
-| 🌐 **Network tools** | Download files and make HTTP requests via `/network/*` |
-| 📥 **Package manager** | Install / list packages with pip, npm, cargo, gem, or go via `/packages/*` |
-| 🖼️ **Image processing** | Resize, convert, and inspect images via `/image/*` (Pillow) |
-| 🔊 **Audio processing** | Convert, trim, and inspect audio via `/audio/*` (FFmpeg / pydub) |
-| 🐛 **Process debug** | Inspect running processes, read memory, capture stack traces via `/debug/*` |
-| 🎨 **Asset pipeline** | 2D/3D/audio/video generation wired into the agent loop |
-| 🎙️ **Audio pipeline** | Offline TTS via `pyttsx3` and SFX generation via SoX |
-| 🖼️ **Stable Diffusion** | Image generation via AUTOMATIC1111 web-UI API |
+| 📦 **Archive & packaging** | ZIP / TAR / 7z via `/archive/*` |
+| 📄 **Doc generator** | Auto-generate Markdown / HTML / JSON docs from Python source |
+| 🌐 **Network tools** | HTTP GET/POST, file download/upload |
+| 📥 **Package manager** | pip, npm, cargo, gem, go |
+| 🖼️ **Image processing** | Resize, convert, crop, rotate (Pillow) |
+| 🔊 **Audio processing** | Convert, trim, normalise (FFmpeg / pydub) |
+| 🐳 **Docker management** | Build/run containers, view logs |
+| 🚀 **Remote deployment** | SSH-based deploys with history |
+| 🗄️ **Database tools** | SQLite/SQL queries and schema management |
+| 📡 **Event bus & webhooks** | Real-time pub/sub and webhook delivery |
+| ⏱️ **Task queue & cron** | Background jobs and recurring schedules |
+| 💡 **Brainstorm mode** | AI-powered ideation sessions → exportable plans |
+| 🔍 **Web search** | Search the web for docs and answers |
+| 🔐 **Secret vault** | Encrypted local key-value secret storage |
+| 📋 **Code snippets** | Save, search, and reuse code fragments |
 | 🏠 **Multi-project workspace** | Manage multiple projects from one place |
 | 📡 **REST API** | Full HTTP API — use from any language or tool |
 
@@ -58,7 +66,7 @@
 ## 🚀 Quick Start
 
 ```bash
-# Clone and install (one command)
+# Clone and install
 git clone https://github.com/shifty81/SwissAgent.git && cd SwissAgent
 bash scripts/install.sh          # installs deps + opens the IDE in your browser
 ```
@@ -72,7 +80,7 @@ pip install -e .
 python -m core.cli ui
 ```
 
-Then open **http://localhost:8000** — you'll see the Monaco IDE with 6 activity-bar panels.
+Then open **http://localhost:8000** — you'll see the Monaco IDE with the context-aware AI chat panel.
 
 **Windows (native C++ app — recommended):**
 ```powershell
@@ -96,6 +104,43 @@ See **[native/README.md](native/README.md)** for the full build guide.
 
 ---
 
+## 🧠 Context-Aware AI Chat
+
+The AI Agent panel (right side of the IDE) maintains **full conversation history** across your entire session:
+
+- Every message you send is remembered — the AI can refer back to earlier parts of the conversation
+- The AI knows which project you have open and can use that context in its replies
+- The system prompt is pre-loaded with the complete SwissAgent feature catalog so the AI always knows what it can do
+- Conversation history is persisted to `.swissagent/chat_history.json` per project — context survives restarts
+
+> **AI Personas:** Switch to a specialist persona (Senior Developer, Security Auditor, DevOps Engineer, etc.) via the AI panel. Each persona inherits full app context so it stays application-aware while taking on its specialist role.
+
+---
+
+## 🤖 AI Persona System (Phase 42)
+
+SwissAgent ships 13 built-in offline specialist personas:
+
+| Persona | Role |
+|---|---|
+| `senior_developer` | Battle-hardened generalist developer |
+| `software_architect` | System design and architecture |
+| `frontend_developer` | UI/UX and browser technology |
+| `backend_developer` | Server-side logic and APIs |
+| `database_engineer` | Database design and optimization |
+| `mobile_developer` | iOS/Android/cross-platform |
+| `devops_engineer` | CI/CD, containers, infrastructure |
+| `security_auditor` | Security review and hardening |
+| `test_engineer` | Testing strategy and automation |
+| `code_reviewer` | Code review and quality |
+| `performance_engineer` | Profiling and optimization |
+| `documentation_writer` | Technical writing |
+| `ai_ml_engineer` | ML/AI integration |
+
+Use `GET /ai/personas` to list all personas and `POST /ai/persona/{name}/activate` to switch the active one.
+
+---
+
 ## 🧠 LLM Backends
 
 | Backend | Flag | Notes |
@@ -107,10 +152,12 @@ See **[native/README.md](native/README.md)** for the full build guide.
 | **Local GGUF** | `--llm-backend local` | Run a `.gguf` model directly via `llama-cpp-python`. |
 
 ```bash
-# Recommended models via Ollama
-ollama pull llama3              # general purpose
-ollama pull deepseek-coder      # coding tasks
-ollama pull qwen2.5-coder       # code + reasoning
+# Recommended models via Ollama (one-click from the Model Downloads panel)
+ollama pull codestral          # Mistral code specialist — best for code generation
+ollama pull deepseek-r1        # DeepSeek reasoning — strong for planning & analysis
+ollama pull qwen2.5-coder      # Alibaba Qwen — excellent code completion
+ollama pull phi4               # Microsoft Phi-4 — small but capable
+ollama pull llama3.2           # Meta Llama 3.2 — fast & lightweight
 ```
 
 ---
@@ -131,7 +178,7 @@ ollama pull qwen2.5-coder       # code + reasoning
 
 ---
 
-## 🗂️ Modules (35 built-in)
+## 🗂️ Modules (42+ built-in)
 
 <details>
 <summary><strong>Click to expand the full module list</strong></summary>
@@ -173,6 +220,13 @@ ollama pull qwen2.5-coder       # code + reasoning
 | `profile` | Performance profiling tools |
 | `job` | Background job scheduling |
 | `api` | REST/GraphQL API client utilities |
+| `docker` | Container build, run, logs |
+| `deploy` | Remote SSH deployment |
+| `knowledge` | RAG-based project documentation search |
+| `ai_persona` | AI specialist persona management |
+| `brainstorm` | AI ideation and planning sessions |
+| `vault` | Encrypted secret key-value store |
+| `snippet` | Code snippet library |
 
 </details>
 
@@ -186,38 +240,34 @@ Start the server: `swissagent serve`, then explore all endpoints at **http://loc
 # Health check
 curl http://localhost:8000/health
 
-# Run the AI agent
+# Run the context-aware AI agent
 curl -X POST http://localhost:8000/run \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "list Python files in workspace/"}'
+  -d '{"prompt": "What files are in the workspace?", "project_path": "workspace/myproject"}'
 
-# Phase 16: Pack a ZIP archive
+# Manage AI personas
+curl http://localhost:8000/ai/personas
+curl -X POST http://localhost:8000/ai/persona/senior_developer/activate
+
+# Pack a ZIP archive
 curl -X POST http://localhost:8000/archive/pack \
   -H "Content-Type: application/json" \
   -d '{"src": "workspace/myproject", "dst": "workspace/myproject.zip", "format": "zip"}'
 
-# Phase 16: Generate documentation
-curl -X POST http://localhost:8000/doc/generate \
-  -H "Content-Type: application/json" \
-  -d '{"src": "modules/", "output": "workspace/docs/README.md", "format": "markdown"}'
-
-# Phase 16: Install a package
+# Install a package
 curl -X POST http://localhost:8000/packages/install \
   -H "Content-Type: application/json" \
   -d '{"name": "requests", "manager": "pip"}'
 
-# Phase 16: Resize an image
-curl -X POST http://localhost:8000/image/resize \
+# Start a brainstorm session
+curl -X POST http://localhost:8000/brainstorm/session \
   -H "Content-Type: application/json" \
-  -d '{"path": "workspace/logo.png", "width": 128, "height": 128}'
-
-# Phase 16: Inspect a running process
-curl "http://localhost:8000/debug/process?pid=12345"
+  -d '{"title": "New feature ideas"}'
 ```
 
 ---
 
-## 🏗️ Autonomous Self-Build (Phase 13)
+## 🏗️ Autonomous Self-Build
 
 SwissAgent can build *itself* — reading its own roadmap, writing code, running tests in a Docker sandbox, and committing:
 
@@ -257,11 +307,13 @@ def register(registry):
 | Panel | Icon | Description |
 |---|---|---|
 | **Explorer** | 📁 | File tree with read/write/create/delete |
+| **AI** | 🤖 | Model downloads, persona selection |
 | **Search** | 🔍 | Full-text search across all workspace files |
 | **Git** | 🔀 | Status, diff viewer, stage/commit |
-| **Code Quality** | ✅ | Format, lint, workspace stats, symbol search |
-| **Templates** | 📋 | Browse templates, run snippets, toolchain info |
-| **Utilities** | ⚙️ | Archive, docs, packages, image, audio, debug (Phase 16) |
+| **Code** | ✅ | Format, lint, workspace stats, symbol search |
+| **Project** | 🏠 | Project management, templates, scaffolding |
+| **DevOps** | 🐳 | Docker, CI/CD, remote deploy |
+| **Ops** | ⚙️ | Cron, task queue, monitoring, audit log |
 
 ---
 
@@ -295,11 +347,11 @@ port = 8000
 SwissAgent/
 ├── core/           # Agent loop, CLI, REST API, config, permissions, tool registry
 ├── llm/            # LLM backends: Ollama, LocalAI, OpenAI-compatible, local GGUF
-├── modules/        # 35 capability modules (tools.json + src/)
+├── modules/        # 42+ capability modules (tools.json + src/)
 ├── plugins/        # Drop-in custom tool plugins
 │   └── open_webui_tool/  # Open WebUI → IDE push plugin
 ├── configs/        # config.toml — all runtime settings
-├── gui/            # Web IDE (Monaco editor, Copilot-style chat, 6 panels)
+├── gui/            # Web IDE (Monaco editor, AI chat panel, 8 activity-bar panels)
 ├── workspace/      # Default project workspace + roadmap.json
 ├── projects/       # Additional managed projects
 ├── models/         # Local GGUF model files
@@ -310,7 +362,7 @@ SwissAgent/
 ├── tools/          # Build runner, feedback parser, media pipeline
 ├── templates/      # Project scaffolding templates
 ├── scripts/        # install.sh, setup.py, run_tests.py
-├── tests/          # Pytest test suite
+├── tests/          # Pytest test suite (429+ tests)
 └── docs/           # Extended documentation + banner
 ```
 
@@ -342,18 +394,21 @@ See [`docs/SETUP.md`](docs/SETUP.md) for the complete Docker guide.
 
 ---
 
-## �� Roadmap
+## 🗺️ Roadmap
 
 SwissAgent is developed against a living roadmap stored in `workspace/roadmap.json`:
 
-| Phase | Title | Status |
+| Phases | Title | Status |
 |---|---|---|
 | 1–5 | Foundation, Web IDE, Build, Project Mgmt, Roadmap | ✅ Done |
 | 6–10 | VS Code IDE, AI Editor, Plugin Ecosystem, Sandbox, Auth | ✅ Done |
 | 11–13 | Open-Source AI Stack, Self-Scaffolding, Autonomous Self-Build | ✅ Done |
-| 14 | Code Quality & Developer Experience | ✅ Done |
-| 15 | Project Templates & Multi-Language Toolchain | ✅ Done |
-| **16** | **General-Purpose Utility APIs** | ✅ **Done** |
+| 14–16 | Code Quality, Project Templates, General-Purpose Utility APIs | ✅ Done |
+| 17–25 | Docker, Deploy, Monitoring, Database, Vault, Webhooks | ✅ Done |
+| 26–33 | Event Bus, Cron, Audit Log, Rate Limiting, Feature Flags | ✅ Done |
+| 34–37 | Config Profiles, Notification Center, Task Queue | ✅ Done |
+| 38–41 | Brainstorm Mode, Web Search, Code Snippets, Diff & Patch | ✅ Done |
+| **42** | **AI Hive-Mind Persona System + Context-Aware Chat** | ✅ **Done** |
 
 ---
 
