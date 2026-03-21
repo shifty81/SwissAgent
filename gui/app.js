@@ -433,6 +433,7 @@
     state.activeFile = path;
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.path === path));
     document.querySelectorAll(".tree-item.file").forEach((t) => t.classList.toggle("active", t.dataset.path === path));
+    document.dispatchEvent(new CustomEvent("sa:fileOpened", { detail: { path } }));
     if (state.editorMode === "monaco" && state.editor && state.openFiles[path]) {
       state.editor.setModel(state.openFiles[path].model);
       // Force layout so Monaco fills its container correctly
@@ -772,6 +773,9 @@
     $("btn-send-prompt").disabled = true;
     $("btn-run-file").disabled = true;
 
+    // Notify sessions manager
+    document.dispatchEvent(new CustomEvent("sa:chatSent", { detail: { prompt: promptText } }));
+
     const agentMsg = appendChat("", "agent");
     clearOutput();
 
@@ -794,6 +798,9 @@
     setStatus("idle");
     $("btn-send-prompt").disabled = false;
     $("btn-run-file").disabled = false;
+
+    // Notify sessions manager that turn is complete
+    document.dispatchEvent(new CustomEvent("sa:chatDone"));
   }
 
   function streamViaWebSocket(wsUrl, prompt, backend, agentMsg) {
@@ -1369,8 +1376,141 @@
     state.lastBuildOutput = "";
     $("btn-fix-ai").classList.add("hidden");
   });
-  $("btn-clear-chat").addEventListener("click", () => { chatMessages.innerHTML = ""; });
+  $("btn-clear-chat").addEventListener("click", () => {
+    chatMessages.innerHTML = "";
+    _sessions.clearCurrent();
+  });
   $("btn-refresh-tree").addEventListener("click", () => loadFileTree());
+
+  // ── Chat sessions management ──────────────────────────────────────────────
+  const _sessions = (() => {
+    const STORE_KEY = "sa_chat_sessions";
+    let _list = [];
+    let _current = null;
+
+    function _save() {
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(_list)); } catch {}
+    }
+    function _load() {
+      try {
+        const raw = localStorage.getItem(STORE_KEY);
+        if (raw) _list = JSON.parse(raw);
+      } catch { _list = []; }
+    }
+    function _relativeTime(iso) {
+      const diff = Date.now() - new Date(iso).getTime();
+      if (diff < 60000)    return "just now";
+      if (diff < 3600000)  return Math.floor(diff / 60000) + " min ago";
+      if (diff < 86400000) return Math.floor(diff / 3600000) + " hr ago";
+      return Math.floor(diff / 86400000) + " days ago";
+    }
+    function render() {
+      const list = $("sessions-list");
+      if (!list) return;
+      if (!_list.length) {
+        list.innerHTML = '<div style="padding:6px 12px;font-size:11px;color:var(--text-dim)">No sessions yet</div>';
+        return;
+      }
+      list.innerHTML = _list.slice().reverse().map((s) => `
+        <div class="session-item${s.id === (_current?.id) ? " active" : ""}" data-sid="${s.id}">
+          <div class="session-title">${escHtmlSimple(s.title || "New chat")}</div>
+          <div class="session-meta">
+            <span class="session-ts">${_relativeTime(s.created)}</span>
+            <span class="session-status${s.done ? " done" : ""}">
+              ${s.done ? "Completed" : "Working…"}
+            </span>
+          </div>
+        </div>`).join("");
+      list.querySelectorAll(".session-item").forEach((el) => {
+        el.addEventListener("click", () => loadSession(el.dataset.sid));
+      });
+    }
+    function newSession(firstMessage) {
+      const id = `sess_${Date.now()}`;
+      const s = { id, title: (firstMessage || "New chat").slice(0, 60), created: new Date().toISOString(), done: false };
+      _list.push(s);
+      _current = s;
+      _save();
+      render();
+      $("cp-divider")?.classList.add("visible");
+      return id;
+    }
+    function finishCurrent() {
+      if (_current) { _current.done = true; _save(); render(); }
+    }
+    function clearCurrent() { _current = null; $("cp-divider")?.classList.remove("visible"); }
+    function loadSession(id) {
+      const s = _list.find((x) => x.id === id);
+      if (!s) return;
+      _current = s;
+      render();
+      chatMessages.innerHTML = "";
+      appendChat(`Session: "${s.title}"`, "agent");
+    }
+    _load();
+    render();
+    return { newSession, finishCurrent, clearCurrent, render };
+  })();
+
+  // Wrap sendPrompt to register sessions
+  const _origSendPrompt = sendPrompt;
+  // Override is done inline — hook into the existing sendPrompt via the
+  // session lifecycle rather than replacing it.
+  $("btn-new-session")?.addEventListener("click", () => {
+    chatMessages.innerHTML = "";
+    _sessions.clearCurrent();
+    chatInput.focus();
+  });
+
+  // ── Attach-file chip — update from active file ────────────────────────────
+  function _updateAttachChip() {
+    const chipName = $("ci-attached-name");
+    if (!chipName) return;
+    const f = state.activeFile;
+    chipName.textContent = f ? f.split("/").pop() : "no file";
+  }
+  document.addEventListener("sa:fileOpened", _updateAttachChip);
+
+  $("btn-attach-file")?.addEventListener("click", () => {
+    if (state.activeFile) {
+      chatInput.value += (chatInput.value ? "\n" : "") + `[context: ${state.activeFile}]`;
+      chatInput.focus();
+    }
+  });
+
+  // Register session on send
+  document.addEventListener("sa:chatSent", (e) => {
+    _sessions.newSession(e.detail?.prompt || "");
+  });
+  document.addEventListener("sa:chatDone", () => _sessions.finishCurrent());
+
+  // Update LLM status strip when selector changes
+  function _updateLlmStrip() {
+    const label = $("ci-llm-label");
+    if (label) label.textContent = llmSelect?.value || "—";
+  }
+  llmSelect?.addEventListener("change", _updateLlmStrip);
+  _updateLlmStrip();
+
+  // Fetch active persona name for status strip
+  (async () => {
+    try {
+      const r = await fetch("/ai/persona/active");
+      if (r.ok) {
+        const d = await r.json();
+        const el = $("ci-persona-label");
+        if (el) el.textContent = d.name || "swissagent_assistant";
+      }
+    } catch {}
+  })();
+
+  // ── Expand chat panel ─────────────────────────────────────────────────────
+  $("btn-cp-expand")?.addEventListener("click", () => {
+    const panel = $("agent-panel");
+    if (!panel) return;
+    const expanded = panel.style.width && panel.style.width !== "var(--agent-w)";
+    panel.style.width = expanded ? "" : "580px";
+  });
 
   // ── Slash-command quick buttons ─────────────────────────────────────────
   document.querySelectorAll(".slash-btn").forEach((btn) => {
@@ -2119,72 +2259,70 @@
     }
   });
 
-  // ── Activity bar group toggle ─────────────────────────────────────────────
-  document.querySelectorAll(".ab-group-hdr").forEach((hdr) => {
-    hdr.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const group = hdr.closest(".ab-group");
-      if (!group) return;
-      const items = group.querySelector(".ab-group-items");
-      const opening = !group.classList.contains("open");
-      group.classList.toggle("open", opening);
-      if (items) {
-        // Drive max-height via scrollHeight for consistent animation timing
-        items.style.maxHeight = items.scrollHeight + "px";
-        if (!opening) {
-          requestAnimationFrame(() => { items.style.maxHeight = "0"; });
-        }
-      }
-    });
+  // ── Activity bar panel switching (flat icon-only bar) ────────────────────
+  function activatePanel(panel) {
+    // Update active icon
+    document.querySelectorAll(".ab-icon[data-panel]").forEach((b) => b.classList.remove("active"));
+    const activeIcon = document.querySelector(`.ab-icon[data-panel="${panel}"]`);
+    if (activeIcon) activeIcon.classList.add("active");
+    // Show matching sidebar panel
+    document.querySelectorAll(".sb-panel").forEach((p) => p.classList.remove("active"));
+    const targetPanel = document.getElementById(
+      panel === "roadmap" ? "panel-roadmap-sidebar" : `panel-${panel}`
+    );
+    if (targetPanel) targetPanel.classList.add("active");
+    // Lazy-load panel content when first shown
+    if (panel === "git")        loadGitPanel();
+    if (panel === "knowledge")  { loadKnowledgePanel(); loadProfilePanel(); loadRulesPanel(); }
+    if (panel === "roadmap")    loadRoadmapSidebar();
+    if (panel === "plugins")    loadPluginsPanel();
+    if (panel === "models")     loadModelsPanel();
+    if (panel === "search")     setTimeout(() => $("sb-search-input")?.focus(), 50);
+    if (panel === "notes")      loadNotesPanel();
+    if (panel === "aibackends") loadAIBackendsPanel();
+    if (panel === "agents")     loadAgentsPanel();
+    if (panel === "ci")         loadCIPanel();
+    if (panel === "docker")     loadDockerPanel();
+    if (panel === "deploy")     loadDeployPanel();
+    if (panel === "monitor")    loadMonitorPanel();
+    if (panel === "database")   loadDatabasePanel();
+    if (panel === "vault")      loadVaultPanel();
+    if (panel === "webhooks")   loadWebhooksPanel();
+    if (panel === "ratelimit")  loadRatelimitPanel();
+    if (panel === "events")     loadEventsPanel();
+    if (panel === "cron")       loadCronPanel();
+    if (panel === "audit")      loadAuditPanel();
+    if (panel === "flags")      loadFlagsPanel();
+    if (panel === "cfgprofile") loadCfgProfilePanel();
+    if (panel === "notify")     loadNotifyPanel();
+    if (panel === "taskqueue")  loadTaskQueuePanel();
+    if (panel === "brainstorm") loadBrainstormPanel();
+    if (panel === "snippets")   loadSnippetsPanel();
+    if (panel === "aitimeline") loadTimelinePanel();
+    if (panel === "healthdash") loadHealthPanel();
+  }
+
+  document.querySelectorAll(".ab-icon[data-panel]").forEach((btn) => {
+    btn.addEventListener("click", () => activatePanel(btn.dataset.panel));
   });
 
-  // ── Activity bar panel switching ──────────────────────────────────────────
-  document.querySelectorAll(".ab-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const panel = btn.dataset.panel;
-      // Update active button
-      document.querySelectorAll(".ab-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      // Show matching panel
-      document.querySelectorAll(".sb-panel").forEach((p) => p.classList.remove("active"));
-      const targetPanel = document.getElementById(
-        panel === "roadmap" ? "panel-roadmap-sidebar" : `panel-${panel}`
-      );
-      if (targetPanel) targetPanel.classList.add("active");
-      // Lazy-load panel content when first shown
-      if (panel === "git")       loadGitPanel();
-      if (panel === "knowledge") { loadKnowledgePanel(); loadProfilePanel(); loadRulesPanel(); }
-      if (panel === "roadmap")   loadRoadmapSidebar();
-      if (panel === "plugins")   loadPluginsPanel();
-      if (panel === "models")    loadModelsPanel();
-      // Focus search input when search panel is shown
-      if (panel === "search") setTimeout(() => $("sb-search-input")?.focus(), 50);
-      if (panel === "notes")   loadNotesPanel();
-      if (panel === "aibackends") loadAIBackendsPanel();
-      if (panel === "agents") loadAgentsPanel();
-      if (panel === "ci")     loadCIPanel();
-      if (panel === "docker") loadDockerPanel();
-      if (panel === "deploy") loadDeployPanel();
-      if (panel === "monitor")   loadMonitorPanel();
-      if (panel === "database")  loadDatabasePanel();
-      if (panel === "vault")     loadVaultPanel();
-      if (panel === "webhooks") loadWebhooksPanel();
-      if (panel === "ratelimit") loadRatelimitPanel();
-      if (panel === "events")    loadEventsPanel();
-      if (panel === "cron")      loadCronPanel();
-      if (panel === "audit")     loadAuditPanel();
-      if (panel === "flags")     loadFlagsPanel();
-      if (panel === "cfgprofile") loadCfgProfilePanel();
-      if (panel === "notify")      loadNotifyPanel();
-      if (panel === "taskqueue") loadTaskQueuePanel();
-      if (panel === "brainstorm") loadBrainstormPanel();
-      if (panel === "websearch")  { /* panel is self-contained */ }
-      if (panel === "snippets") loadSnippetsPanel();
-      if (panel === "diffpatch") { /* stateless panel, no load needed */ }
-      if (panel === "aitimeline") loadTimelinePanel();
-      if (panel === "healthdash") loadHealthPanel();
+  // Overflow panel menu
+  const abMoreBtn = $("btn-ab-more");
+  const abOverflow = $("ab-overflow-menu");
+  if (abMoreBtn && abOverflow) {
+    abMoreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      abOverflow.classList.toggle("hidden");
     });
-  });
+    document.addEventListener("click", () => abOverflow.classList.add("hidden"));
+    abOverflow.querySelectorAll(".ab-ov-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        const panel = item.dataset.panel;
+        abOverflow.classList.add("hidden");
+        activatePanel(panel);
+      });
+    });
+  }
 
   // ── Search panel in sidebar ───────────────────────────────────────────────
   async function runSidebarSearch() {
@@ -2212,7 +2350,7 @@
         el.addEventListener("click", () => {
           openFile(el.dataset.path);
           // Switch to explorer panel to show context
-          document.querySelector('.ab-btn[data-panel="explorer"]')?.click();
+          activatePanel("explorer");
         });
       });
     } catch (e) {
