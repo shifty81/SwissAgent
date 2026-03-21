@@ -6065,7 +6065,8 @@
     });
   })();
 
-})();
+  // ── Phase 41: Diff & Patch Tool panel ───────────────────────────────────
+  (function () {
     function _dpSetMode(mode) {
       $("dp-diff-mode")?.classList.toggle("hidden", mode !== "diff");
       $("dp-patch-mode")?.classList.toggle("hidden", mode !== "patch");
