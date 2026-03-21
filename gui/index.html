@@ -86,6 +86,8 @@
           <button class="ab-btn" data-panel="quality"   title="Code Quality">🔬</button>
           <button class="ab-btn" data-panel="templates" title="Templates &amp; Toolchain">🧩</button>
           <button class="ab-btn" data-panel="utilities" title="Utilities">⚙️</button>
+          <button class="ab-btn" data-panel="snippets"  title="Code Snippets">📎</button>
+          <button class="ab-btn" data-panel="diffpatch"  title="Diff &amp; Patch">🔀</button>
         </div>
       </div>
 
@@ -864,9 +866,74 @@
         </div>
       </div>
 
-    </aside>
+      <!-- ── Panel: Code Snippet Library (Phase 40) ────────────────── -->
+      <div class="sb-panel" id="panel-snippets">
+        <div class="sb-panel-header">
+          <span>📎 Snippets</span>
+          <div style="display:flex;gap:4px">
+            <button id="btn-snip-new" title="New snippet">+</button>
+            <button id="btn-snip-refresh" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="snippets-panel-body">
+          <div style="display:flex;gap:4px;margin-bottom:6px">
+            <input id="snip-search" type="text" placeholder="Search snippets…"
+              style="flex:1;font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px" />
+            <button id="btn-snip-search" style="padding:5px 8px">🔍</button>
+          </div>
+          <div id="snip-form" class="hidden" style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px;padding:8px;background:var(--surface);border-radius:5px;border:1px solid var(--border)">
+            <input id="snip-name" type="text" placeholder="Name *"
+              style="font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px" />
+            <input id="snip-lang" type="text" placeholder="Language (e.g. python)"
+              style="font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px" />
+            <input id="snip-tags" type="text" placeholder="Tags (comma-separated)"
+              style="font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px" />
+            <input id="snip-desc" type="text" placeholder="Description"
+              style="font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px" />
+            <textarea id="snip-code" rows="6" placeholder="Code *"
+              style="font-size:11px;font-family:var(--font-mono);resize:vertical;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px"></textarea>
+            <div style="display:flex;gap:4px">
+              <button id="btn-snip-save" style="flex:1">💾 Save</button>
+              <button id="btn-snip-cancel" style="flex:1">✕ Cancel</button>
+            </div>
+          </div>
+          <div id="snip-list" style="display:flex;flex-direction:column;gap:5px"></div>
+        </div>
+      </div>
 
-    <!-- Editor + output column -->
+      <!-- ── Panel: Diff & Patch Tool (Phase 41) ───────────────────── -->
+      <div class="sb-panel" id="panel-diffpatch">
+        <div class="sb-panel-header">
+          <span>🔀 Diff &amp; Patch</span>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto">
+          <div style="display:flex;gap:4px;margin-bottom:8px">
+            <button id="btn-dp-mode-diff" class="dp-mode-btn active" style="flex:1;font-size:11px;padding:4px">Diff</button>
+            <button id="btn-dp-mode-patch" class="dp-mode-btn" style="flex:1;font-size:11px;padding:4px">Patch</button>
+          </div>
+          <div id="dp-diff-mode">
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">Original text:</div>
+            <textarea id="dp-orig" rows="5" placeholder="Paste original text…"
+              style="width:100%;resize:vertical;font-size:11px;font-family:var(--font-mono);background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px;margin-bottom:6px"></textarea>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">Modified text:</div>
+            <textarea id="dp-modified" rows="5" placeholder="Paste modified text…"
+              style="width:100%;resize:vertical;font-size:11px;font-family:var(--font-mono);background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px;margin-bottom:6px"></textarea>
+            <button id="btn-dp-diff" style="width:100%;margin-bottom:6px">Compute Diff</button>
+          </div>
+          <div id="dp-patch-mode" class="hidden">
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">Original text:</div>
+            <textarea id="dp-patch-orig" rows="5" placeholder="Paste original text…"
+              style="width:100%;resize:vertical;font-size:11px;font-family:var(--font-mono);background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px;margin-bottom:6px"></textarea>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">Patch (unified diff):</div>
+            <textarea id="dp-patch-text" rows="5" placeholder="Paste unified diff patch…"
+              style="width:100%;resize:vertical;font-size:11px;font-family:var(--font-mono);background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px;margin-bottom:6px"></textarea>
+            <button id="btn-dp-patch" style="width:100%;margin-bottom:6px">Apply Patch</button>
+          </div>
+          <div id="dp-output" style="font-size:11px;margin-top:4px"></div>
+        </div>
+      </div>
+
+    </aside>
     <div id="main-col">
       <!-- Editor tabs -->
       <div id="tabs-bar">

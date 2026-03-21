@@ -2586,3 +2586,124 @@ def test_web_search_max_results_capped(client):
     assert r.status_code == 422
     r2 = client.get("/search/web?q=test&max_results=21")
     assert r2.status_code == 422
+
+
+# ── Phase 40: Code Snippet Library ───────────────────────────────────────────
+
+def test_snippet_create(client):
+    r = client.post("/snippet", json={"name": "Hello World", "code": "print('hello')", "language": "python"})
+    assert r.status_code == 200
+    assert "id" in r.json()
+
+def test_snippet_create_no_name(client):
+    r = client.post("/snippet", json={"name": "", "code": "print('x')"})
+    assert r.status_code == 400
+
+def test_snippet_create_no_code(client):
+    r = client.post("/snippet", json={"name": "Test", "code": ""})
+    assert r.status_code == 400
+
+def test_snippet_list(client):
+    client.post("/snippet", json={"name": "Snip List Test", "code": "x=1", "language": "python"})
+    r = client.get("/snippets")
+    assert r.status_code == 200
+    d = r.json()
+    assert "snippets" in d
+    assert any(s["name"] == "Snip List Test" for s in d["snippets"])
+
+def test_snippet_list_filter_language(client):
+    client.post("/snippet", json={"name": "JS Test", "code": "console.log(1)", "language": "javascript"})
+    r = client.get("/snippets?language=javascript")
+    assert r.status_code == 200
+    d = r.json()
+    assert all(s["language"] == "javascript" for s in d["snippets"])
+
+def test_snippet_get(client):
+    r1 = client.post("/snippet", json={"name": "Get Test", "code": "y=2"})
+    sid = r1.json()["id"]
+    r = client.get(f"/snippet/{sid}")
+    assert r.status_code == 200
+    assert r.json()["name"] == "Get Test"
+
+def test_snippet_get_not_found(client):
+    r = client.get("/snippet/999999")
+    assert r.status_code == 404
+
+def test_snippet_update(client):
+    r1 = client.post("/snippet", json={"name": "Update Test", "code": "z=3"})
+    sid = r1.json()["id"]
+    r = client.put(f"/snippet/{sid}", json={"name": "Updated Name"})
+    assert r.status_code == 200
+    assert r.json()["name"] == "Updated Name"
+
+def test_snippet_update_not_found(client):
+    r = client.put("/snippet/999999", json={"name": "X"})
+    assert r.status_code == 404
+
+def test_snippet_delete(client):
+    r1 = client.post("/snippet", json={"name": "Delete Test", "code": "d=4"})
+    sid = r1.json()["id"]
+    r = client.delete(f"/snippet/{sid}")
+    assert r.status_code == 200
+    assert r.json()["deleted"] == sid
+    r2 = client.get(f"/snippet/{sid}")
+    assert r2.status_code == 404
+
+def test_snippet_search(client):
+    client.post("/snippet", json={"name": "Search Needle", "code": "needle=42", "tags": ["searchable"]})
+    r = client.get("/snippets/search?q=needle")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["total"] >= 1
+    assert any("needle" in s["name"].lower() or "needle" in s["code"].lower() for s in d["snippets"])
+
+def test_snippet_search_missing_q(client):
+    r = client.get("/snippets/search")
+    assert r.status_code == 422
+
+
+# ── Phase 41: Diff & Patch Tool ──────────────────────────────────────────────
+
+def test_diff_text_basic(client):
+    r = client.post("/diff", json={"original": "line1\nline2\n", "modified": "line1\nline2b\n"})
+    assert r.status_code == 200
+    d = r.json()
+    assert "patch" in d
+    assert d["has_diff"] is True
+    assert d["changed_lines"] >= 1
+
+def test_diff_text_identical(client):
+    r = client.post("/diff", json={"original": "same\n", "modified": "same\n"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["has_diff"] is False
+    assert d["changed_lines"] == 0
+
+def test_diff_text_empty_inputs(client):
+    r = client.post("/diff", json={"original": "", "modified": "new line\n"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["has_diff"] is True
+
+def test_patch_text_basic(client):
+    original = "line1\nline2\nline3\n"
+    modified = "line1\nline2b\nline3\n"
+    r1 = client.post("/diff", json={"original": original, "modified": modified})
+    patch = r1.json()["patch"]
+    r2 = client.post("/patch", json={"original": original, "patch": patch})
+    assert r2.status_code == 200
+    d = r2.json()
+    assert d["success"] is True
+    assert "line2b" in d["result"]
+
+def test_patch_text_empty_patch(client):
+    r = client.post("/patch", json={"original": "text", "patch": ""})
+    assert r.status_code == 400
+
+def test_diff_files_not_found(client):
+    r = client.post("/diff/files", json={"path_a": "nonexistent_a.txt", "path_b": "nonexistent_b.txt"})
+    assert r.status_code in (400, 404)
+
+def test_patch_file_not_found(client):
+    r = client.post("/patch/file", json={"path": "nonexistent_file.txt", "patch": "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n"})
+    assert r.status_code == 404

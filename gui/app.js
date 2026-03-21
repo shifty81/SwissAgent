@@ -2161,6 +2161,8 @@
       if (panel === "taskqueue") loadTaskQueuePanel();
       if (panel === "brainstorm") loadBrainstormPanel();
       if (panel === "websearch")  { /* panel is self-contained */ }
+      if (panel === "snippets") loadSnippetsPanel();
+      if (panel === "diffpatch") { /* stateless panel, no load needed */ }
     });
   });
 
@@ -5574,6 +5576,198 @@
   $("ws-query-input")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") _runWebSearch();
   });
+
+  // ── Phase 40: Code Snippet Library panel ─────────────────────────────────
+  let _snipEditId = null;
+
+  async function loadSnippetsPanel() {
+    const list = $("snip-list");
+    if (!list) return;
+    list.innerHTML = `<div style="color:var(--text-dim);font-size:11px">Loading…</div>`;
+    try {
+      const res  = await fetch("/snippets");
+      const data = await res.json();
+      _renderSnipList(data.snippets || []);
+    } catch (e) {
+      list.innerHTML = `<div style="color:var(--danger);font-size:11px">Error: ${escHtmlSimple(e.message)}</div>`;
+    }
+  }
+
+  function _renderSnipList(snippets) {
+    const list = $("snip-list");
+    if (!list) return;
+    if (!snippets.length) {
+      list.innerHTML = `<div style="color:var(--text-dim);font-size:11px;padding:4px">No snippets yet. Click + to add one.</div>`;
+      return;
+    }
+    list.innerHTML = snippets.map(s => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:8px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <span style="font-size:12px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtmlSimple(s.name)}</span>
+          ${s.language ? `<span style="font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:1px 5px;color:var(--accent)">${escHtmlSimple(s.language)}</span>` : ""}
+        </div>
+        ${s.description ? `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">${escHtmlSimple(s.description)}</div>` : ""}
+        ${s.tags.length ? `<div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">${s.tags.map(t => `<span style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:1px 4px;margin-right:2px">${escHtmlSimple(t)}</span>`).join("")}</div>` : ""}
+        <pre style="font-size:10px;font-family:var(--font-mono);background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:5px;margin:0 0 6px;overflow-x:auto;max-height:80px;white-space:pre-wrap">${escHtmlSimple(s.code.slice(0, 300))}${s.code.length > 300 ? "…" : ""}</pre>
+        <div style="display:flex;gap:4px">
+          <button onclick="_snipCopy(${s.id})" style="font-size:11px;padding:3px 7px">📋 Copy</button>
+          <button onclick="_snipEdit(${s.id})" style="font-size:11px;padding:3px 7px">✏ Edit</button>
+          <button onclick="_snipDelete(${s.id})" style="font-size:11px;padding:3px 7px;color:var(--danger)">🗑 Delete</button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  window._snipCopy = async function(id) {
+    try {
+      const res = await fetch(`/snippet/${id}`);
+      const s = await res.json();
+      await navigator.clipboard.writeText(s.code);
+      _showToast?.("Snippet copied!");
+    } catch (e) { alert("Copy failed: " + e.message); }
+  };
+
+  window._snipEdit = async function(id) {
+    try {
+      const res = await fetch(`/snippet/${id}`);
+      const s = await res.json();
+      _snipEditId = id;
+      $("snip-name").value = s.name;
+      $("snip-lang").value = s.language;
+      $("snip-tags").value = s.tags.join(", ");
+      $("snip-desc").value = s.description;
+      $("snip-code").value = s.code;
+      $("snip-form").classList.remove("hidden");
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  window._snipDelete = async function(id) {
+    if (!confirm("Delete this snippet?")) return;
+    try {
+      await fetch(`/snippet/${id}`, { method: "DELETE" });
+      loadSnippetsPanel();
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  $("btn-snip-new")?.addEventListener("click", () => {
+    _snipEditId = null;
+    ["snip-name","snip-lang","snip-tags","snip-desc","snip-code"].forEach(id => { const el = $(id); if (el) el.value = ""; });
+    $("snip-form")?.classList.remove("hidden");
+  });
+
+  $("btn-snip-cancel")?.addEventListener("click", () => {
+    _snipEditId = null;
+    $("snip-form")?.classList.add("hidden");
+  });
+
+  $("btn-snip-save")?.addEventListener("click", async () => {
+    const name = $("snip-name")?.value.trim();
+    const code = $("snip-code")?.value.trim();
+    if (!name || !code) { alert("Name and code are required."); return; }
+    const body = {
+      name,
+      language: $("snip-lang")?.value.trim() || "",
+      code: $("snip-code")?.value,
+      tags: ($("snip-tags")?.value || "").split(",").map(t => t.trim()).filter(Boolean),
+      description: $("snip-desc")?.value.trim() || "",
+    };
+    try {
+      let res;
+      if (_snipEditId) {
+        res = await fetch(`/snippet/${_snipEditId}`, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
+      } else {
+        res = await fetch("/snippet", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
+      }
+      if (!res.ok) { const d = await res.json(); alert(d.detail || "Error"); return; }
+      _snipEditId = null;
+      $("snip-form")?.classList.add("hidden");
+      loadSnippetsPanel();
+    } catch (e) { alert("Error: " + e.message); }
+  });
+
+  $("btn-snip-refresh")?.addEventListener("click", loadSnippetsPanel);
+
+  $("btn-snip-search")?.addEventListener("click", async () => {
+    const q = $("snip-search")?.value.trim();
+    const list = $("snip-list");
+    if (!list) return;
+    if (!q) { loadSnippetsPanel(); return; }
+    try {
+      const res  = await fetch(`/snippets/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      _renderSnipList(data.snippets || []);
+    } catch (e) {
+      list.innerHTML = `<div style="color:var(--danger);font-size:11px">Error: ${escHtmlSimple(e.message)}</div>`;
+    }
+  });
+
+  $("snip-search")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("btn-snip-search")?.click();
+  });
+
+  // ── Phase 41: Diff & Patch panel ─────────────────────────────────────────
+  (function () {
+    function _dpSetMode(mode) {
+      $("dp-diff-mode")?.classList.toggle("hidden", mode !== "diff");
+      $("dp-patch-mode")?.classList.toggle("hidden", mode !== "patch");
+      document.querySelectorAll(".dp-mode-btn").forEach(b => b.classList.remove("active"));
+      $(mode === "diff" ? "btn-dp-mode-diff" : "btn-dp-mode-patch")?.classList.add("active");
+    }
+    $("btn-dp-mode-diff")?.addEventListener("click", () => _dpSetMode("diff"));
+    $("btn-dp-mode-patch")?.addEventListener("click", () => _dpSetMode("patch"));
+
+    $("btn-dp-diff")?.addEventListener("click", async () => {
+      const orig     = $("dp-orig")?.value ?? "";
+      const modified = $("dp-modified")?.value ?? "";
+      const out      = $("dp-output");
+      if (!out) return;
+      out.innerHTML = `<div style="color:var(--text-dim)">Computing…</div>`;
+      try {
+        const res  = await fetch("/diff", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ original: orig, modified }),
+        });
+        const data = await res.json();
+        if (!data.has_diff) {
+          out.innerHTML = `<div style="color:var(--text-dim)">Files are identical.</div>`;
+          return;
+        }
+        out.innerHTML = `
+          <div style="margin-bottom:4px;font-size:11px;color:var(--text-dim)">${data.changed_lines} changed line(s)</div>
+          <pre style="font-size:10px;font-family:var(--font-mono);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px;overflow-x:auto;white-space:pre;max-height:300px">${escHtmlSimple(data.patch)}</pre>
+          <button onclick="navigator.clipboard.writeText(${JSON.stringify(data.patch).replace(/</g,'\\u003c')}).then(()=>_showToast?.('Patch copied!'))" style="font-size:11px;padding:3px 8px;margin-top:4px">📋 Copy Patch</button>
+        `;
+      } catch (e) {
+        out.innerHTML = `<div style="color:var(--danger)">Error: ${escHtmlSimple(e.message)}</div>`;
+      }
+    });
+
+    $("btn-dp-patch")?.addEventListener("click", async () => {
+      const orig  = $("dp-patch-orig")?.value ?? "";
+      const patch = $("dp-patch-text")?.value ?? "";
+      const out   = $("dp-output");
+      if (!out) return;
+      if (!patch.trim()) { out.innerHTML = `<div style="color:var(--danger)">Patch text is empty.</div>`; return; }
+      out.innerHTML = `<div style="color:var(--text-dim)">Applying…</div>`;
+      try {
+        const res  = await fetch("/patch", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ original: orig, patch }),
+        });
+        const data = await res.json();
+        if (!res.ok) { out.innerHTML = `<div style="color:var(--danger)">${escHtmlSimple(data.detail || "Error")}</div>`; return; }
+        out.innerHTML = `
+          <div style="margin-bottom:4px;font-size:11px;color:var(--success,#4caf50)">✔ Patch applied successfully</div>
+          <textarea rows="8" readonly style="width:100%;font-size:11px;font-family:var(--font-mono);background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px;resize:vertical">${escHtmlSimple(data.result)}</textarea>
+          <button onclick="navigator.clipboard.writeText(${JSON.stringify(data.result).replace(/</g,'\\u003c')}).then(()=>_showToast?.('Result copied!'))" style="font-size:11px;padding:3px 8px;margin-top:4px">📋 Copy Result</button>
+        `;
+      } catch (e) {
+        out.innerHTML = `<div style="color:var(--danger)">Error: ${escHtmlSimple(e.message)}</div>`;
+      }
+    });
+  })();
 
 })();
 
