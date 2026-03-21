@@ -3338,3 +3338,283 @@ def test_project_health_ai_timeline_stats(client):
     assert tl["accepted"] == 1
     assert tl["rejected"] == 1
     assert tl["acceptance_rate_pct"] == 50.0
+
+# ── Phase 48: Code Documentation Generator ────────────────────────────────────
+
+def test_docgen_generate_python(client):
+    r = client.post("/docgen/generate", json={
+        "code": "def add(a, b):\n    return a + b",
+        "language": "python",
+        "style": "docstring",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert "id" in d
+    assert d["language"] == "python"
+    assert "documentation" in d
+    assert len(d["documentation"]) > 0
+
+def test_docgen_generate_javascript(client):
+    r = client.post("/docgen/generate", json={
+        "code": "function greet(name) { return `Hello, ${name}`; }",
+        "language": "javascript",
+        "style": "jsdoc",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["language"] == "javascript"
+
+def test_docgen_generate_readme_style(client):
+    r = client.post("/docgen/generate", json={
+        "code": "class Foo:\n    pass",
+        "language": "python",
+        "style": "readme",
+        "context": "A simple placeholder class",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert "readme" in d["documentation"].lower() or "documentation" in d["documentation"].lower() or len(d["documentation"]) > 0
+
+def test_docgen_generate_auto_detect_language(client):
+    r = client.post("/docgen/generate", json={
+        "code": "def hello():\n    print('hi')",
+        "language": "",
+        "style": "docstring",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["language"] == "python"
+
+def test_docgen_generate_missing_code(client):
+    r = client.post("/docgen/generate", json={"code": "", "style": "docstring"})
+    assert r.status_code == 400
+
+def test_docgen_generate_invalid_style(client):
+    r = client.post("/docgen/generate", json={"code": "x = 1", "style": "invalid_style"})
+    assert r.status_code == 400
+
+def test_docgen_history_empty_initially(client):
+    client.delete("/docgen/history")
+    r = client.get("/docgen/history")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["entries"] == []
+    assert d["total"] == 0
+
+def test_docgen_history_populated(client):
+    client.delete("/docgen/history")
+    client.post("/docgen/generate", json={"code": "x = 1", "language": "python", "style": "docstring"})
+    client.post("/docgen/generate", json={"code": "y = 2", "language": "python", "style": "inline"})
+    r = client.get("/docgen/history")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["total"] == 2
+    assert len(d["entries"]) == 2
+
+def test_docgen_history_filter_language(client):
+    client.delete("/docgen/history")
+    client.post("/docgen/generate", json={"code": "x=1", "language": "python", "style": "docstring"})
+    client.post("/docgen/generate", json={"code": "function f(){}", "language": "javascript", "style": "jsdoc"})
+    r = client.get("/docgen/history?language=python")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["total"] == 1
+    assert d["entries"][0]["language"] == "python"
+
+def test_docgen_history_get_single(client):
+    client.delete("/docgen/history")
+    r1 = client.post("/docgen/generate", json={"code": "def f(): pass", "language": "python", "style": "docstring"})
+    entry_id = r1.json()["id"]
+    r = client.get(f"/docgen/history/{entry_id}")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["id"] == entry_id
+    assert d["language"] == "python"
+
+def test_docgen_history_get_not_found(client):
+    r = client.get("/docgen/history/999999")
+    assert r.status_code == 404
+
+def test_docgen_history_clear(client):
+    client.post("/docgen/generate", json={"code": "x = 1", "language": "python", "style": "docstring"})
+    r = client.delete("/docgen/history")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["cleared"] >= 0
+    r2 = client.get("/docgen/history")
+    assert r2.json()["total"] == 0
+
+def test_docgen_generate_java(client):
+    r = client.post("/docgen/generate", json={
+        "code": "public class Foo { public void bar() {} }",
+        "language": "java",
+        "style": "javadoc",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["language"] == "java"
+
+def test_docgen_generate_with_context(client):
+    r = client.post("/docgen/generate", json={
+        "code": "def multiply(a, b): return a * b",
+        "language": "python",
+        "style": "docstring",
+        "context": "Multiplies two numbers together",
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert "Multiplies" in d["documentation"] or len(d["documentation"]) > 0
+
+def test_docgen_inline_style(client):
+    r = client.post("/docgen/generate", json={
+        "code": "result = x * y",
+        "language": "unknown",
+        "style": "inline",
+    })
+    assert r.status_code == 200
+    assert r.json()["success"] is True
+
+# ── Phase 49: Dependency Analyzer ─────────────────────────────────────────────
+
+def test_deps_analyze_empty_workspace(client):
+    r = client.post("/deps/analyze", json={"project_path": ""})
+    assert r.status_code in (200, 404)
+    if r.status_code == 200:
+        d = r.json()
+        assert d["success"] is True
+        assert "id" in d
+        assert "report" in d
+        assert "manifests" in d["report"]
+        assert "total_dependencies" in d["report"]
+
+def test_deps_analyze_nonexistent_path(client):
+    r = client.post("/deps/analyze", json={"project_path": "nonexistent_project_xyz"})
+    assert r.status_code == 404
+
+def test_deps_reports_empty(client):
+    # Clear by analyzing something that returns fast, or just check list
+    r = client.get("/deps/reports")
+    assert r.status_code == 200
+    d = r.json()
+    assert "reports" in d
+    assert "total" in d
+    assert isinstance(d["reports"], list)
+
+def test_deps_analyze_creates_report(client, tmp_path):
+    """Analyze a temp project with a requirements.txt and verify report is created."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_deps_proj_49")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        req_file = os.path.join(ws, "requirements.txt")
+        with open(req_file, "w") as f:
+            f.write("requests==2.31.0\nfastapi>=0.100.0\nnumpy\n")
+        r = client.post("/deps/analyze", json={"project_path": "test_deps_proj_49"})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["success"] is True
+        report = d["report"]
+        assert report["total_dependencies"] >= 3
+        assert report["manifest_count"] >= 1
+        manifest_files = [m["file"] for m in report["manifests"]]
+        assert "requirements.txt" in manifest_files
+        # Check dependencies parsed
+        req_manifest = next(m for m in report["manifests"] if m["file"] == "requirements.txt")
+        dep_names = [dep["name"] for dep in req_manifest["dependencies"]]
+        assert "requests" in dep_names
+        assert "fastapi" in dep_names
+        assert "numpy" in dep_names
+        # Check version parsed correctly
+        req_dep = next(d for d in req_manifest["dependencies"] if d["name"] == "requests")
+        assert req_dep["version"] == "2.31.0"
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+def test_deps_analyze_package_json(client):
+    """Analyze a temp project with a package.json."""
+    import os, json as _json
+    ws = os.path.join(os.getcwd(), "workspace", "test_deps_proj_49b")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        pkg = {"name": "test", "dependencies": {"express": "^4.18.0", "lodash": "^4.17.0"}, "devDependencies": {"jest": "^29.0.0"}}
+        with open(os.path.join(ws, "package.json"), "w") as f:
+            _json.dump(pkg, f)
+        r = client.post("/deps/analyze", json={"project_path": "test_deps_proj_49b"})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["success"] is True
+        report = d["report"]
+        npm_manifest = next((m for m in report["manifests"] if m["file"] == "package.json"), None)
+        assert npm_manifest is not None
+        assert npm_manifest["ecosystem"] == "npm"
+        dep_names = [dep["name"] for dep in npm_manifest["dependencies"]]
+        assert "express" in dep_names
+        assert "lodash" in dep_names
+        assert "jest" in dep_names
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+def test_deps_report_get_single(client):
+    """Analyze a project and retrieve the report by ID."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_deps_proj_49c")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        with open(os.path.join(ws, "requirements.txt"), "w") as f:
+            f.write("click==8.1.0\n")
+        r = client.post("/deps/analyze", json={"project_path": "test_deps_proj_49c"})
+        assert r.status_code == 200
+        report_id = r.json()["id"]
+        r2 = client.get(f"/deps/report/{report_id}")
+        assert r2.status_code == 200
+        assert r2.json()["id"] == report_id
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+def test_deps_report_get_not_found(client):
+    r = client.get("/deps/report/999999")
+    assert r.status_code == 404
+
+def test_deps_report_delete(client):
+    """Analyze then delete the report."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_deps_proj_49d")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        with open(os.path.join(ws, "requirements.txt"), "w") as f:
+            f.write("colorama==0.4.6\n")
+        r = client.post("/deps/analyze", json={"project_path": "test_deps_proj_49d"})
+        assert r.status_code == 200
+        report_id = r.json()["id"]
+        r2 = client.delete(f"/deps/report/{report_id}")
+        assert r2.status_code == 200
+        assert r2.json()["success"] is True
+        r3 = client.get(f"/deps/report/{report_id}")
+        assert r3.status_code == 404
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+def test_deps_report_delete_not_found(client):
+    r = client.delete("/deps/report/999999")
+    assert r.status_code == 404
+
+def test_deps_reports_list_pagination(client):
+    r = client.get("/deps/reports?limit=5")
+    assert r.status_code == 200
+    d = r.json()
+    assert "reports" in d
+    assert len(d["reports"]) <= 5
+
+def test_deps_path_traversal_blocked(client):
+    """Attempts to traverse outside workspace are neutralized."""
+    r = client.post("/deps/analyze", json={"project_path": "../etc"})
+    # Should return 404 (path doesn't exist) not expose system files
+    assert r.status_code == 404

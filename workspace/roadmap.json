@@ -2277,6 +2277,90 @@
           "description": "Switch between dark and light color themes"
         }
       ]
+    },
+    {
+      "id": "m48",
+      "title": "Phase 48 \u2014 Code Documentation Generator",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t48-1",
+          "title": "POST /docgen/generate \u2014 generate docs for a code block",
+          "status": "done",
+          "priority": "high",
+          "description": "Accept code + language + style (docstring/jsdoc/javadoc/inline/readme) and return generated documentation"
+        },
+        {
+          "id": "t48-2",
+          "title": "GET /docgen/history \u2014 list past generations",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return newest-first list of doc generation history entries"
+        },
+        {
+          "id": "t48-3",
+          "title": "GET /docgen/history/{id} \u2014 single entry",
+          "status": "done",
+          "priority": "medium",
+          "description": "Retrieve a specific docgen history entry by ID"
+        },
+        {
+          "id": "t48-4",
+          "title": "DELETE /docgen/history \u2014 clear all history",
+          "status": "done",
+          "priority": "low",
+          "description": "Remove all documentation generation history"
+        },
+        {
+          "id": "t48-5",
+          "title": "Doc Generator panel UI",
+          "status": "done",
+          "priority": "high",
+          "description": "Sidebar panel with language picker, style picker, context input, code textarea, Generate button and result display"
+        }
+      ]
+    },
+    {
+      "id": "m49",
+      "title": "Phase 49 \u2014 Dependency Analyzer",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t49-1",
+          "title": "POST /deps/analyze \u2014 scan project for dependencies",
+          "status": "done",
+          "priority": "high",
+          "description": "Detect requirements.txt, pyproject.toml, package.json, Cargo.toml, go.mod and return parsed dependency list"
+        },
+        {
+          "id": "t49-2",
+          "title": "GET /deps/reports \u2014 list analysis reports",
+          "status": "done",
+          "priority": "medium",
+          "description": "Return newest-first list of dependency analysis reports"
+        },
+        {
+          "id": "t49-3",
+          "title": "GET /deps/report/{id} \u2014 single report",
+          "status": "done",
+          "priority": "medium",
+          "description": "Retrieve a specific dependency analysis report by ID"
+        },
+        {
+          "id": "t49-4",
+          "title": "DELETE /deps/report/{id} \u2014 delete a report",
+          "status": "done",
+          "priority": "low",
+          "description": "Remove a specific dependency analysis report"
+        },
+        {
+          "id": "t49-5",
+          "title": "Dependency Analyzer panel UI",
+          "status": "done",
+          "priority": "high",
+          "description": "Sidebar panel with project path input, Analyze button, manifest/dependency result display and past reports view"
+        }
+      ]
     }
   ]
 }
