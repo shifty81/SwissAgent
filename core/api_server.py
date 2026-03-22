@@ -962,6 +962,53 @@ class ChangelogGenerateRequest(BaseModel):
     version: str = ""           # optional version tag (e.g. "v1.2.0")
     title: str = ""             # optional human-readable release title
 
+# ── Phase 62: Regex Playground request models ─────────────────────────────────
+
+class RegexTestRequest(BaseModel):
+    pattern: str
+    text: str
+    flags: list[str] = []       # "i" (ignorecase), "m" (multiline), "s" (dotall)
+
+class RegexReplaceRequest(BaseModel):
+    pattern: str
+    text: str
+    replacement: str
+    flags: list[str] = []
+    count: int = 0              # 0 = replace all
+
+class RegexSplitRequest(BaseModel):
+    pattern: str
+    text: str
+    flags: list[str] = []
+    maxsplit: int = 0
+
+class RegexSaveRequest(BaseModel):
+    pattern: str
+    description: str = ""
+    flags: list[str] = []
+
+# ── Phase 63: Color Palette Manager request models ────────────────────────────
+
+class ColorSpec(BaseModel):
+    hex: str = ""               # e.g. "#FF5733"
+    name: str = ""              # optional human name
+
+class PaletteCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    colors: list[ColorSpec] = []
+
+class PaletteUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+class PaletteAddColorRequest(BaseModel):
+    hex: str
+    name: str = ""
+
+class ColorConvertRequest(BaseModel):
+    hex: str                    # source color as #RRGGBB or #RGB
+
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
 # needs enough to understand what follows the cursor.
@@ -8899,6 +8946,252 @@ indent_style = tab
                 return {"success": True, "deleted": cl_id}
         raise HTTPException(status_code=404, detail=f"Changelog {cl_id!r} not found")
 
+    # ── Phase 62: Regex Playground ───────────────────────────────────────────
+
+    def _build_re_flags(flags: list[str]) -> int:
+        """Convert a list of flag strings into a combined re flags int."""
+        import re as _re
+        result = 0
+        for f in flags:
+            fl = f.strip().lower()
+            if fl in ("i", "ignorecase"):
+                result |= _re.IGNORECASE
+            elif fl in ("m", "multiline"):
+                result |= _re.MULTILINE
+            elif fl in ("s", "dotall"):
+                result |= _re.DOTALL
+            elif fl in ("x", "verbose"):
+                result |= _re.VERBOSE
+        return result
+
+    @app.post("/regex/test")
+    async def regex_test(req: RegexTestRequest) -> dict[str, Any]:
+        """Test a regex pattern against text; returns all matches with groups and spans."""
+        import re as _re
+        try:
+            compiled = _re.compile(req.pattern, _build_re_flags(req.flags))
+        except _re.error as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid regex: {exc}")
+        matches = []
+        for m in compiled.finditer(req.text):
+            matches.append({
+                "match": m.group(0),
+                "start": m.start(),
+                "end": m.end(),
+                "groups": list(m.groups()),
+                "named_groups": m.groupdict(),
+            })
+        return {
+            "pattern": req.pattern,
+            "flags": req.flags,
+            "match_count": len(matches),
+            "matches": matches,
+        }
+
+    @app.post("/regex/replace")
+    async def regex_replace(req: RegexReplaceRequest) -> dict[str, Any]:
+        """Replace regex matches in text."""
+        import re as _re
+        try:
+            compiled = _re.compile(req.pattern, _build_re_flags(req.flags))
+        except _re.error as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid regex: {exc}")
+        result = compiled.sub(req.replacement, req.text, count=req.count)
+        return {"original": req.text, "result": result, "pattern": req.pattern}
+
+    @app.post("/regex/split")
+    async def regex_split(req: RegexSplitRequest) -> dict[str, Any]:
+        """Split text using a regex pattern."""
+        import re as _re
+        try:
+            compiled = _re.compile(req.pattern, _build_re_flags(req.flags))
+        except _re.error as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid regex: {exc}")
+        parts = compiled.split(req.text, maxsplit=req.maxsplit)
+        return {"parts": parts, "count": len(parts), "pattern": req.pattern}
+
+    @app.post("/regex/history")
+    async def regex_save(req: RegexSaveRequest) -> dict[str, Any]:
+        """Save a regex pattern to history."""
+        global _regex_history_id_counter
+        if len(_regex_history) >= _MAX_REGEX_HISTORY:
+            _regex_history.pop(0)
+        _regex_history_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": f"rx-{_regex_history_id_counter}",
+            "pattern": req.pattern,
+            "description": req.description,
+            "flags": req.flags,
+            "saved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _regex_history.append(entry)
+        return {"success": True, "entry": entry}
+
+    @app.get("/regex/history")
+    async def regex_history_list(
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List saved regex history (newest first)."""
+        return {"history": list(reversed(_regex_history))[:limit], "total": len(_regex_history)}
+
+    @app.delete("/regex/history/{rx_id}")
+    async def regex_history_delete(rx_id: str) -> dict[str, Any]:
+        """Delete a saved regex history entry."""
+        for i, entry in enumerate(_regex_history):
+            if entry["id"] == rx_id:
+                _regex_history.pop(i)
+                return {"success": True, "deleted": rx_id}
+        raise HTTPException(status_code=404, detail=f"Regex history entry {rx_id!r} not found")
+
+    # ── Phase 63: Color Palette Manager ──────────────────────────────────────
+
+    def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+        """Parse a hex color string (#RGB or #RRGGBB) to (r, g, b) integers."""
+        h = hex_color.lstrip("#")
+        if len(h) == 3:
+            h = h[0]*2 + h[1]*2 + h[2]*2
+        if len(h) != 6:
+            raise ValueError(f"Invalid hex color: {hex_color!r}")
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+    def _rgb_to_hsl(r: int, g: int, b: int) -> tuple[float, float, float]:
+        """Convert RGB (0-255) to HSL (h: 0-360, s: 0-100, l: 0-100)."""
+        r_f, g_f, b_f = r / 255.0, g / 255.0, b / 255.0
+        cmax = max(r_f, g_f, b_f)
+        cmin = min(r_f, g_f, b_f)
+        delta = cmax - cmin
+        l = (cmax + cmin) / 2.0
+        if delta == 0:
+            h = s = 0.0
+        else:
+            s = delta / (1 - abs(2 * l - 1))
+            if cmax == r_f:
+                h = 60.0 * (((g_f - b_f) / delta) % 6)
+            elif cmax == g_f:
+                h = 60.0 * (((b_f - r_f) / delta) + 2)
+            else:
+                h = 60.0 * (((r_f - g_f) / delta) + 4)
+        return round(h, 2), round(s * 100, 2), round(l * 100, 2)
+
+    def _normalize_hex(hex_color: str) -> str:
+        """Normalise to uppercase 7-char #RRGGBB."""
+        r, g, b = _hex_to_rgb(hex_color)
+        return f"#{r:02X}{g:02X}{b:02X}"
+
+    @app.post("/palette")
+    async def palette_create(req: PaletteCreateRequest) -> dict[str, Any]:
+        """Create a new color palette."""
+        global _palette_id_counter
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name must not be empty")
+        if len(_palettes) >= _MAX_PALETTES:
+            raise HTTPException(status_code=429, detail="Palette store full.")
+        _palette_id_counter += 1
+        palette_id = f"pal-{_palette_id_counter}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        colors = []
+        for c in req.colors:
+            try:
+                hex_norm = _normalize_hex(c.hex)
+            except (ValueError, Exception):
+                raise HTTPException(status_code=400, detail=f"Invalid hex color: {c.hex!r}")
+            colors.append({"hex": hex_norm, "name": c.name})
+        palette: dict[str, Any] = {
+            "id": palette_id,
+            "name": name,
+            "description": req.description,
+            "colors": colors,
+            "created_at": now,
+            "updated_at": now,
+        }
+        _palettes[palette_id] = palette
+        return {"success": True, "id": palette_id, "palette": palette}
+
+    @app.get("/palettes")
+    async def palettes_list(
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List all palettes."""
+        return {"palettes": list(_palettes.values())[:limit], "total": len(_palettes)}
+
+    @app.get("/palette/{palette_id}")
+    async def palette_get(palette_id: str) -> dict[str, Any]:
+        """Get a palette by ID."""
+        if palette_id not in _palettes:
+            raise HTTPException(status_code=404, detail=f"Palette {palette_id!r} not found")
+        return _palettes[palette_id]
+
+    @app.patch("/palette/{palette_id}")
+    async def palette_update(palette_id: str, req: PaletteUpdateRequest) -> dict[str, Any]:
+        """Partially update a palette's name or description."""
+        if palette_id not in _palettes:
+            raise HTTPException(status_code=404, detail=f"Palette {palette_id!r} not found")
+        pal = _palettes[palette_id]
+        if req.name is not None:
+            name = req.name.strip()
+            if not name:
+                raise HTTPException(status_code=400, detail="name must not be empty")
+            pal["name"] = name
+        if req.description is not None:
+            pal["description"] = req.description
+        pal["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "palette": pal}
+
+    @app.delete("/palette/{palette_id}")
+    async def palette_delete(palette_id: str) -> dict[str, Any]:
+        """Delete a palette."""
+        if palette_id not in _palettes:
+            raise HTTPException(status_code=404, detail=f"Palette {palette_id!r} not found")
+        _palettes.pop(palette_id)
+        return {"success": True, "deleted": palette_id}
+
+    @app.post("/palette/{palette_id}/color")
+    async def palette_add_color(palette_id: str, req: PaletteAddColorRequest) -> dict[str, Any]:
+        """Add a color to an existing palette."""
+        if palette_id not in _palettes:
+            raise HTTPException(status_code=404, detail=f"Palette {palette_id!r} not found")
+        try:
+            hex_norm = _normalize_hex(req.hex)
+        except (ValueError, Exception):
+            raise HTTPException(status_code=400, detail=f"Invalid hex color: {req.hex!r}")
+        color_entry = {"hex": hex_norm, "name": req.name}
+        _palettes[palette_id]["colors"].append(color_entry)
+        _palettes[palette_id]["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "palette": _palettes[palette_id]}
+
+    @app.delete("/palette/{palette_id}/color/{color_idx}")
+    async def palette_remove_color(palette_id: str, color_idx: int) -> dict[str, Any]:
+        """Remove a color from a palette by its index."""
+        if palette_id not in _palettes:
+            raise HTTPException(status_code=404, detail=f"Palette {palette_id!r} not found")
+        colors = _palettes[palette_id]["colors"]
+        if color_idx < 0 or color_idx >= len(colors):
+            raise HTTPException(status_code=400, detail=f"Color index {color_idx} out of range (0-{len(colors)-1})")
+        colors.pop(color_idx)
+        _palettes[palette_id]["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "palette": _palettes[palette_id]}
+
+    @app.post("/color/convert")
+    async def color_convert(req: ColorConvertRequest) -> dict[str, Any]:
+        """Convert a hex color to hex (normalised), RGB, and HSL."""
+        try:
+            r, g, b = _hex_to_rgb(req.hex)
+        except (ValueError, Exception):
+            raise HTTPException(status_code=400, detail=f"Invalid hex color: {req.hex!r}")
+        h, s, l = _rgb_to_hsl(r, g, b)
+        hex_norm = f"#{r:02X}{g:02X}{b:02X}"
+        return {
+            "hex": hex_norm,
+            "rgb": {"r": r, "g": g, "b": b},
+            "hsl": {"h": h, "s": s, "l": l},
+            "css": {
+                "hex": hex_norm,
+                "rgb": f"rgb({r}, {g}, {b})",
+                "hsl": f"hsl({h}, {s}%, {l}%)",
+            },
+        }
+
     return app
 
 
@@ -9144,5 +9437,15 @@ _MAX_TEMPLATES = 1_000
 _changelog_history: list[dict[str, Any]] = []
 _changelog_id_counter: int = 0
 _MAX_CHANGELOG_HISTORY = 200
+
+# ── Phase 62: Regex Playground ────────────────────────────────────────────────
+_regex_history: list[dict[str, Any]] = []
+_regex_history_id_counter: int = 0
+_MAX_REGEX_HISTORY = 500
+
+# ── Phase 63: Color Palette Manager ───────────────────────────────────────────
+_palettes: dict[str, Any] = {}
+_palette_id_counter: int = 0
+_MAX_PALETTES = 500
 
 # ── End of module-level state ─────────────────────────────────────────────────

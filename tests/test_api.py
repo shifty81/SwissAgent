@@ -5287,3 +5287,240 @@ def test_changelog_markdown_contains_entries(client):
     assert "markdown check" in cl["markdown"]
     assert "another fix" in cl["markdown"]
     client.delete(f"/changelog/history/{cl['id']}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 62: Regex Playground
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_regex_test_basic(client):
+    r = client.post("/regex/test", json={"pattern": r"\d+", "text": "foo 123 bar 456"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["match_count"] == 2
+    assert d["matches"][0]["match"] == "123"
+    assert d["matches"][1]["match"] == "456"
+
+
+def test_regex_test_named_groups(client):
+    r = client.post("/regex/test", json={
+        "pattern": r"(?P<year>\d{4})-(?P<month>\d{2})",
+        "text": "Date: 2024-03",
+    })
+    assert r.status_code == 200
+    m = r.json()["matches"][0]
+    assert m["named_groups"]["year"] == "2024"
+    assert m["named_groups"]["month"] == "03"
+
+
+def test_regex_test_no_match(client):
+    r = client.post("/regex/test", json={"pattern": r"xyz999", "text": "hello world"})
+    assert r.status_code == 200
+    assert r.json()["match_count"] == 0
+
+
+def test_regex_test_invalid_pattern(client):
+    r = client.post("/regex/test", json={"pattern": r"[invalid", "text": "text"})
+    assert r.status_code == 400
+
+
+def test_regex_test_flags_ignorecase(client):
+    r = client.post("/regex/test", json={"pattern": "hello", "text": "Hello HELLO", "flags": ["i"]})
+    assert r.status_code == 200
+    assert r.json()["match_count"] == 2
+
+
+def test_regex_replace_basic(client):
+    r = client.post("/regex/replace", json={"pattern": r"\d+", "text": "foo 123 bar 456", "replacement": "NUM"})
+    assert r.status_code == 200
+    assert r.json()["result"] == "foo NUM bar NUM"
+
+
+def test_regex_replace_count(client):
+    r = client.post("/regex/replace", json={"pattern": r"\d+", "text": "1 2 3", "replacement": "N", "count": 1})
+    assert r.status_code == 200
+    assert r.json()["result"] == "N 2 3"
+
+
+def test_regex_replace_invalid_pattern(client):
+    r = client.post("/regex/replace", json={"pattern": r"[bad", "text": "x", "replacement": "y"})
+    assert r.status_code == 400
+
+
+def test_regex_split_basic(client):
+    r = client.post("/regex/split", json={"pattern": r"\s+", "text": "foo   bar  baz"})
+    assert r.status_code == 200
+    assert r.json()["parts"] == ["foo", "bar", "baz"]
+
+
+def test_regex_split_maxsplit(client):
+    r = client.post("/regex/split", json={"pattern": r"\s+", "text": "a b c d", "maxsplit": 2})
+    assert r.status_code == 200
+    assert r.json()["parts"] == ["a", "b", "c d"]
+
+
+def test_regex_split_invalid_pattern(client):
+    r = client.post("/regex/split", json={"pattern": r"[bad", "text": "x"})
+    assert r.status_code == 400
+
+
+def test_regex_history_save_and_list(client):
+    r = client.post("/regex/history", json={"pattern": r"\d+", "description": "match digits"})
+    assert r.status_code == 200
+    entry_id = r.json()["entry"]["id"]
+    assert entry_id.startswith("rx-")
+    rl = client.get("/regex/history")
+    assert rl.status_code == 200
+    assert entry_id in [e["id"] for e in rl.json()["history"]]
+    client.delete(f"/regex/history/{entry_id}")
+
+
+def test_regex_history_delete(client):
+    r = client.post("/regex/history", json={"pattern": r"[a-z]+"})
+    entry_id = r.json()["entry"]["id"]
+    rd = client.delete(f"/regex/history/{entry_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    rl = client.get("/regex/history")
+    assert entry_id not in [e["id"] for e in rl.json()["history"]]
+
+
+def test_regex_history_delete_not_found(client):
+    assert client.delete("/regex/history/rx-9999999").status_code == 404
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 63: Color Palette Manager
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_palette_create_and_list(client):
+    r = client.post("/palette", json={"name": "Sunset63", "colors": [{"hex": "#FF5733", "name": "Orange"}]})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    pid = d["id"]
+    assert pid.startswith("pal-")
+    rl = client.get("/palettes")
+    assert pid in [p["id"] for p in rl.json()["palettes"]]
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_empty_name_rejected(client):
+    r = client.post("/palette", json={"name": "  "})
+    assert r.status_code == 400
+
+
+def test_palette_invalid_hex_rejected(client):
+    r = client.post("/palette", json={"name": "bad63", "colors": [{"hex": "notahex"}]})
+    assert r.status_code == 400
+
+
+def test_palette_get(client):
+    r = client.post("/palette", json={"name": "getme63"})
+    pid = r.json()["id"]
+    rg = client.get(f"/palette/{pid}")
+    assert rg.status_code == 200
+    assert rg.json()["name"] == "getme63"
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_get_not_found(client):
+    assert client.get("/palette/pal-9999999").status_code == 404
+
+
+def test_palette_update(client):
+    r = client.post("/palette", json={"name": "upd63"})
+    pid = r.json()["id"]
+    ru = client.patch(f"/palette/{pid}", json={"name": "updated63", "description": "new desc"})
+    assert ru.status_code == 200
+    pal = ru.json()["palette"]
+    assert pal["name"] == "updated63"
+    assert pal["description"] == "new desc"
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_update_not_found(client):
+    assert client.patch("/palette/pal-9999999", json={"name": "x"}).status_code == 404
+
+
+def test_palette_delete(client):
+    r = client.post("/palette", json={"name": "del63"})
+    pid = r.json()["id"]
+    rd = client.delete(f"/palette/{pid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/palette/{pid}").status_code == 404
+
+
+def test_palette_delete_not_found(client):
+    assert client.delete("/palette/pal-9999999").status_code == 404
+
+
+def test_palette_add_color(client):
+    r = client.post("/palette", json={"name": "addcolor63"})
+    pid = r.json()["id"]
+    ra = client.post(f"/palette/{pid}/color", json={"hex": "#336699", "name": "Blue"})
+    assert ra.status_code == 200
+    assert len(ra.json()["palette"]["colors"]) == 1
+    assert ra.json()["palette"]["colors"][0]["hex"] == "#336699"
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_add_color_invalid_hex(client):
+    r = client.post("/palette", json={"name": "badhex63"})
+    pid = r.json()["id"]
+    ra = client.post(f"/palette/{pid}/color", json={"hex": "zzz"})
+    assert ra.status_code == 400
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_add_color_not_found(client):
+    assert client.post("/palette/pal-9999999/color", json={"hex": "#FFFFFF"}).status_code == 404
+
+
+def test_palette_remove_color(client):
+    r = client.post("/palette", json={"name": "rmcolor63", "colors": [{"hex": "#111111"}, {"hex": "#222222"}]})
+    pid = r.json()["id"]
+    rd = client.delete(f"/palette/{pid}/color/0")
+    assert rd.status_code == 200
+    assert len(rd.json()["palette"]["colors"]) == 1
+    assert rd.json()["palette"]["colors"][0]["hex"] == "#222222"
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_remove_color_out_of_range(client):
+    r = client.post("/palette", json={"name": "oob63", "colors": [{"hex": "#AABBCC"}]})
+    pid = r.json()["id"]
+    rd = client.delete(f"/palette/{pid}/color/5")
+    assert rd.status_code == 400
+    client.delete(f"/palette/{pid}")
+
+
+def test_color_convert_basic(client):
+    r = client.post("/color/convert", json={"hex": "#FF5733"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["hex"] == "#FF5733"
+    assert d["rgb"]["r"] == 255
+    assert d["rgb"]["g"] == 87
+    assert d["rgb"]["b"] == 51
+    assert "hsl" in d
+    assert "css" in d
+
+
+def test_color_convert_shorthand_hex(client):
+    r = client.post("/color/convert", json={"hex": "#F00"})
+    assert r.status_code == 200
+    assert r.json()["hex"] == "#FF0000"
+    assert r.json()["rgb"] == {"r": 255, "g": 0, "b": 0}
+
+
+def test_color_convert_invalid_hex(client):
+    r = client.post("/color/convert", json={"hex": "notacolor"})
+    assert r.status_code == 400
+
+
+def test_color_convert_lowercase_hex(client):
+    r = client.post("/color/convert", json={"hex": "#ff5733"})
+    assert r.status_code == 200
+    assert r.json()["hex"] == "#FF5733"

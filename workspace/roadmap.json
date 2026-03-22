@@ -433,6 +433,20 @@
           "status": "done",
           "priority": "medium",
           "description": "Parse Conventional Commits messages, group by type, generate Markdown changelog; CRUD history"
+        },
+        {
+          "id": "t14-3",
+          "title": "Regex Playground",
+          "status": "done",
+          "priority": "medium",
+          "description": "Test/replace/split regex patterns against text; save history"
+        },
+        {
+          "id": "t14-4",
+          "title": "Color Palette Manager",
+          "status": "done",
+          "priority": "medium",
+          "description": "CRUD color palettes; add/remove colors; hex/rgb/hsl conversion"
         }
       ]
     }

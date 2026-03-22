@@ -421,6 +421,8 @@ SwissAgent is developed against a living roadmap stored in `workspace/roadmap.js
 | **59** | **Schema Registry** | ✅ **Done** |
 | **60** | **Code Template Engine** | ✅ **Done** |
 | **61** | **Changelog Generator** | ✅ **Done** |
+| **62** | **Regex Playground** | ✅ **Done** |
+| **63** | **Color Palette Manager** | ✅ **Done** |
 
 ---
 
