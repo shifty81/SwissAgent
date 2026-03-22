@@ -411,6 +411,8 @@ SwissAgent is developed against a living roadmap stored in `workspace/roadmap.js
 | 42–49 | AI Personas, Env Manager, API Client, Suggestions, Health, DocGen, Deps | ✅ Done |
 | **50** | **Code Metrics & Complexity Analyzer** | ✅ **Done** |
 | **51** | **Git Statistics Dashboard** | ✅ **Done** |
+| **52** | **Test Runner & Coverage Dashboard** | ✅ **Done** |
+| **53** | **Terminal Manager** | ✅ **Done** |
 
 ---
 

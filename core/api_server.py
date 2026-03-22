@@ -839,6 +839,24 @@ class DepsAnalyzeRequest(BaseModel):
 class MetricsAnalyzeRequest(BaseModel):
     project_path: str = ""    # sub-path under workspace/ (empty = workspace root)
 
+# ── Phase 52: Test Runner & Coverage Dashboard request models ─────────────────
+
+class TestRunnerRunRequest(BaseModel):
+    project_path: str = ""      # sub-path under workspace/ (empty = workspace root)
+    framework: str = "pytest"   # "pytest", "jest", "npm test", "cargo test", "go test"
+    extra_args: list[str] = []  # additional CLI args forwarded to the test runner
+    timeout: int = 120          # max seconds to wait for the test process
+
+# ── Phase 53: Terminal Manager request models ─────────────────────────────────
+
+class TerminalCreateRequest(BaseModel):
+    name: str = ""           # human-readable label
+    cwd: str = ""            # starting directory (sub-path under workspace/)
+
+class TerminalExecRequest(BaseModel):
+    command: str             # shell command to execute
+    timeout: int = 30        # max seconds
+
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
 # needs enough to understand what follows the cursor.
@@ -7562,6 +7580,290 @@ indent_style = tab
             "files": [{"file": f, "commits": c} for f, c in sorted_files[:limit]]
         }
 
+    # ── Phase 52: Test Runner & Coverage Dashboard ───────────────────────────
+
+    _TESTRUNNER_FRAMEWORKS: dict[str, list[str]] = {
+        "pytest":    ["python", "-m", "pytest", "--tb=short", "-q"],
+        "jest":      ["npx", "jest", "--no-coverage"],
+        "npm":       ["npm", "test", "--"],
+        "cargo":     ["cargo", "test"],
+        "go":        ["go", "test", "./..."],
+    }
+
+    _TESTRUNNER_TIMEOUT_MAX = 300  # hard cap in seconds
+
+    @app.post("/testrunner/run")
+    async def testrunner_run(req: TestRunnerRunRequest) -> dict[str, Any]:
+        """Run a test suite for a project under workspace/ and persist the report."""
+        import subprocess as _sp
+        global _testrunner_id_counter
+
+        project_path = (req.project_path or "").strip().lstrip("/")
+        if not project_path:
+            project_path = "."
+
+        target = _safe_path(base_dir / "workspace", project_path)
+        if not target.exists():
+            raise HTTPException(status_code=404, detail=f"Path not found: {project_path}")
+        if not target.is_dir():
+            raise HTTPException(status_code=400, detail="project_path must be a directory")
+
+        framework = req.framework.strip().lower() or "pytest"
+        base_cmd = _TESTRUNNER_FRAMEWORKS.get(framework)
+        if base_cmd is None:
+            raise HTTPException(status_code=400, detail=f"Unknown framework: {framework!r}. Supported: {list(_TESTRUNNER_FRAMEWORKS)}")
+
+        timeout = max(1, min(req.timeout or 120, _TESTRUNNER_TIMEOUT_MAX))
+
+        # Validate extra_args: allow only safe args (no shell meta-chars)
+        import re as _re
+        safe_arg_re = _re.compile(r'^[\w\-\./:=,@+*?^$\[\](){}]+$')
+        extra_args: list[str] = []
+        for a in (req.extra_args or []):
+            if not safe_arg_re.match(a):
+                raise HTTPException(status_code=400, detail=f"Unsafe extra arg: {a!r}")
+            extra_args.append(a)
+
+        cmd = base_cmd + extra_args
+        started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        try:
+            proc = _sp.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=str(target),
+            )
+            exit_code = proc.returncode
+            stdout = proc.stdout[-_MAX_TERMINAL_OUTPUT:] if proc.stdout else ""
+            stderr = proc.stderr[-_MAX_TERMINAL_OUTPUT:] if proc.stderr else ""
+            timed_out = False
+        except _sp.TimeoutExpired as exc:
+            exit_code = -1
+            stdout = (exc.stdout or b"").decode(errors="replace")[-_MAX_TERMINAL_OUTPUT:]
+            stderr = (exc.stderr or b"").decode(errors="replace")[-_MAX_TERMINAL_OUTPUT:]
+            timed_out = True
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Test runner not found: {cmd[0]!r}. Is it installed?",
+            )
+
+        finished_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # Parse simple pytest-style summary line
+        passed = failed = errors = skipped = 0
+        for line in (stdout + stderr).splitlines():
+            m = _re.search(r'(\d+) passed', line)
+            if m:
+                passed = int(m.group(1))
+            m2 = _re.search(r'(\d+) failed', line)
+            if m2:
+                failed = int(m2.group(1))
+            m3 = _re.search(r'(\d+) error', line)
+            if m3:
+                errors = int(m3.group(1))
+            m4 = _re.search(r'(\d+) skipped', line)
+            if m4:
+                skipped = int(m4.group(1))
+
+        status = "passed" if exit_code == 0 else ("timeout" if timed_out else "failed")
+
+        _testrunner_id_counter += 1
+        report = {
+            "id": _testrunner_id_counter,
+            "project_path": req.project_path or "/",
+            "framework": framework,
+            "extra_args": extra_args,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "status": status,
+            "summary": {
+                "passed": passed,
+                "failed": failed,
+                "errors": errors,
+                "skipped": skipped,
+            },
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+        _testrunner_reports.append(report)
+        if len(_testrunner_reports) > _MAX_TESTRUNNER_REPORTS:
+            _testrunner_reports[:] = _testrunner_reports[-_MAX_TESTRUNNER_REPORTS:]
+        return {"success": True, "id": report["id"], "report": report}
+
+    @app.get("/testrunner/reports")
+    async def testrunner_reports_list(
+        limit: int = Query(20, ge=1, le=50),
+    ) -> dict[str, Any]:
+        """List all test run reports, newest-first."""
+        reports = list(reversed(_testrunner_reports))
+        return {"reports": reports[:limit], "total": len(_testrunner_reports)}
+
+    @app.get("/testrunner/report/{report_id}")
+    async def testrunner_report_get(report_id: int) -> dict[str, Any]:
+        """Get a single test run report by ID."""
+        for r in _testrunner_reports:
+            if r["id"] == report_id:
+                return r
+        raise HTTPException(status_code=404, detail=f"Test report {report_id} not found")
+
+    @app.delete("/testrunner/report/{report_id}")
+    async def testrunner_report_delete(report_id: int) -> dict[str, Any]:
+        """Delete a test run report by ID."""
+        for i, r in enumerate(_testrunner_reports):
+            if r["id"] == report_id:
+                _testrunner_reports.pop(i)
+                return {"success": True, "deleted": report_id}
+        raise HTTPException(status_code=404, detail=f"Test report {report_id} not found")
+
+    # ── Phase 53: Terminal Manager ────────────────────────────────────────────
+
+    _TERMINAL_TIMEOUT_MAX = 60   # hard cap per exec call
+    _TERMINAL_SESSION_MAX = 20   # max concurrent sessions
+
+    @app.post("/terminal/session")
+    async def terminal_create(req: TerminalCreateRequest) -> dict[str, Any]:
+        """Create a new named terminal session."""
+        global _terminal_id_counter
+
+        if len(_terminal_sessions) >= _TERMINAL_SESSION_MAX:
+            raise HTTPException(status_code=429, detail="Too many terminal sessions. Close one first.")
+
+        cwd_rel = (req.cwd or "").strip().lstrip("/")
+        if cwd_rel:
+            resolved_cwd = _safe_path(base_dir / "workspace", cwd_rel)
+            if not resolved_cwd.is_dir():
+                raise HTTPException(status_code=404, detail=f"cwd not found: {cwd_rel}")
+            cwd_str = str(resolved_cwd)
+        else:
+            cwd_str = str(base_dir / "workspace")
+
+        _terminal_id_counter += 1
+        session_id = f"term-{_terminal_id_counter}"
+        _terminal_sessions[session_id] = {
+            "id": session_id,
+            "name": req.name or session_id,
+            "cwd": cwd_str,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "history": [],   # list of {command, stdout, stderr, exit_code, ts}
+        }
+        return {
+            "success": True,
+            "session_id": session_id,
+            "session": _terminal_sessions[session_id],
+        }
+
+    @app.get("/terminal/sessions")
+    async def terminal_sessions_list() -> dict[str, Any]:
+        """List all open terminal sessions."""
+        sessions = [
+            {k: v for k, v in s.items() if k != "history"}
+            for s in _terminal_sessions.values()
+        ]
+        return {"sessions": sessions, "total": len(sessions)}
+
+    @app.get("/terminal/session/{session_id}")
+    async def terminal_session_get(session_id: str) -> dict[str, Any]:
+        """Get full session info including command history."""
+        if session_id not in _terminal_sessions:
+            raise HTTPException(status_code=404, detail=f"Session {session_id!r} not found")
+        return _terminal_sessions[session_id]
+
+    @app.post("/terminal/session/{session_id}/exec")
+    async def terminal_exec(session_id: str, req: TerminalExecRequest) -> dict[str, Any]:
+        """Execute a shell command inside a terminal session."""
+        import subprocess as _sp
+
+        if session_id not in _terminal_sessions:
+            raise HTTPException(status_code=404, detail=f"Session {session_id!r} not found")
+
+        session = _terminal_sessions[session_id]
+        timeout = max(1, min(req.timeout or 30, _TERMINAL_TIMEOUT_MAX))
+        command = req.command.strip()
+        if not command:
+            raise HTTPException(status_code=400, detail="command must not be empty")
+
+        # Handle built-in cd: update the session's cwd
+        import re as _re
+        cd_m = _re.fullmatch(r'cd\s+(.*)', command)
+        if cd_m:
+            new_dir = cd_m.group(1).strip().strip('"').strip("'")
+            if new_dir in ("~", ""):
+                new_dir = str(base_dir / "workspace")
+            else:
+                candidate = Path(new_dir) if Path(new_dir).is_absolute() else Path(session["cwd"]) / new_dir
+                candidate = candidate.resolve()
+                # Security: must stay within workspace
+                workspace_resolved = (base_dir / "workspace").resolve()
+                if not str(candidate).startswith(str(workspace_resolved)):
+                    raise HTTPException(status_code=403, detail="cd outside workspace is not allowed")
+                new_dir = str(candidate)
+            if not Path(new_dir).is_dir():
+                result_entry = {
+                    "command": command,
+                    "stdout": "",
+                    "stderr": f"cd: {new_dir}: No such file or directory",
+                    "exit_code": 1,
+                    "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                }
+                session["history"].append(result_entry)
+                return {"success": False, **result_entry}
+            session["cwd"] = new_dir
+            result_entry = {
+                "command": command,
+                "stdout": "",
+                "stderr": "",
+                "exit_code": 0,
+                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+            session["history"].append(result_entry)
+            return {"success": True, **result_entry}
+
+        try:
+            proc = _sp.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=session["cwd"],
+            )
+            stdout = proc.stdout[-_MAX_TERMINAL_OUTPUT:] if proc.stdout else ""
+            stderr = proc.stderr[-_MAX_TERMINAL_OUTPUT:] if proc.stderr else ""
+            exit_code = proc.returncode
+            timed_out = False
+        except _sp.TimeoutExpired as exc:
+            stdout = (exc.stdout or b"").decode(errors="replace")[-_MAX_TERMINAL_OUTPUT:]
+            stderr = (exc.stderr or b"").decode(errors="replace")[-_MAX_TERMINAL_OUTPUT:] + "\n[timed out]"
+            exit_code = -1
+            timed_out = True
+
+        result_entry = {
+            "command": command,
+            "stdout": stdout,
+            "stderr": stderr,
+            "exit_code": exit_code,
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        # Keep session history bounded
+        session["history"].append(result_entry)
+        if len(session["history"]) > 200:
+            session["history"] = session["history"][-200:]
+
+        return {"success": exit_code == 0 and not timed_out, **result_entry}
+
+    @app.delete("/terminal/session/{session_id}")
+    async def terminal_session_delete(session_id: str) -> dict[str, Any]:
+        """Close and delete a terminal session."""
+        if session_id not in _terminal_sessions:
+            raise HTTPException(status_code=404, detail=f"Session {session_id!r} not found")
+        _terminal_sessions.pop(session_id)
+        return {"success": True, "deleted": session_id}
+
     return app
 
 
@@ -7756,5 +8058,15 @@ _deps_report_id_counter: int = 0
 _metrics_reports: list[dict[str, Any]] = []
 _MAX_METRICS_REPORTS = 50
 _metrics_id_counter: int = 0
+
+# ── Phase 52: Test Runner & Coverage Dashboard ────────────────────────────────
+_testrunner_reports: list[dict[str, Any]] = []
+_MAX_TESTRUNNER_REPORTS = 50
+_testrunner_id_counter: int = 0
+
+# ── Phase 53: Terminal Manager ─────────────────────────────────────────────────
+_terminal_sessions: dict[str, Any] = {}
+_terminal_id_counter: int = 0
+_MAX_TERMINAL_OUTPUT = 200_000  # chars per session
 
 # ── End of module-level state ─────────────────────────────────────────────────

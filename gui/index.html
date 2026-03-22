@@ -102,6 +102,8 @@
         <button class="ab-ov-item" data-panel="healthdash">💚 Health Dashboard</button>
         <button class="ab-ov-item" data-panel="docgen">📝 Doc Generator</button>
         <button class="ab-ov-item" data-panel="depsanalyzer">📦 Dep Analyzer</button>
+        <button class="ab-ov-item" data-panel="testrunner">🧪 Test Runner</button>
+        <button class="ab-ov-item" data-panel="terminal">🖥 Terminal</button>
       </div>
     </div>
 
@@ -1068,7 +1070,54 @@
         </div>
       </div>
 
-    </aside>
+      <!-- ── Panel: Test Runner & Coverage Dashboard (Phase 52) ────────────── -->
+      <div class="sb-panel" id="panel-testrunner">
+        <div class="sidebar-header">
+          <span>🧪 Test Runner</span>
+          <div class="sidebar-buttons">
+            <button id="btn-testrunner-reports" title="Past reports">🕒</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto" id="testrunner-panel-body">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <input id="testrunner-project-path" type="text" placeholder="Project path (blank = workspace root)"
+              style="font-size:11px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px" />
+            <select id="testrunner-framework" style="font-size:11px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px">
+              <option value="pytest">pytest (Python)</option>
+              <option value="jest">jest (JavaScript)</option>
+              <option value="npm">npm test</option>
+              <option value="cargo">cargo test (Rust)</option>
+              <option value="go">go test (Go)</option>
+            </select>
+            <button id="btn-testrunner-run" style="font-size:12px;padding:5px">▶ Run Tests</button>
+            <div id="testrunner-result" style="font-size:11px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Panel: Terminal Manager (Phase 53) ────────────────────────────── -->
+      <div class="sb-panel" id="panel-terminal">
+        <div class="sidebar-header">
+          <span>🖥 Terminal</span>
+          <div class="sidebar-buttons">
+            <button id="btn-terminal-new" title="New session">＋</button>
+            <button id="btn-terminal-refresh" title="Refresh sessions">↺</button>
+          </div>
+        </div>
+        <div class="sb-panel-body" style="padding:8px;overflow-y:auto;display:flex;flex-direction:column;gap:6px" id="terminal-panel-body">
+          <div id="terminal-sessions-list" style="font-size:11px"></div>
+          <div id="terminal-session-view" class="hidden" style="display:flex;flex-direction:column;gap:4px">
+            <div id="terminal-session-title" style="font-size:11px;font-weight:600;color:var(--text-dim)"></div>
+            <div id="terminal-output" style="font-family:var(--font-mono);font-size:11px;background:var(--bg-3,var(--bg));border:1px solid var(--border);border-radius:4px;padding:6px;max-height:300px;overflow-y:auto;white-space:pre-wrap"></div>
+            <div style="display:flex;gap:4px">
+              <input id="terminal-cmd-input" type="text" placeholder="Enter command…"
+                style="flex:1;font-size:11px;font-family:var(--font-mono);background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px" />
+              <button id="btn-terminal-exec" style="font-size:11px;padding:4px 8px">▶</button>
+            </div>
+            <button id="btn-terminal-close-session" style="font-size:10px;color:var(--danger);padding:2px 6px">✕ Close Session</button>
+          </div>
+        </div>
+      </div>
     <div id="main-col">
       <!-- Editor tabs -->
       <div id="tabs-bar">
