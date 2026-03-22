@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white" alt="FastAPI"/>
   <img src="https://img.shields.io/badge/Monaco-Editor-007acc?logo=visual-studio-code&logoColor=white" alt="Monaco Editor"/>
   <img src="https://img.shields.io/badge/Modules-42%2B-ff6b6b?logo=puzzle&logoColor=white" alt="42+ Modules"/>
-  <img src="https://img.shields.io/badge/Phase-42%20Complete-8957e5?logo=checkmarx&logoColor=white" alt="Phase 42"/>
+  <img src="https://img.shields.io/badge/Phase-51%20Complete-8957e5?logo=checkmarx&logoColor=white" alt="Phase 51"/>
 </p>
 
 <p align="center">
@@ -408,7 +408,9 @@ SwissAgent is developed against a living roadmap stored in `workspace/roadmap.js
 | 26–33 | Event Bus, Cron, Audit Log, Rate Limiting, Feature Flags | ✅ Done |
 | 34–37 | Config Profiles, Notification Center, Task Queue | ✅ Done |
 | 38–41 | Brainstorm Mode, Web Search, Code Snippets, Diff & Patch | ✅ Done |
-| **42** | **AI Hive-Mind Persona System + Context-Aware Chat** | ✅ **Done** |
+| 42–49 | AI Personas, Env Manager, API Client, Suggestions, Health, DocGen, Deps | ✅ Done |
+| **50** | **Code Metrics & Complexity Analyzer** | ✅ **Done** |
+| **51** | **Git Statistics Dashboard** | ✅ **Done** |
 
 ---
 
