@@ -418,8 +418,23 @@
     {
       "id": "m14",
       "title": "Advanced Tooling & Integrations",
-      "status": "planned",
-      "tasks": []
+      "status": "in_progress",
+      "tasks": [
+        {
+          "id": "t14-1",
+          "title": "Code Template Engine",
+          "status": "done",
+          "priority": "high",
+          "description": "CRUD + render for text/code templates with {{variable}} placeholder substitution"
+        },
+        {
+          "id": "t14-2",
+          "title": "Changelog Generator",
+          "status": "done",
+          "priority": "medium",
+          "description": "Parse Conventional Commits messages, group by type, generate Markdown changelog; CRUD history"
+        }
+      ]
     }
   ]
 }

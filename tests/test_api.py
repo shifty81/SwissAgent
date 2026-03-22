@@ -5071,3 +5071,219 @@ def test_schema_filter_by_tag(client):
     names = [s["name"] for s in rl.json()["schemas"]]
     assert "tagged59" in names
     client.delete("/schema/tagged59")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 60: Code Template Engine
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_template_create_and_list(client):
+    r = client.post("/codetpl", json={"name": "hello60", "content": "Hello, {{name}}!", "tags": ["greet60"]})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    tid = d["id"]
+    assert tid.startswith("tmpl-")
+    rl = client.get("/codetpls")
+    assert tid in [t["id"] for t in rl.json()["templates"]]
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_empty_name_rejected(client):
+    r = client.post("/codetpl", json={"name": "  ", "content": "x"})
+    assert r.status_code == 400
+
+
+def test_template_get(client):
+    r = client.post("/codetpl", json={"name": "getme60", "content": "content60"})
+    tid = r.json()["id"]
+    rg = client.get(f"/codetpl/{tid}")
+    assert rg.status_code == 200
+    assert rg.json()["name"] == "getme60"
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_get_not_found(client):
+    assert client.get("/codetpl/tmpl-9999999").status_code == 404
+
+
+def test_template_update(client):
+    r = client.post("/codetpl", json={"name": "upd60", "content": "old"})
+    tid = r.json()["id"]
+    ru = client.patch(f"/codetpl/{tid}", json={"content": "new {{x}}", "tags": ["updated60"]})
+    assert ru.status_code == 200
+    tmpl = ru.json()["template"]
+    assert tmpl["content"] == "new {{x}}"
+    assert "updated60" in tmpl["tags"]
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_update_not_found(client):
+    assert client.patch("/codetpl/tmpl-9999999", json={"name": "x"}).status_code == 404
+
+
+def test_template_delete(client):
+    r = client.post("/codetpl", json={"name": "del60", "content": "bye"})
+    tid = r.json()["id"]
+    rd = client.delete(f"/codetpl/{tid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/codetpl/{tid}").status_code == 404
+
+
+def test_template_delete_not_found(client):
+    assert client.delete("/codetpl/tmpl-9999999").status_code == 404
+
+
+def test_template_render_basic(client):
+    r = client.post("/codetpl", json={"name": "render60", "content": "Hi {{name}}, you are {{age}} years old."})
+    tid = r.json()["id"]
+    rr = client.post(f"/codetpl/{tid}/render", json={"vars": {"name": "Alice", "age": "30"}})
+    assert rr.status_code == 200
+    assert rr.json()["rendered"] == "Hi Alice, you are 30 years old."
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_render_missing_var_kept(client):
+    """Unreplaced placeholders stay as-is when var is not provided."""
+    r = client.post("/codetpl", json={"name": "partial60", "content": "Hello {{name}}, {{missing}}!"})
+    tid = r.json()["id"]
+    rr = client.post(f"/codetpl/{tid}/render", json={"vars": {"name": "Bob"}})
+    assert rr.status_code == 200
+    assert "{{missing}}" in rr.json()["rendered"]
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_render_not_found(client):
+    assert client.post("/codetpl/tmpl-9999999/render", json={"vars": {}}).status_code == 404
+
+
+def test_template_search(client):
+    r = client.post("/codetpl", json={"name": "uniquesearch60tmpl", "content": "content"})
+    tid = r.json()["id"]
+    rs = client.get("/codetpl/search?q=uniquesearch60tmpl")
+    assert rs.status_code == 200
+    assert tid in [t["id"] for t in rs.json()["results"]]
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_search_no_match(client):
+    rs = client.get("/codetpl/search?q=zzznomatch60xyz")
+    assert rs.json()["results"] == []
+
+
+def test_template_filter_by_tag(client):
+    r = client.post("/codetpl", json={"name": "tagged60", "content": "x", "tags": ["special60tag"]})
+    tid = r.json()["id"]
+    rl = client.get("/codetpls?tag=special60tag")
+    assert tid in [t["id"] for t in rl.json()["templates"]]
+    client.delete(f"/codetpl/{tid}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 61: Changelog Generator
+# ─────────────────────────────────────────────────────────────────────────────
+
+_COMMITS_61 = [
+    "feat(auth): add OAuth2 login",
+    "fix: correct null pointer in user service",
+    "docs: update README with new endpoints",
+    "chore: bump dependencies",
+    "BREAKING CHANGE: removed legacy /v1 API",
+    "random commit without conventional prefix",
+]
+
+
+def test_changelog_generate(client):
+    r = client.post("/changelog/generate", json={"commits": _COMMITS_61, "version": "v2.0.0", "title": "Major Release"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    cl = d["changelog"]
+    assert cl["id"].startswith("cl-")
+    assert cl["version"] == "v2.0.0"
+    assert cl["commit_count"] == len(_COMMITS_61)
+    assert "markdown" in cl
+    assert "v2.0.0" in cl["markdown"]
+    # cleanup
+    client.delete(f"/changelog/history/{cl['id']}")
+
+
+def test_changelog_groups_feat(client):
+    r = client.post("/changelog/generate", json={"commits": ["feat: new cool feature"]})
+    cl = r.json()["changelog"]
+    assert "✨ Features" in cl["groups"]
+    assert any("new cool feature" in e for e in cl["groups"]["✨ Features"])
+    client.delete(f"/changelog/history/{cl['id']}")
+
+
+def test_changelog_groups_fix(client):
+    r = client.post("/changelog/generate", json={"commits": ["fix(db): fix broken query"]})
+    cl = r.json()["changelog"]
+    assert "🐛 Bug Fixes" in cl["groups"]
+    client.delete(f"/changelog/history/{cl['id']}")
+
+
+def test_changelog_breaking_change(client):
+    r = client.post("/changelog/generate", json={"commits": ["feat!: redesign API", "BREAKING CHANGE: old endpoints removed"]})
+    cl = r.json()["changelog"]
+    assert "💥 Breaking Changes" in cl["groups"]
+    client.delete(f"/changelog/history/{cl['id']}")
+
+
+def test_changelog_other_group(client):
+    r = client.post("/changelog/generate", json={"commits": ["just a regular message"]})
+    cl = r.json()["changelog"]
+    assert "📦 Other" in cl["groups"]
+    client.delete(f"/changelog/history/{cl['id']}")
+
+
+def test_changelog_empty_commits_rejected(client):
+    r = client.post("/changelog/generate", json={"commits": []})
+    assert r.status_code == 400
+
+
+def test_changelog_history_list(client):
+    r = client.post("/changelog/generate", json={"commits": ["feat: for history test61"]})
+    cl_id = r.json()["changelog"]["id"]
+    rl = client.get("/changelog/history")
+    assert rl.status_code == 200
+    assert cl_id in [c["id"] for c in rl.json()["changelogs"]]
+    client.delete(f"/changelog/history/{cl_id}")
+
+
+def test_changelog_history_get(client):
+    r = client.post("/changelog/generate", json={"commits": ["fix: get test61"], "version": "v1.0.61"})
+    cl_id = r.json()["changelog"]["id"]
+    rg = client.get(f"/changelog/history/{cl_id}")
+    assert rg.status_code == 200
+    assert rg.json()["version"] == "v1.0.61"
+    client.delete(f"/changelog/history/{cl_id}")
+
+
+def test_changelog_history_get_not_found(client):
+    assert client.get("/changelog/history/cl-9999999").status_code == 404
+
+
+def test_changelog_history_delete(client):
+    r = client.post("/changelog/generate", json={"commits": ["chore: delete test61"]})
+    cl_id = r.json()["changelog"]["id"]
+    rd = client.delete(f"/changelog/history/{cl_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/changelog/history/{cl_id}").status_code == 404
+
+
+def test_changelog_history_delete_not_found(client):
+    assert client.delete("/changelog/history/cl-9999999").status_code == 404
+
+
+def test_changelog_markdown_contains_entries(client):
+    r = client.post("/changelog/generate", json={
+        "commits": ["feat: markdown check", "fix: another fix"],
+        "version": "v3.0.0",
+    })
+    cl = r.json()["changelog"]
+    assert "markdown check" in cl["markdown"]
+    assert "another fix" in cl["markdown"]
+    client.delete(f"/changelog/history/{cl['id']}")

@@ -936,6 +936,32 @@ class SchemaUpsertRequest(BaseModel):
 class SchemaValidateRequest(BaseModel):
     data: Any                 # arbitrary JSON to validate against the schema
 
+# ── Phase 60: Code Template Engine request models ─────────────────────────────
+
+class TemplateCreateRequest(BaseModel):
+    name: str
+    content: str              # template body with {{variable}} placeholders
+    description: str = ""
+    tags: list[str] = []
+    variables: list[str] = []  # declared variable names (optional, informational)
+
+class TemplateUpdateRequest(BaseModel):
+    name: str | None = None
+    content: str | None = None
+    description: str | None = None
+    tags: list[str] | None = None
+    variables: list[str] | None = None
+
+class TemplateRenderRequest(BaseModel):
+    vars: dict[str, str] = {}  # variable name → substitution value
+
+# ── Phase 61: Changelog Generator request models ──────────────────────────────
+
+class ChangelogGenerateRequest(BaseModel):
+    commits: list[str]          # raw commit message lines
+    version: str = ""           # optional version tag (e.g. "v1.2.0")
+    title: str = ""             # optional human-readable release title
+
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
 # needs enough to understand what follows the cursor.
@@ -8635,6 +8661,244 @@ indent_style = tab
         errors = _jsonschema_validate(schema_obj, req.data)
         return {"valid": len(errors) == 0, "errors": errors, "schema_name": schema_name}
 
+    # ── Phase 60: Code Template Engine ───────────────────────────────────────
+
+    def _render_template(content: str, vars: dict[str, str]) -> str:
+        """Replace {{variable}} placeholders with values from *vars*."""
+        import re
+        def replacer(m: "re.Match[str]") -> str:
+            key = m.group(1).strip()
+            return vars.get(key, m.group(0))  # leave unreplaced if not provided
+        return re.sub(r"\{\{([^}]+)\}\}", replacer, content)
+
+    @app.post("/codetpl")
+    async def template_create(req: TemplateCreateRequest) -> dict[str, Any]:
+        """Create a new code/text template."""
+        global _template_id_counter
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name must not be empty")
+        if len(_templates) >= _MAX_TEMPLATES:
+            raise HTTPException(status_code=429, detail="Template store full.")
+        _template_id_counter += 1
+        tmpl_id = f"tmpl-{_template_id_counter}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        tmpl: dict[str, Any] = {
+            "id": tmpl_id,
+            "name": name,
+            "content": req.content,
+            "description": req.description,
+            "tags": [t.strip().lower() for t in req.tags if t.strip()],
+            "variables": req.variables,
+            "created_at": now,
+            "updated_at": now,
+        }
+        _templates[tmpl_id] = tmpl
+        return {"success": True, "id": tmpl_id, "template": tmpl}
+
+    @app.get("/codetpls")
+    async def templates_list(
+        tag: str = Query("", description="Filter by tag"),
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List templates, optionally filtered by tag."""
+        tmpls = list(_templates.values())
+        if tag:
+            tmpls = [t for t in tmpls if tag.lower() in t["tags"]]
+        return {"templates": tmpls[:limit], "total": len(_templates)}
+
+    @app.get("/codetpl/search")
+    async def templates_search(
+        q: str = Query(..., description="Keyword to search for"),
+        limit: int = Query(20, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """Search templates by keyword across name, description, content, and tags."""
+        q_lower = q.lower()
+        results = [
+            t for t in _templates.values()
+            if q_lower in t["name"].lower()
+            or q_lower in t["description"].lower()
+            or q_lower in t["content"].lower()
+            or any(q_lower in tag for tag in t["tags"])
+        ]
+        return {"results": results[:limit], "total": len(results)}
+
+    @app.get("/codetpl/{tmpl_id}")
+    async def template_get(tmpl_id: str) -> dict[str, Any]:
+        """Get a single template by ID."""
+        if tmpl_id not in _templates:
+            raise HTTPException(status_code=404, detail=f"Template {tmpl_id!r} not found")
+        return _templates[tmpl_id]
+
+    @app.patch("/codetpl/{tmpl_id}")
+    async def template_update(tmpl_id: str, req: TemplateUpdateRequest) -> dict[str, Any]:
+        """Partially update a template."""
+        if tmpl_id not in _templates:
+            raise HTTPException(status_code=404, detail=f"Template {tmpl_id!r} not found")
+        tmpl = _templates[tmpl_id]
+        if req.name is not None:
+            name = req.name.strip()
+            if not name:
+                raise HTTPException(status_code=400, detail="name must not be empty")
+            tmpl["name"] = name
+        if req.content is not None:
+            tmpl["content"] = req.content
+        if req.description is not None:
+            tmpl["description"] = req.description
+        if req.tags is not None:
+            tmpl["tags"] = [t.strip().lower() for t in req.tags if t.strip()]
+        if req.variables is not None:
+            tmpl["variables"] = req.variables
+        tmpl["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "template": tmpl}
+
+    @app.delete("/codetpl/{tmpl_id}")
+    async def template_delete(tmpl_id: str) -> dict[str, Any]:
+        """Delete a template."""
+        if tmpl_id not in _templates:
+            raise HTTPException(status_code=404, detail=f"Template {tmpl_id!r} not found")
+        _templates.pop(tmpl_id)
+        return {"success": True, "deleted": tmpl_id}
+
+    @app.post("/codetpl/{tmpl_id}/render")
+    async def template_render(tmpl_id: str, req: TemplateRenderRequest) -> dict[str, Any]:
+        """Render a template by substituting {{variable}} placeholders."""
+        if tmpl_id not in _templates:
+            raise HTTPException(status_code=404, detail=f"Template {tmpl_id!r} not found")
+        content = _templates[tmpl_id]["content"]
+        rendered = _render_template(content, req.vars)
+        return {"rendered": rendered, "template_id": tmpl_id}
+
+    # ── Phase 61: Changelog Generator ────────────────────────────────────────
+
+    def _parse_conventional_commits(commits: list[str]) -> dict[str, list[str]]:
+        """Parse Conventional Commits lines into groups by type.
+
+        Recognised types: feat, fix, docs, style, refactor, perf, test, build,
+        ci, chore, revert, breaking.  Unknown types land in 'other'.
+        """
+        import re
+        # type map → display heading
+        TYPE_HEADINGS: dict[str, str] = {
+            "feat":      "✨ Features",
+            "fix":       "🐛 Bug Fixes",
+            "docs":      "📝 Documentation",
+            "style":     "💄 Styles",
+            "refactor":  "♻️ Refactoring",
+            "perf":      "⚡ Performance",
+            "test":      "✅ Tests",
+            "build":     "🏗️ Build",
+            "ci":        "🔧 CI",
+            "chore":     "🔨 Chores",
+            "revert":    "⏪ Reverts",
+        }
+        groups: dict[str, list[str]] = {h: [] for h in TYPE_HEADINGS.values()}
+        groups["💥 Breaking Changes"] = []
+        groups["📦 Other"] = []
+
+        cc_re = re.compile(
+            r"^(?P<type>[a-z]+)(?P<scope>\([^)]*\))?(?P<breaking>!)?:\s*(?P<desc>.+)$",
+            re.IGNORECASE,
+        )
+        for raw in commits:
+            line = raw.strip()
+            if not line:
+                continue
+            # Check for BREAKING CHANGE footer tag
+            if "BREAKING CHANGE" in line or "BREAKING-CHANGE" in line:
+                groups["💥 Breaking Changes"].append(line)
+                continue
+            m = cc_re.match(line)
+            if m:
+                typ = m.group("type").lower()
+                desc = m.group("desc")
+                scope = m.group("scope") or ""
+                breaking = m.group("breaking")
+                entry = f"{scope} {desc}".strip() if scope else desc
+                if breaking:
+                    groups["💥 Breaking Changes"].append(entry)
+                else:
+                    heading = TYPE_HEADINGS.get(typ)
+                    if heading:
+                        groups[heading].append(entry)
+                    else:
+                        groups["📦 Other"].append(line)
+            else:
+                groups["📦 Other"].append(line)
+        # Remove empty groups
+        return {k: v for k, v in groups.items() if v}
+
+    def _format_changelog(
+        groups: dict[str, list[str]],
+        version: str,
+        title: str,
+        generated_at: str,
+    ) -> str:
+        """Render grouped commits as a Markdown changelog string."""
+        lines: list[str] = []
+        header = f"## {version}" if version else "## Unreleased"
+        if title:
+            header += f" — {title}"
+        lines.append(header)
+        lines.append(f"*Generated: {generated_at}*")
+        lines.append("")
+        for heading, entries in groups.items():
+            lines.append(f"### {heading}")
+            for entry in entries:
+                lines.append(f"- {entry}")
+            lines.append("")
+        return "\n".join(lines).rstrip()
+
+    @app.post("/changelog/generate")
+    async def changelog_generate(req: ChangelogGenerateRequest) -> dict[str, Any]:
+        """Generate a changelog from a list of commit messages."""
+        global _changelog_id_counter
+        if not req.commits:
+            raise HTTPException(status_code=400, detail="commits list must not be empty")
+        if len(_changelog_history) >= _MAX_CHANGELOG_HISTORY:
+            _changelog_history.pop(0)  # evict oldest to make room
+        _changelog_id_counter += 1
+        cl_id = f"cl-{_changelog_id_counter}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        groups = _parse_conventional_commits(req.commits)
+        markdown = _format_changelog(groups, req.version, req.title, now)
+        record: dict[str, Any] = {
+            "id": cl_id,
+            "version": req.version,
+            "title": req.title,
+            "commit_count": len(req.commits),
+            "groups": groups,
+            "markdown": markdown,
+            "generated_at": now,
+        }
+        _changelog_history.append(record)
+        return {"success": True, "id": cl_id, "changelog": record}
+
+    @app.get("/changelog/history")
+    async def changelog_history_list(
+        limit: int = Query(20, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """List all generated changelogs (newest first)."""
+        items = list(reversed(_changelog_history))
+        return {"changelogs": items[:limit], "total": len(_changelog_history)}
+
+    @app.get("/changelog/history/{cl_id}")
+    async def changelog_history_get(cl_id: str) -> dict[str, Any]:
+        """Get a specific generated changelog by ID."""
+        for record in _changelog_history:
+            if record["id"] == cl_id:
+                return record
+        raise HTTPException(status_code=404, detail=f"Changelog {cl_id!r} not found")
+
+    @app.delete("/changelog/history/{cl_id}")
+    async def changelog_history_delete(cl_id: str) -> dict[str, Any]:
+        """Delete a specific changelog from history."""
+        for i, record in enumerate(_changelog_history):
+            if record["id"] == cl_id:
+                _changelog_history.pop(i)
+                return {"success": True, "deleted": cl_id}
+        raise HTTPException(status_code=404, detail=f"Changelog {cl_id!r} not found")
+
     return app
 
 
@@ -8870,5 +9134,15 @@ _MAX_BOOKMARKS = 2_000
 
 # ── Phase 59: Schema Registry ─────────────────────────────────────────────────
 _schema_registry: dict[str, Any] = {}   # name → schema record
+
+# ── Phase 60: Code Template Engine ────────────────────────────────────────────
+_templates: dict[str, Any] = {}
+_template_id_counter: int = 0
+_MAX_TEMPLATES = 1_000
+
+# ── Phase 61: Changelog Generator ─────────────────────────────────────────────
+_changelog_history: list[dict[str, Any]] = []
+_changelog_id_counter: int = 0
+_MAX_CHANGELOG_HISTORY = 200
 
 # ── End of module-level state ─────────────────────────────────────────────────
