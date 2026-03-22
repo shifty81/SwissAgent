@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20...4.99)
+cmake_minimum_required(VERSION 3.20)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SwissAgent — Native Windows C++ Application

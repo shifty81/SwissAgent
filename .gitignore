@@ -54,7 +54,3 @@ electron/dist/
 workspace/test*.env
 workspace/test_*.env
 /projects/NovaForge
-# Native C++ build output directories (build_all.sh)
-Builds/
-Logs/Build/
-native/build/
