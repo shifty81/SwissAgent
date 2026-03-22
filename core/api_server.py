@@ -1009,6 +1009,31 @@ class PaletteAddColorRequest(BaseModel):
 class ColorConvertRequest(BaseModel):
     hex: str                    # source color as #RRGGBB or #RGB
 
+# ── Phase 64: UUID / Token Generator request models ───────────────────────────
+
+class UUIDGenerateRequest(BaseModel):
+    version: int = 4            # 1 or 4
+    count: int = 1              # how many to generate (1-100)
+    uppercase: bool = False     # return in uppercase
+
+class UUIDValidateRequest(BaseModel):
+    value: str                  # the string to validate
+
+class UUIDSaveRequest(BaseModel):
+    label: str = ""             # optional label for the history entry
+    values: list[str]           # the generated values to store
+
+# ── Phase 65: Text Statistics / Readability Analyzer request models ───────────
+
+class TextStatsAnalyzeRequest(BaseModel):
+    text: str
+    top_n: int = 10             # number of most-frequent words to return
+
+class TextStatsSaveRequest(BaseModel):
+    text: str
+    label: str = ""
+    top_n: int = 10
+
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
 # needs enough to understand what follows the cursor.
@@ -9192,6 +9217,193 @@ indent_style = tab
             },
         }
 
+    # ── Phase 64: UUID / Token Generator ─────────────────────────────────────
+
+    @app.post("/uuid/generate")
+    async def uuid_generate(req: UUIDGenerateRequest) -> dict[str, Any]:
+        """Generate one or more UUIDs (version 1 or 4)."""
+        import uuid as _uuid
+        if req.version not in (1, 4):
+            raise HTTPException(status_code=400, detail="version must be 1 or 4")
+        if not 1 <= req.count <= 100:
+            raise HTTPException(status_code=400, detail="count must be between 1 and 100")
+        results = []
+        for _ in range(req.count):
+            val = str(_uuid.uuid1()) if req.version == 1 else str(_uuid.uuid4())
+            results.append(val.upper() if req.uppercase else val)
+        return {"version": req.version, "count": len(results), "values": results}
+
+    @app.post("/uuid/validate")
+    async def uuid_validate(req: UUIDValidateRequest) -> dict[str, Any]:
+        """Validate a UUID string and return its parsed components."""
+        import uuid as _uuid
+        try:
+            parsed = _uuid.UUID(req.value)
+        except ValueError:
+            return {"valid": False, "value": req.value}
+        return {
+            "valid": True,
+            "value": str(parsed),
+            "version": parsed.version,
+            "variant": str(parsed.variant),
+            "hex": parsed.hex,
+            "int": parsed.int,
+            "urn": parsed.urn,
+        }
+
+    @app.post("/uuid/history")
+    async def uuid_history_save(req: UUIDSaveRequest) -> dict[str, Any]:
+        """Save generated UUIDs to history."""
+        global _uuid_history_id_counter
+        if not req.values:
+            raise HTTPException(status_code=400, detail="values must not be empty")
+        if len(_uuid_history) >= _MAX_UUID_HISTORY:
+            _uuid_history.pop(0)
+        _uuid_history_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": f"uid-{_uuid_history_id_counter}",
+            "label": req.label,
+            "values": req.values,
+            "count": len(req.values),
+            "saved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _uuid_history.append(entry)
+        return {"success": True, "entry": entry}
+
+    @app.get("/uuid/history")
+    async def uuid_history_list(
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List UUID generation history (newest first)."""
+        return {"history": list(reversed(_uuid_history))[:limit], "total": len(_uuid_history)}
+
+    @app.delete("/uuid/history/{uid_id}")
+    async def uuid_history_delete(uid_id: str) -> dict[str, Any]:
+        """Delete a UUID history entry."""
+        for i, entry in enumerate(_uuid_history):
+            if entry["id"] == uid_id:
+                _uuid_history.pop(i)
+                return {"success": True, "deleted": uid_id}
+        raise HTTPException(status_code=404, detail=f"UUID history entry {uid_id!r} not found")
+
+    # ── Phase 65: Text Statistics / Readability Analyzer ─────────────────────
+
+    def _analyze_text(text: str, top_n: int = 10) -> dict[str, Any]:
+        """Compute text statistics and a Flesch Reading Ease score."""
+        import re as _re
+        import math as _math
+
+        char_count = len(text)
+        char_no_spaces = len(text.replace(" ", "").replace("\n", "").replace("\t", ""))
+
+        # Sentence count — split on . ! ? followed by whitespace or end
+        sentences = [s.strip() for s in _re.split(r'[.!?]+', text) if s.strip()]
+        sentence_count = max(len(sentences), 1)
+
+        # Word count
+        words = _re.findall(r"[A-Za-z']+", text)
+        word_count = len(words)
+
+        # Paragraph count (blank-line delimited)
+        paragraphs = [p for p in _re.split(r'\n\s*\n', text) if p.strip()]
+        paragraph_count = max(len(paragraphs), 1)
+
+        # Average word length
+        avg_word_length = round(sum(len(w) for w in words) / max(word_count, 1), 2)
+
+        # Average words per sentence
+        avg_words_per_sentence = round(word_count / sentence_count, 2)
+
+        # Top N most frequent words (lowercased, ignore short stop-words)
+        _STOPWORDS = {"the","a","an","and","or","but","is","in","on","at","to","of","for","it","its","be","as","by"}
+        freq: dict[str, int] = {}
+        for w in words:
+            lw = w.lower()
+            if len(lw) > 2 and lw not in _STOPWORDS:
+                freq[lw] = freq.get(lw, 0) + 1
+        top_words = sorted(freq.items(), key=lambda x: -x[1])[:top_n]
+
+        # Syllable count (simple heuristic)
+        def _syllables(word: str) -> int:
+            word = word.lower()
+            count = len(_re.findall(r'[aeiou]+', word))
+            if word.endswith('e') and len(word) > 2:
+                count -= 1
+            return max(count, 1)
+
+        total_syllables = sum(_syllables(w) for w in words)
+
+        # Flesch Reading Ease = 206.835 - 1.015*(words/sentences) - 84.6*(syllables/words)
+        if word_count > 0:
+            flesch = round(
+                206.835
+                - 1.015 * (word_count / sentence_count)
+                - 84.6 * (total_syllables / max(word_count, 1)),
+                2,
+            )
+        else:
+            flesch = 0.0
+
+        return {
+            "char_count": char_count,
+            "char_count_no_spaces": char_no_spaces,
+            "word_count": word_count,
+            "sentence_count": sentence_count,
+            "paragraph_count": paragraph_count,
+            "avg_word_length": avg_word_length,
+            "avg_words_per_sentence": avg_words_per_sentence,
+            "syllable_count": total_syllables,
+            "flesch_reading_ease": flesch,
+            "top_words": [{"word": w, "count": c} for w, c in top_words],
+        }
+
+    @app.post("/textstats/analyze")
+    async def textstats_analyze(req: TextStatsAnalyzeRequest) -> dict[str, Any]:
+        """Analyze text statistics and readability."""
+        if not req.text.strip():
+            raise HTTPException(status_code=400, detail="text must not be empty")
+        if not 1 <= req.top_n <= 100:
+            raise HTTPException(status_code=400, detail="top_n must be between 1 and 100")
+        return _analyze_text(req.text, req.top_n)
+
+    @app.post("/textstats/history")
+    async def textstats_history_save(req: TextStatsSaveRequest) -> dict[str, Any]:
+        """Analyze text and save the result to history."""
+        global _textstats_history_id_counter
+        if not req.text.strip():
+            raise HTTPException(status_code=400, detail="text must not be empty")
+        if not 1 <= req.top_n <= 100:
+            raise HTTPException(status_code=400, detail="top_n must be between 1 and 100")
+        stats = _analyze_text(req.text, req.top_n)
+        if len(_textstats_history) >= _MAX_TEXTSTATS_HISTORY:
+            _textstats_history.pop(0)
+        _textstats_history_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": f"ts-{_textstats_history_id_counter}",
+            "label": req.label,
+            "text_preview": req.text[:120].replace("\n", " "),
+            "stats": stats,
+            "saved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _textstats_history.append(entry)
+        return {"success": True, "entry": entry}
+
+    @app.get("/textstats/history")
+    async def textstats_history_list(
+        limit: int = Query(50, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """List text stats history (newest first)."""
+        return {"history": list(reversed(_textstats_history))[:limit], "total": len(_textstats_history)}
+
+    @app.delete("/textstats/history/{ts_id}")
+    async def textstats_history_delete(ts_id: str) -> dict[str, Any]:
+        """Delete a text stats history entry."""
+        for i, entry in enumerate(_textstats_history):
+            if entry["id"] == ts_id:
+                _textstats_history.pop(i)
+                return {"success": True, "deleted": ts_id}
+        raise HTTPException(status_code=404, detail=f"Text stats history entry {ts_id!r} not found")
+
     return app
 
 
@@ -9447,5 +9659,15 @@ _MAX_REGEX_HISTORY = 500
 _palettes: dict[str, Any] = {}
 _palette_id_counter: int = 0
 _MAX_PALETTES = 500
+
+# ── Phase 64: UUID / Token Generator ──────────────────────────────────────────
+_uuid_history: list[dict[str, Any]] = []
+_uuid_history_id_counter: int = 0
+_MAX_UUID_HISTORY = 500
+
+# ── Phase 65: Text Statistics / Readability Analyzer ─────────────────────────
+_textstats_history: list[dict[str, Any]] = []
+_textstats_history_id_counter: int = 0
+_MAX_TEXTSTATS_HISTORY = 200
 
 # ── End of module-level state ─────────────────────────────────────────────────

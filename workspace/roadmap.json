@@ -418,7 +418,7 @@
     {
       "id": "m14",
       "title": "Advanced Tooling & Integrations",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t14-1",
@@ -447,6 +447,20 @@
           "status": "done",
           "priority": "medium",
           "description": "CRUD color palettes; add/remove colors; hex/rgb/hsl conversion"
+        },
+        {
+          "id": "t14-5",
+          "title": "UUID / Token Generator",
+          "status": "done",
+          "priority": "medium",
+          "description": "Generate and validate UUIDs v1/v4; maintain generation history"
+        },
+        {
+          "id": "t14-6",
+          "title": "Text Statistics / Readability Analyzer",
+          "status": "done",
+          "priority": "medium",
+          "description": "Word/char/sentence counts, Flesch reading ease, top words, history"
         }
       ]
     }

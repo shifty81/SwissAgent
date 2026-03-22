@@ -5524,3 +5524,175 @@ def test_color_convert_lowercase_hex(client):
     r = client.post("/color/convert", json={"hex": "#ff5733"})
     assert r.status_code == 200
     assert r.json()["hex"] == "#FF5733"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 64: UUID / Token Generator
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_uuid_generate_v4_default(client):
+    r = client.post("/uuid/generate", json={})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["version"] == 4
+    assert d["count"] == 1
+    assert len(d["values"]) == 1
+    import uuid
+    uuid.UUID(d["values"][0])  # must be a valid UUID
+
+
+def test_uuid_generate_v1(client):
+    r = client.post("/uuid/generate", json={"version": 1, "count": 3})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["version"] == 1
+    assert d["count"] == 3
+    assert len(d["values"]) == 3
+
+
+def test_uuid_generate_uppercase(client):
+    r = client.post("/uuid/generate", json={"uppercase": True})
+    assert r.status_code == 200
+    val = r.json()["values"][0]
+    assert val == val.upper()
+
+
+def test_uuid_generate_multiple(client):
+    r = client.post("/uuid/generate", json={"count": 10})
+    assert r.status_code == 200
+    assert len(r.json()["values"]) == 10
+
+
+def test_uuid_generate_invalid_version(client):
+    r = client.post("/uuid/generate", json={"version": 3})
+    assert r.status_code == 400
+
+
+def test_uuid_generate_count_out_of_range(client):
+    assert client.post("/uuid/generate", json={"count": 200}).status_code == 400
+    assert client.post("/uuid/generate", json={"count": 0}).status_code == 400
+
+
+def test_uuid_validate_valid(client):
+    import uuid
+    val = str(uuid.uuid4())
+    r = client.post("/uuid/validate", json={"value": val})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valid"] is True
+    assert d["version"] == 4
+
+
+def test_uuid_validate_invalid(client):
+    r = client.post("/uuid/validate", json={"value": "not-a-uuid"})
+    assert r.status_code == 200
+    assert r.json()["valid"] is False
+
+
+def test_uuid_history_save_and_list(client):
+    import uuid
+    vals = [str(uuid.uuid4()) for _ in range(2)]
+    r = client.post("/uuid/history", json={"values": vals, "label": "test batch"})
+    assert r.status_code == 200
+    entry_id = r.json()["entry"]["id"]
+    assert entry_id.startswith("uid-")
+    rl = client.get("/uuid/history")
+    assert rl.status_code == 200
+    assert entry_id in [e["id"] for e in rl.json()["history"]]
+    client.delete(f"/uuid/history/{entry_id}")
+
+
+def test_uuid_history_delete(client):
+    import uuid
+    r = client.post("/uuid/history", json={"values": [str(uuid.uuid4())]})
+    entry_id = r.json()["entry"]["id"]
+    rd = client.delete(f"/uuid/history/{entry_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    rl = client.get("/uuid/history")
+    assert entry_id not in [e["id"] for e in rl.json()["history"]]
+
+
+def test_uuid_history_delete_not_found(client):
+    assert client.delete("/uuid/history/uid-9999999").status_code == 404
+
+
+def test_uuid_history_empty_values_rejected(client):
+    assert client.post("/uuid/history", json={"values": []}).status_code == 400
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 65: Text Statistics / Readability Analyzer
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SAMPLE_TEXT = (
+    "The quick brown fox jumps over the lazy dog. "
+    "This sentence is here to test word counting and readability analysis. "
+    "Python is a great programming language."
+)
+
+
+def test_textstats_analyze_basic(client):
+    r = client.post("/textstats/analyze", json={"text": _SAMPLE_TEXT})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["word_count"] > 0
+    assert d["sentence_count"] >= 3
+    assert "flesch_reading_ease" in d
+    assert "top_words" in d
+
+
+def test_textstats_analyze_char_count(client):
+    text = "Hello world"
+    r = client.post("/textstats/analyze", json={"text": text})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["char_count"] == len(text)
+    assert d["char_count_no_spaces"] == len("Helloworld")
+
+
+def test_textstats_analyze_top_n(client):
+    r = client.post("/textstats/analyze", json={"text": _SAMPLE_TEXT, "top_n": 3})
+    assert r.status_code == 200
+    assert len(r.json()["top_words"]) <= 3
+
+
+def test_textstats_analyze_empty_text_rejected(client):
+    r = client.post("/textstats/analyze", json={"text": "   "})
+    assert r.status_code == 400
+
+
+def test_textstats_analyze_invalid_top_n(client):
+    assert client.post("/textstats/analyze", json={"text": "hello", "top_n": 0}).status_code == 400
+    assert client.post("/textstats/analyze", json={"text": "hello", "top_n": 200}).status_code == 400
+
+
+def test_textstats_history_save_and_list(client):
+    r = client.post("/textstats/history", json={"text": _SAMPLE_TEXT, "label": "sample"})
+    assert r.status_code == 200
+    d = r.json()
+    entry_id = d["entry"]["id"]
+    assert entry_id.startswith("ts-")
+    assert "stats" in d["entry"]
+    rl = client.get("/textstats/history")
+    assert rl.status_code == 200
+    assert entry_id in [e["id"] for e in rl.json()["history"]]
+    client.delete(f"/textstats/history/{entry_id}")
+
+
+def test_textstats_history_delete(client):
+    r = client.post("/textstats/history", json={"text": "some text to analyze"})
+    entry_id = r.json()["entry"]["id"]
+    rd = client.delete(f"/textstats/history/{entry_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    rl = client.get("/textstats/history")
+    assert entry_id not in [e["id"] for e in rl.json()["history"]]
+
+
+def test_textstats_history_delete_not_found(client):
+    assert client.delete("/textstats/history/ts-9999999").status_code == 404
+
+
+def test_textstats_history_empty_text_rejected(client):
+    assert client.post("/textstats/history", json={"text": ""}).status_code == 400
