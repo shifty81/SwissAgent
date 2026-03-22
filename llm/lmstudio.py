@@ -4,7 +4,7 @@ import json
 from typing import Any, Iterator
 import requests
 from core.logger import get_logger
-from llm.base import BaseLLM
+from llm.base import BaseLLM, _fmt_unavailable
 
 logger = get_logger(__name__)
 
@@ -28,6 +28,9 @@ class LMStudioLLM(BaseLLM):
             )
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
+        except requests.exceptions.ConnectionError:
+            logger.error("LM Studio is not reachable at %s", self.base_url)
+            return _fmt_unavailable("LM Studio", self.base_url)
         except Exception as exc:
             logger.error("LMStudio chat error: %s", exc)
             return f"[ERROR] {exc}"
@@ -58,6 +61,9 @@ class LMStudioLLM(BaseLLM):
                         yield content
                 except Exception:
                     continue
+        except requests.exceptions.ConnectionError:
+            logger.error("LM Studio is not reachable at %s", self.base_url)
+            yield _fmt_unavailable("LM Studio", self.base_url)
         except Exception as exc:
             logger.error("LMStudio stream_chat error: %s", exc)
             yield f"[ERROR] {exc}"

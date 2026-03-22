@@ -17,7 +17,7 @@ import json
 from typing import Any
 import requests
 from core.logger import get_logger
-from llm.base import BaseLLM
+from llm.base import BaseLLM, _fmt_unavailable
 
 logger = get_logger(__name__)
 
@@ -91,6 +91,9 @@ class OpenWebUILLM(BaseLLM):
         try:
             data = self._chat_completions(messages)
             return data["choices"][0]["message"]["content"]
+        except requests.exceptions.ConnectionError:
+            logger.error("Open WebUI is not reachable at %s", self.base_url)
+            return _fmt_unavailable("Open WebUI", self.base_url)
         except Exception as exc:
             logger.error("Open WebUI chat error: %s", exc)
             return f"[ERROR] {exc}"

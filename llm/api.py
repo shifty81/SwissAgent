@@ -4,7 +4,7 @@ import json
 from typing import Any
 import requests
 from core.logger import get_logger
-from llm.base import BaseLLM
+from llm.base import BaseLLM, _fmt_unavailable
 
 logger = get_logger(__name__)
 
@@ -30,6 +30,9 @@ class APILlm(BaseLLM):
             )
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
+        except requests.exceptions.ConnectionError:
+            logger.error("API backend is not reachable at %s", self.base_url)
+            return _fmt_unavailable("API backend", self.base_url)
         except Exception as exc:
             logger.error("API chat error: %s", exc)
             return f"[ERROR] {exc}"

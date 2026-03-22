@@ -4,7 +4,7 @@ import json
 from typing import Any, Iterator
 import requests
 from core.logger import get_logger
-from llm.base import BaseLLM
+from llm.base import BaseLLM, _fmt_unavailable
 
 logger = get_logger(__name__)
 
@@ -59,6 +59,9 @@ class LlamaCppLLM(BaseLLM):
             )
             resp.raise_for_status()
             return resp.json().get("content", "")
+        except requests.exceptions.ConnectionError:
+            logger.error("llama.cpp is not reachable at %s", self.base_url)
+            return _fmt_unavailable("llama.cpp", self.base_url)
         except Exception as exc:
             logger.error("LlamaCpp native chat error: %s", exc)
             return f"[ERROR] {exc}"
@@ -99,6 +102,9 @@ class LlamaCppLLM(BaseLLM):
                         yield content
                 except Exception:
                     continue
+        except requests.exceptions.ConnectionError:
+            logger.error("llama.cpp is not reachable at %s", self.base_url)
+            yield _fmt_unavailable("llama.cpp", self.base_url)
         except Exception as exc:
             logger.error("LlamaCpp stream_chat error: %s", exc)
             yield f"[ERROR] {exc}"
@@ -124,6 +130,9 @@ class LlamaCppLLM(BaseLLM):
                         break
                 except Exception:
                     continue
+        except requests.exceptions.ConnectionError:
+            logger.error("llama.cpp is not reachable at %s", self.base_url)
+            yield _fmt_unavailable("llama.cpp", self.base_url)
         except Exception as exc:
             logger.error("LlamaCpp native stream error: %s", exc)
             yield f"[ERROR] {exc}"
