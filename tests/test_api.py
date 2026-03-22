@@ -3774,3 +3774,249 @@ def test_agentic_chat_file_changes_are_valid(client):
         assert "diff" in fc
         assert "original_content" in fc
         assert "new_content" in fc
+
+# ── Phase 50: Code Metrics & Complexity Analyzer ─────────────────────────────
+
+def test_metrics_analyze_nonexistent_path(client):
+    r = client.post("/metrics/analyze", json={"project_path": "nonexistent_metrics_xyz"})
+    assert r.status_code == 404
+
+
+def test_metrics_analyze_empty_dir(client):
+    """Analyze workspace root (may have no source files) — must return success."""
+    r = client.post("/metrics/analyze", json={"project_path": "."})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert "report" in d
+    assert "summary" in d["report"]
+    summary = d["report"]["summary"]
+    assert "total_files" in summary
+    assert "total_lines" in summary
+    assert "total_functions" in summary
+    assert "average_cyclomatic_complexity" in summary
+
+
+def test_metrics_analyze_python_file(client, tmp_path):
+    """Analyze a temp Python file and verify returned metrics."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_metrics_50a")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        code = (
+            "# This is a test module\n"
+            "class MyClass:\n"
+            "    def method_one(self):\n"
+            "        if True:\n"
+            "            return 1\n"
+            "        return 0\n"
+            "\n"
+            "def helper(x):\n"
+            "    for i in range(x):\n"
+            "        pass\n"
+            "    return x\n"
+        )
+        with open(os.path.join(ws, "sample.py"), "w") as f:
+            f.write(code)
+        r = client.post("/metrics/analyze", json={"project_path": "test_metrics_50a"})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["success"] is True
+        report = d["report"]
+        summary = report["summary"]
+        assert summary["total_files"] >= 1
+        assert summary["total_lines"] >= 10
+        assert summary["total_functions"] >= 2
+        assert summary["total_classes"] >= 1
+        assert "python" in summary["languages"]
+        # Check file-level metrics
+        files = report["files"]
+        assert len(files) >= 1
+        f0 = files[0]
+        assert "file" in f0
+        assert "language" in f0
+        assert f0["language"] == "python"
+        assert "total_lines" in f0
+        assert "function_count" in f0
+        assert "cyclomatic_complexity" in f0
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_metrics_analyze_creates_report(client, tmp_path):
+    """POST /metrics/analyze followed by GET /metrics/reports."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_metrics_50b")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        with open(os.path.join(ws, "app.py"), "w") as f:
+            f.write("def run(): pass\n")
+        r = client.post("/metrics/analyze", json={"project_path": "test_metrics_50b"})
+        assert r.status_code == 200
+        report_id = r.json()["id"]
+
+        r2 = client.get("/metrics/reports")
+        assert r2.status_code == 200
+        d2 = r2.json()
+        assert "reports" in d2
+        assert "total" in d2
+        ids = [rep["id"] for rep in d2["reports"]]
+        assert report_id in ids
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_metrics_report_get_single(client, tmp_path):
+    """Analyze then retrieve the report by ID."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_metrics_50c")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        with open(os.path.join(ws, "main.py"), "w") as f:
+            f.write("x = 1\n")
+        r = client.post("/metrics/analyze", json={"project_path": "test_metrics_50c"})
+        assert r.status_code == 200
+        report_id = r.json()["id"]
+
+        r2 = client.get(f"/metrics/report/{report_id}")
+        assert r2.status_code == 200
+        assert r2.json()["id"] == report_id
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_metrics_report_get_not_found(client):
+    r = client.get("/metrics/report/999999")
+    assert r.status_code == 404
+
+
+def test_metrics_report_delete(client, tmp_path):
+    """Analyze then delete the report."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_metrics_50d")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        with open(os.path.join(ws, "util.py"), "w") as f:
+            f.write("def noop(): pass\n")
+        r = client.post("/metrics/analyze", json={"project_path": "test_metrics_50d"})
+        assert r.status_code == 200
+        report_id = r.json()["id"]
+
+        r2 = client.delete(f"/metrics/report/{report_id}")
+        assert r2.status_code == 200
+        assert r2.json()["success"] is True
+
+        r3 = client.get(f"/metrics/report/{report_id}")
+        assert r3.status_code == 404
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_metrics_report_delete_not_found(client):
+    r = client.delete("/metrics/report/999999")
+    assert r.status_code == 404
+
+
+def test_metrics_reports_pagination(client):
+    r = client.get("/metrics/reports?limit=5")
+    assert r.status_code == 200
+    d = r.json()
+    assert "reports" in d
+    assert len(d["reports"]) <= 5
+
+
+def test_metrics_path_traversal_blocked(client):
+    """Path traversal outside workspace must be blocked."""
+    r = client.post("/metrics/analyze", json={"project_path": "../etc"})
+    assert r.status_code in (403, 404)
+
+
+# ── Phase 51: Git Statistics Dashboard ───────────────────────────────────────
+
+def test_gitstats_summary_returns_structure(client):
+    """GET /gitstats/summary must return expected fields."""
+    r = client.get("/gitstats/summary")
+    assert r.status_code == 200
+    d = r.json()
+    assert "is_git_repo" in d
+    assert "total_commits" in d
+    assert "contributors" in d
+    assert "branches" in d
+    assert "tags" in d
+    assert isinstance(d["contributors"], list)
+    assert isinstance(d["branches"], list)
+    assert isinstance(d["tags"], list)
+
+
+def test_gitstats_summary_is_git_repo(client):
+    """The SwissAgent repo itself is a valid git repo."""
+    r = client.get("/gitstats/summary")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["is_git_repo"] is True
+    assert d["total_commits"] >= 1
+
+
+def test_gitstats_commits_returns_structure(client):
+    """GET /gitstats/commits must return a list of commit objects."""
+    r = client.get("/gitstats/commits")
+    assert r.status_code == 200
+    d = r.json()
+    assert "commits" in d
+    assert "total" in d
+    assert isinstance(d["commits"], list)
+
+
+def test_gitstats_commits_fields(client):
+    """Each commit entry must have required fields."""
+    r = client.get("/gitstats/commits?limit=5")
+    assert r.status_code == 200
+    for c in r.json()["commits"]:
+        assert "sha" in c
+        assert "author_name" in c
+        assert "date" in c
+        assert "subject" in c
+
+
+def test_gitstats_commits_limit(client):
+    """The limit query parameter is respected."""
+    r = client.get("/gitstats/commits?limit=3")
+    assert r.status_code == 200
+    assert len(r.json()["commits"]) <= 3
+
+
+def test_gitstats_contributors_structure(client):
+    """GET /gitstats/contributors returns a list with author and commits fields."""
+    r = client.get("/gitstats/contributors")
+    assert r.status_code == 200
+    d = r.json()
+    assert "contributors" in d
+    assert isinstance(d["contributors"], list)
+    for c in d["contributors"]:
+        assert "author" in c
+        assert "commits" in c
+        assert isinstance(c["commits"], int)
+
+
+def test_gitstats_file_churn_structure(client):
+    """GET /gitstats/file-churn returns files sorted by commits."""
+    r = client.get("/gitstats/file-churn")
+    assert r.status_code == 200
+    d = r.json()
+    assert "files" in d
+    assert isinstance(d["files"], list)
+    for f in d["files"]:
+        assert "file" in f
+        assert "commits" in f
+        assert isinstance(f["commits"], int)
+
+
+def test_gitstats_file_churn_limit(client):
+    """limit parameter limits /gitstats/file-churn results."""
+    r = client.get("/gitstats/file-churn?limit=5")
+    assert r.status_code == 200
+    assert len(r.json()["files"]) <= 5

@@ -834,6 +834,11 @@ class DocGenRequest(BaseModel):
 class DepsAnalyzeRequest(BaseModel):
     project_path: str = ""    # sub-path under workspace/ (empty = workspace root)
 
+# ── Phase 50: Code Metrics & Complexity Analyzer request models ────────────────
+
+class MetricsAnalyzeRequest(BaseModel):
+    project_path: str = ""    # sub-path under workspace/ (empty = workspace root)
+
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
 # needs enough to understand what follows the cursor.
@@ -7234,6 +7239,329 @@ indent_style = tab
                 return {"success": True, "deleted": report_id}
         raise HTTPException(status_code=404, detail=f"Report {report_id} not found")
 
+    # ── Phase 50: Code Metrics & Complexity Analyzer ────────────────────────
+
+    @app.post("/metrics/analyze")
+    async def metrics_analyze(req: MetricsAnalyzeRequest) -> dict[str, Any]:
+        """Analyze code metrics for a file or project path under workspace/."""
+        global _metrics_id_counter
+        import re as _re
+
+        project_path = (req.project_path or "").strip().lstrip("/")
+        if not project_path:
+            project_path = "."
+
+        # Resolve and validate path
+        target = _safe_path(base_dir / "workspace", project_path)
+        if not target.exists():
+            raise HTTPException(status_code=404, detail=f"Path not found: {project_path}")
+
+        # Supported extensions
+        _LANG_MAP = {
+            ".py": "python", ".js": "javascript", ".ts": "typescript",
+            ".jsx": "javascript", ".tsx": "typescript", ".java": "java",
+            ".c": "c", ".cpp": "cpp", ".cs": "csharp", ".go": "go",
+            ".rb": "ruby", ".rs": "rust", ".php": "php", ".sh": "shell",
+            ".kt": "kotlin", ".swift": "swift",
+        }
+
+        def _analyze_file(fp: Path) -> dict[str, Any]:
+            """Return metrics for a single source file."""
+            try:
+                src = fp.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                return {}
+            lines = src.splitlines()
+            total_lines = len(lines)
+            blank_lines = sum(1 for l in lines if not l.strip())
+            # Heuristic: lines whose first non-whitespace token is a comment marker
+            comment_lines = sum(
+                1 for l in lines if l.strip().startswith(("#", "//", "/*", "*/", "<!--"))
+            )
+            code_lines = max(0, total_lines - blank_lines - comment_lines)
+
+            lang = _LANG_MAP.get(fp.suffix.lower(), "unknown")
+
+            # Count functions/methods (rough heuristic)
+            if lang == "python":
+                func_count = len(_re.findall(r"^\s*(?:async\s+)?def\s+\w+", src, _re.MULTILINE))
+                class_count = len(_re.findall(r"^\s*class\s+\w+", src, _re.MULTILINE))
+            elif lang in ("javascript", "typescript"):
+                func_count = len(_re.findall(
+                    r"(?:function\s+\w+|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?\(?|=>\s*[\({]|async\s+\w+\s*\()",
+                    src,
+                ))
+                class_count = len(_re.findall(r"\bclass\s+\w+", src))
+            elif lang == "java":
+                func_count = len(_re.findall(
+                    r"(?:public|private|protected|static|\s)+[\w<>\[\]]+\s+\w+\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\{",
+                    src,
+                ))
+                class_count = len(_re.findall(r"\bclass\s+\w+", src))
+            else:
+                func_count = len(_re.findall(r"\b\w+\s*\([^)]*\)\s*\{", src))
+                class_count = len(_re.findall(r"\bclass\s+\w+", src))
+
+            # Cyclomatic complexity approximation: count decision points
+            decision_keywords = [
+                r"\bif\b", r"\belif\b", r"\belse\b", r"\bfor\b", r"\bwhile\b",
+                r"\bcase\b", r"\bcatch\b", r"\band\b", r"\bor\b",
+                r"\?\s*[^:]+:", r"&&", r"\|\|",
+            ]
+            complexity = 1 + sum(
+                len(_re.findall(kw, src)) for kw in decision_keywords
+            )
+
+            return {
+                "file": str(fp.relative_to(base_dir / "workspace")),
+                "language": lang,
+                "total_lines": total_lines,
+                "code_lines": max(0, code_lines),
+                "blank_lines": blank_lines,
+                "comment_lines": comment_lines,
+                "function_count": func_count,
+                "class_count": class_count,
+                "cyclomatic_complexity": complexity,
+            }
+
+        file_metrics: list[dict[str, Any]] = []
+        if target.is_file():
+            m = _analyze_file(target)
+            if m:
+                file_metrics.append(m)
+        else:
+            for fp in sorted(target.rglob("*")):
+                if fp.is_file() and fp.suffix.lower() in _LANG_MAP:
+                    m = _analyze_file(fp)
+                    if m:
+                        file_metrics.append(m)
+                if len(file_metrics) >= 200:
+                    break
+
+        # Aggregate
+        total_loc = sum(f["total_lines"] for f in file_metrics)
+        total_code = sum(f["code_lines"] for f in file_metrics)
+        total_funcs = sum(f["function_count"] for f in file_metrics)
+        total_classes = sum(f["class_count"] for f in file_metrics)
+        avg_complexity = (
+            sum(f["cyclomatic_complexity"] for f in file_metrics) / len(file_metrics)
+            if file_metrics else 0.0
+        )
+        lang_counts: dict[str, int] = {}
+        for f in file_metrics:
+            lang_counts[f["language"]] = lang_counts.get(f["language"], 0) + 1
+
+        _metrics_id_counter += 1
+        report = {
+            "id": _metrics_id_counter,
+            "project_path": req.project_path or "/",
+            "analyzed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "summary": {
+                "total_files": len(file_metrics),
+                "total_lines": total_loc,
+                "code_lines": total_code,
+                "total_functions": total_funcs,
+                "total_classes": total_classes,
+                "average_cyclomatic_complexity": round(avg_complexity, 2),
+                "languages": lang_counts,
+            },
+            "files": file_metrics,
+        }
+        _metrics_reports.append(report)
+        if len(_metrics_reports) > _MAX_METRICS_REPORTS:
+            _metrics_reports[:] = _metrics_reports[-_MAX_METRICS_REPORTS:]
+        return {"success": True, "id": report["id"], "report": report}
+
+    @app.get("/metrics/reports")
+    async def metrics_reports_list(
+        limit: int = Query(20, ge=1, le=50),
+    ) -> dict[str, Any]:
+        """List all code metrics reports, newest-first."""
+        reports = list(reversed(_metrics_reports))
+        return {"reports": reports[:limit], "total": len(reports)}
+
+    @app.get("/metrics/report/{report_id}")
+    async def metrics_report_get(report_id: int) -> dict[str, Any]:
+        """Get a single code metrics report by ID."""
+        for r in _metrics_reports:
+            if r["id"] == report_id:
+                return r
+        raise HTTPException(status_code=404, detail=f"Metrics report {report_id} not found")
+
+    @app.delete("/metrics/report/{report_id}")
+    async def metrics_report_delete(report_id: int) -> dict[str, Any]:
+        """Delete a code metrics report by ID."""
+        for i, r in enumerate(_metrics_reports):
+            if r["id"] == report_id:
+                _metrics_reports.pop(i)
+                return {"success": True, "deleted": report_id}
+        raise HTTPException(status_code=404, detail=f"Metrics report {report_id} not found")
+
+    # ── Phase 51: Git Statistics Dashboard ──────────────────────────────────
+
+    def _run_git(args: list[str], cwd: str | None = None, timeout: int = 10) -> str:
+        """Run a git command and return stdout, or raise HTTPException on error."""
+        import subprocess as _sp
+        try:
+            result = _sp.run(
+                ["git"] + args,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=cwd or str(base_dir),
+            )
+            if result.returncode != 0:
+                raise HTTPException(status_code=500, detail=result.stderr.strip() or "git error")
+            return result.stdout
+        except FileNotFoundError:
+            raise HTTPException(status_code=500, detail="git not found on this system")
+        except _sp.TimeoutExpired:
+            raise HTTPException(status_code=504, detail="git command timed out")
+
+    @app.get("/gitstats/summary")
+    async def gitstats_summary() -> dict[str, Any]:
+        """Return high-level git repository statistics."""
+        import subprocess as _sp
+
+        # Verify this is a git repo
+        try:
+            _run_git(["rev-parse", "--is-inside-work-tree"])
+        except HTTPException:
+            return {
+                "is_git_repo": False,
+                "total_commits": 0,
+                "contributors": [],
+                "branches": [],
+                "tags": [],
+                "first_commit_date": None,
+                "last_commit_date": None,
+            }
+
+        total_commits_out = _run_git(["rev-list", "--count", "HEAD"]).strip()
+        total_commits = int(total_commits_out) if total_commits_out.isdigit() else 0
+
+        # Contributors (name, email, commit count)
+        shortlog = _run_git(["shortlog", "-sne", "HEAD"]).strip()
+        contributors = []
+        for line in shortlog.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\t", 1)
+            if len(parts) == 2:
+                count_str, author = parts
+                contributors.append({"author": author.strip(), "commits": int(count_str.strip())})
+
+        # Branches
+        branches_out = _run_git(["branch", "-a", "--format=%(refname:short)"]).strip()
+        branches = [b.strip() for b in branches_out.splitlines() if b.strip()]
+
+        # Tags
+        tags_out = _run_git(["tag"]).strip()
+        tags = [t.strip() for t in tags_out.splitlines() if t.strip()]
+
+        # First and last commit dates
+        try:
+            first_date = _run_git(["log", "--reverse", "--format=%aI", "HEAD"]).strip().splitlines()
+            first_commit_date = first_date[0] if first_date else None
+        except Exception:
+            first_commit_date = None
+
+        try:
+            last_date = _run_git(["log", "-1", "--format=%aI", "HEAD"]).strip()
+            last_commit_date = last_date if last_date else None
+        except Exception:
+            last_commit_date = None
+
+        return {
+            "is_git_repo": True,
+            "total_commits": total_commits,
+            "contributors": contributors[:50],
+            "branches": branches[:50],
+            "tags": tags[:50],
+            "first_commit_date": first_commit_date,
+            "last_commit_date": last_commit_date,
+        }
+
+    @app.get("/gitstats/commits")
+    async def gitstats_commits(
+        limit: int = Query(50, ge=1, le=500),
+        author: str = Query("", description="Filter by author name"),
+        since: str = Query("", description="ISO date — only commits after this date"),
+    ) -> dict[str, Any]:
+        """Return recent commits with metadata."""
+        try:
+            _run_git(["rev-parse", "--is-inside-work-tree"])
+        except HTTPException:
+            return {"commits": [], "total": 0}
+
+        git_args = ["log", f"--max-count={limit}", "--format=%H|%an|%ae|%aI|%s"]
+        if author:
+            git_args += [f"--author={author}"]
+        if since:
+            git_args += [f"--since={since}"]
+        git_args.append("HEAD")
+
+        out = _run_git(git_args).strip()
+        commits = []
+        for line in out.splitlines():
+            parts = line.split("|", 4)
+            if len(parts) == 5:
+                sha, name, email, date, subject = parts
+                commits.append({
+                    "sha": sha[:12],
+                    "full_sha": sha,
+                    "author_name": name,
+                    "author_email": email,
+                    "date": date,
+                    "subject": subject,
+                })
+
+        return {"commits": commits, "total": len(commits)}
+
+    @app.get("/gitstats/contributors")
+    async def gitstats_contributors() -> dict[str, Any]:
+        """Return per-contributor commit statistics."""
+        try:
+            _run_git(["rev-parse", "--is-inside-work-tree"])
+        except HTTPException:
+            return {"contributors": []}
+
+        shortlog = _run_git(["shortlog", "-sne", "HEAD"]).strip()
+        contributors = []
+        for line in shortlog.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\t", 1)
+            if len(parts) == 2:
+                count_str, author = parts
+                contributors.append({"author": author.strip(), "commits": int(count_str.strip())})
+
+        return {"contributors": contributors}
+
+    @app.get("/gitstats/file-churn")
+    async def gitstats_file_churn(
+        limit: int = Query(20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        """Return files sorted by number of commits (churn) — highest first."""
+        try:
+            _run_git(["rev-parse", "--is-inside-work-tree"])
+        except HTTPException:
+            return {"files": []}
+
+        out = _run_git(["log", "--name-only", "--format=", "HEAD"]).strip()
+        churn: dict[str, int] = {}
+        for line in out.splitlines():
+            line = line.strip()
+            if line:
+                churn[line] = churn.get(line, 0) + 1
+
+        sorted_files = sorted(churn.items(), key=lambda x: x[1], reverse=True)
+        return {
+            "files": [{"file": f, "commits": c} for f, c in sorted_files[:limit]]
+        }
+
     return app
 
 
@@ -7423,5 +7751,10 @@ _docgen_id_counter: int = 0
 _deps_reports: list[dict[str, Any]] = []
 _MAX_DEPS_REPORTS = 50
 _deps_report_id_counter: int = 0
+
+# ── Phase 50: Code Metrics & Complexity Analyzer ──────────────────────────────
+_metrics_reports: list[dict[str, Any]] = []
+_MAX_METRICS_REPORTS = 50
+_metrics_id_counter: int = 0
 
 # ── End of module-level state ─────────────────────────────────────────────────
