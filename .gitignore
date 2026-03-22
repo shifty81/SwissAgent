@@ -54,3 +54,4 @@ electron/dist/
 workspace/test*.env
 workspace/test_*.env
 /projects/NovaForge
+/projects/SwissAgent
