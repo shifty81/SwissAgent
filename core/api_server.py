@@ -25,7 +25,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from core.config_loader import ConfigLoader
 from core.logger import get_logger, setup_logging
 from core.module_loader import ModuleLoader
@@ -856,6 +856,227 @@ class TerminalCreateRequest(BaseModel):
 class TerminalExecRequest(BaseModel):
     command: str             # shell command to execute
     timeout: int = 30        # max seconds
+
+# ── Phase 54: File Watcher request models ─────────────────────────────────────
+
+class WatcherCreateRequest(BaseModel):
+    path: str                # path to watch (relative to workspace/)
+    recursive: bool = False  # watch subdirectories too
+    label: str = ""          # optional human-readable label
+
+# ── Phase 55: Process Manager request models ──────────────────────────────────
+
+class ProcessStartRequest(BaseModel):
+    command: str             # shell command to run as a background process
+    cwd: str = ""            # working directory (sub-path under workspace/)
+    label: str = ""          # optional human-readable label
+    env: dict[str, str] = {} # extra environment variables
+
+# ── Phase 56: Knowledge Base / Notes Manager request models ───────────────────
+
+class KBEntryCreateRequest(BaseModel):
+    title: str
+    content: str = ""
+    tags: list[str] = []
+    category: str = ""
+
+class KBEntryUpdateRequest(BaseModel):
+    title: str | None = None
+    content: str | None = None
+    tags: list[str] | None = None
+    category: str | None = None
+
+# ── Phase 57: HTTP Mock Server request models ─────────────────────────────────
+
+class MockRouteCreateRequest(BaseModel):
+    method: str = "GET"                  # HTTP method (GET, POST, PUT, PATCH, DELETE, …)
+    path: str                            # URL path pattern, e.g. "/api/users"
+    status_code: int = 200
+    response_body: Any = None            # JSON-serialisable body
+    headers: dict[str, str] = {}         # extra response headers
+    label: str = ""                      # optional human-readable label
+
+class MockRequestRequest(BaseModel):
+    method: str = "GET"
+    path: str
+    body: Any = None
+    headers: dict[str, str] = {}
+
+# ── Phase 58: Bookmark Manager request models ─────────────────────────────────
+
+class BookmarkCreateRequest(BaseModel):
+    url: str                  # URL or file/code path being bookmarked
+    title: str = ""           # human-readable title (defaults to url)
+    description: str = ""
+    tags: list[str] = []
+    category: str = ""
+
+class BookmarkUpdateRequest(BaseModel):
+    url: str | None = None
+    title: str | None = None
+    description: str | None = None
+    tags: list[str] | None = None
+    category: str | None = None
+
+# ── Phase 59: Schema Registry request models ──────────────────────────────────
+
+class SchemaRegisterRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+    name: str                                                           # unique schema name / slug
+    schema_body: dict[str, Any] = Field(alias="schema")                # JSON Schema object
+    description: str = ""
+    tags: list[str] = []
+
+class SchemaUpsertRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+    schema_body: dict[str, Any] = Field(alias="schema")
+    description: str = ""
+    tags: list[str] = []
+
+class SchemaValidateRequest(BaseModel):
+    data: Any                 # arbitrary JSON to validate against the schema
+
+# ── Phase 60: Code Template Engine request models ─────────────────────────────
+
+class TemplateCreateRequest(BaseModel):
+    name: str
+    content: str              # template body with {{variable}} placeholders
+    description: str = ""
+    tags: list[str] = []
+    variables: list[str] = []  # declared variable names (optional, informational)
+
+class TemplateUpdateRequest(BaseModel):
+    name: str | None = None
+    content: str | None = None
+    description: str | None = None
+    tags: list[str] | None = None
+    variables: list[str] | None = None
+
+class TemplateRenderRequest(BaseModel):
+    vars: dict[str, str] = {}  # variable name → substitution value
+
+# ── Phase 61: Changelog Generator request models ──────────────────────────────
+
+class ChangelogGenerateRequest(BaseModel):
+    commits: list[str]          # raw commit message lines
+    version: str = ""           # optional version tag (e.g. "v1.2.0")
+    title: str = ""             # optional human-readable release title
+
+# ── Phase 62: Regex Playground request models ─────────────────────────────────
+
+class RegexTestRequest(BaseModel):
+    pattern: str
+    text: str
+    flags: list[str] = []       # "i" (ignorecase), "m" (multiline), "s" (dotall)
+
+class RegexReplaceRequest(BaseModel):
+    pattern: str
+    text: str
+    replacement: str
+    flags: list[str] = []
+    count: int = 0              # 0 = replace all
+
+class RegexSplitRequest(BaseModel):
+    pattern: str
+    text: str
+    flags: list[str] = []
+    maxsplit: int = 0
+
+class RegexSaveRequest(BaseModel):
+    pattern: str
+    description: str = ""
+    flags: list[str] = []
+
+# ── Phase 63: Color Palette Manager request models ────────────────────────────
+
+class ColorSpec(BaseModel):
+    hex: str = ""               # e.g. "#FF5733"
+    name: str = ""              # optional human name
+
+class PaletteCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    colors: list[ColorSpec] = []
+
+class PaletteUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+class PaletteAddColorRequest(BaseModel):
+    hex: str
+    name: str = ""
+
+class ColorConvertRequest(BaseModel):
+    hex: str                    # source color as #RRGGBB or #RGB
+
+# ── Phase 64: UUID / Token Generator request models ───────────────────────────
+
+class UUIDGenerateRequest(BaseModel):
+    version: int = 4            # 1 or 4
+    count: int = 1              # how many to generate (1-100)
+    uppercase: bool = False     # return in uppercase
+
+class UUIDValidateRequest(BaseModel):
+    value: str                  # the string to validate
+
+class UUIDSaveRequest(BaseModel):
+    label: str = ""             # optional label for the history entry
+    values: list[str]           # the generated values to store
+
+# ── Phase 65: Text Statistics / Readability Analyzer request models ───────────
+
+class TextStatsAnalyzeRequest(BaseModel):
+    text: str
+    top_n: int = 10             # number of most-frequent words to return
+
+class TextStatsSaveRequest(BaseModel):
+    text: str
+    label: str = ""
+    top_n: int = 10
+
+# ── Phase 66: JSON/YAML Converter & Formatter request models ──────────────────
+
+class JsonFormatRequest(BaseModel):
+    content: str            # raw JSON string
+    indent: int = 2         # indentation spaces (2 or 4)
+    sort_keys: bool = False
+    minify: bool = False    # when True, output compact single-line JSON
+
+class JsonValidateRequest(BaseModel):
+    content: str            # JSON or YAML string
+    mode: str = "json"      # "json" | "yaml"
+
+class JsonConvertRequest(BaseModel):
+    content: str            # source text
+    direction: str = "json_to_yaml"  # "json_to_yaml" | "yaml_to_json"
+
+class JsonFormatSaveRequest(BaseModel):
+    label: str = ""
+    operation: str          # "format" | "convert" | "validate"
+    input: str
+    output: str
+
+# ── Phase 67: Hash & Checksum Tool request models ─────────────────────────────
+
+class HashGenerateRequest(BaseModel):
+    text: str
+    algorithm: str = "sha256"   # md5 | sha1 | sha256 | sha512 | sha3_256
+    encoding: str = "utf-8"
+
+class HashCompareRequest(BaseModel):
+    text: str
+    hash: str               # expected hash to compare against
+    algorithm: str = "sha256"
+    encoding: str = "utf-8"
+
+class HashDetectRequest(BaseModel):
+    hash: str               # hash string whose algorithm to guess
+
+class HashSaveRequest(BaseModel):
+    label: str = ""
+    algorithm: str
+    text_preview: str       # first 80 chars of original text (for display)
+    hash: str
 
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
@@ -7864,6 +8085,1555 @@ indent_style = tab
         _terminal_sessions.pop(session_id)
         return {"success": True, "deleted": session_id}
 
+    # ── Phase 54: File Watcher ────────────────────────────────────────────────
+
+    _WATCHER_MAX = 50   # max concurrent watches
+
+    @app.post("/watcher/watch")
+    async def watcher_create(req: WatcherCreateRequest) -> dict[str, Any]:
+        """Register a new file-system watch on a path inside workspace/."""
+        global _watcher_id_counter
+
+        if len(_watcher_watches) >= _WATCHER_MAX:
+            raise HTTPException(status_code=429, detail="Too many active watches. Delete one first.")
+
+        rel = req.path.strip().lstrip("/")
+        if not rel:
+            raise HTTPException(status_code=400, detail="path must not be empty")
+
+        target = _safe_path(base_dir / "workspace", rel)
+        if not target.exists():
+            raise HTTPException(status_code=404, detail=f"Path not found: {rel}")
+
+        _watcher_id_counter += 1
+        watch_id = f"watch-{_watcher_id_counter}"
+        watch = {
+            "id": watch_id,
+            "path": rel,
+            "recursive": req.recursive,
+            "label": req.label or watch_id,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "active": True,
+            "event_count": 0,
+        }
+        _watcher_watches[watch_id] = watch
+
+        # Background thread that polls mtime of the watched path
+        def _poll(wid: str, abs_path: Path, recursive: bool) -> None:
+            import time as _t
+            known: dict[str, float] = {}
+
+            def _scan() -> dict[str, float]:
+                result: dict[str, float] = {}
+                try:
+                    if abs_path.is_file():
+                        result[str(abs_path)] = abs_path.stat().st_mtime
+                    elif abs_path.is_dir():
+                        iter_fn = abs_path.rglob("*") if recursive else abs_path.iterdir()
+                        for p in iter_fn:
+                            try:
+                                result[str(p)] = p.stat().st_mtime
+                            except OSError:
+                                pass
+                except OSError:
+                    pass
+                return result
+
+            known = _scan()
+
+            while _watcher_watches.get(wid, {}).get("active"):
+                _t.sleep(1)
+                current = _scan()
+                now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                for fp, mtime in current.items():
+                    if fp not in known:
+                        _record_watcher_event(wid, "created", fp, now_ts)
+                    elif mtime != known[fp]:
+                        _record_watcher_event(wid, "modified", fp, now_ts)
+                for fp in list(known):
+                    if fp not in current:
+                        _record_watcher_event(wid, "deleted", fp, now_ts)
+                known = current
+
+        t = threading.Thread(target=_poll, args=(watch_id, target, req.recursive), daemon=True)
+        _watcher_threads[watch_id] = t
+        t.start()
+
+        return {"success": True, "watch_id": watch_id, "watch": watch}
+
+    def _record_watcher_event(watch_id: str, event_type: str, path: str, ts: str) -> None:
+        """Append a watcher event to the global event list."""
+        watch = _watcher_watches.get(watch_id)
+        if watch is None:
+            return  # watch was deleted; discard event
+        watch["event_count"] += 1
+        _watcher_events.append({
+            "watch_id": watch_id,
+            "type": event_type,
+            "path": path,
+            "ts": ts,
+        })
+        if len(_watcher_events) > _MAX_WATCHER_EVENTS:
+            _watcher_events[:] = _watcher_events[-_MAX_WATCHER_EVENTS:]
+
+    @app.get("/watcher/watches")
+    async def watcher_list() -> dict[str, Any]:
+        """List all active and inactive file-system watches."""
+        return {"watches": list(_watcher_watches.values()), "total": len(_watcher_watches)}
+
+    @app.get("/watcher/watch/{watch_id}")
+    async def watcher_get(watch_id: str) -> dict[str, Any]:
+        """Get details for a single watch."""
+        if watch_id not in _watcher_watches:
+            raise HTTPException(status_code=404, detail=f"Watch {watch_id!r} not found")
+        return _watcher_watches[watch_id]
+
+    @app.delete("/watcher/watch/{watch_id}")
+    async def watcher_delete(watch_id: str) -> dict[str, Any]:
+        """Stop and remove a file-system watch."""
+        if watch_id not in _watcher_watches:
+            raise HTTPException(status_code=404, detail=f"Watch {watch_id!r} not found")
+        _watcher_watches[watch_id]["active"] = False
+        _watcher_watches.pop(watch_id)
+        _watcher_threads.pop(watch_id, None)
+        return {"success": True, "deleted": watch_id}
+
+    @app.get("/watcher/events")
+    async def watcher_events_list(
+        watch_id: str = Query("", description="Filter by watch ID"),
+        event_type: str = Query("", description="Filter by event type: created/modified/deleted"),
+        limit: int = Query(100, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        """List recorded file-system change events, newest-first."""
+        events = list(reversed(_watcher_events))
+        if watch_id:
+            events = [e for e in events if e["watch_id"] == watch_id]
+        if event_type:
+            events = [e for e in events if e["type"] == event_type]
+        return {"events": events[:limit], "total": len(_watcher_events)}
+
+    # ── Phase 55: Process Manager ─────────────────────────────────────────────
+
+    _PROCESS_MAX = 20   # max concurrent managed processes
+
+    @app.post("/process/start")
+    async def process_start(req: ProcessStartRequest) -> dict[str, Any]:
+        """Start a long-running background process and register it."""
+        global _process_id_counter
+        import subprocess as _sp
+
+        if len([p for p in _process_registry.values() if p["status"] == "running"]) >= _PROCESS_MAX:
+            raise HTTPException(status_code=429, detail="Too many running processes. Stop one first.")
+
+        cwd_rel = req.cwd.strip().lstrip("/")
+        if cwd_rel:
+            resolved_cwd = _safe_path(base_dir / "workspace", cwd_rel)
+            if not resolved_cwd.is_dir():
+                raise HTTPException(status_code=404, detail=f"cwd not found: {cwd_rel}")
+            cwd_str = str(resolved_cwd)
+        else:
+            cwd_str = str(base_dir / "workspace")
+
+        command = req.command.strip()
+        if not command:
+            raise HTTPException(status_code=400, detail="command must not be empty")
+
+        env = {**os.environ, **req.env}
+
+        _process_id_counter += 1
+        proc_id = f"proc-{_process_id_counter}"
+
+        started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        try:
+            proc = _sp.Popen(
+                command,
+                shell=True,
+                stdout=_sp.PIPE,
+                stderr=_sp.STDOUT,
+                text=True,
+                cwd=cwd_str,
+                env=env,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed to start process: {exc}")
+
+        record: dict[str, Any] = {
+            "id": proc_id,
+            "command": command,
+            "cwd": cwd_rel or "workspace",
+            "label": req.label or proc_id,
+            "started_at": started_at,
+            "stopped_at": None,
+            "pid": proc.pid,
+            "exit_code": None,
+            "status": "running",
+            "log": "",
+            "_proc": proc,
+        }
+        _process_registry[proc_id] = record
+
+        def _stream_output(pid: str, p: _sp.Popen) -> None:  # type: ignore[type-arg]
+            assert p.stdout is not None
+            for line in iter(p.stdout.readline, ""):
+                rec = _process_registry.get(pid)
+                if rec is None:
+                    break
+                rec["log"] = (rec["log"] + line)[-_MAX_PROCESS_LOG:]
+            p.stdout.close()
+            ret = p.wait()
+            rec = _process_registry.get(pid)
+            if rec:
+                rec["exit_code"] = ret
+                rec["status"] = "stopped"
+                rec["stopped_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        threading.Thread(target=_stream_output, args=(proc_id, proc), daemon=True).start()
+
+        return {
+            "success": True,
+            "process_id": proc_id,
+            "process": {k: v for k, v in record.items() if k != "_proc"},
+        }
+
+    @app.get("/process/list")
+    async def process_list(
+        status: str = Query("", description="Filter by status: running / stopped"),
+    ) -> dict[str, Any]:
+        """List all managed processes."""
+        procs = [
+            {k: v for k, v in p.items() if k != "_proc"}
+            for p in _process_registry.values()
+        ]
+        if status:
+            procs = [p for p in procs if p["status"] == status]
+        return {"processes": procs, "total": len(procs)}
+
+    @app.get("/process/{proc_id}")
+    async def process_get(proc_id: str) -> dict[str, Any]:
+        """Get details and latest log tail for a managed process."""
+        if proc_id not in _process_registry:
+            raise HTTPException(status_code=404, detail=f"Process {proc_id!r} not found")
+        rec = _process_registry[proc_id]
+        return {k: v for k, v in rec.items() if k != "_proc"}
+
+    @app.get("/process/{proc_id}/logs")
+    async def process_logs(
+        proc_id: str,
+        tail: int = Query(200, ge=1, le=2000),
+    ) -> dict[str, Any]:
+        """Return the last *tail* lines of a process's captured output."""
+        if proc_id not in _process_registry:
+            raise HTTPException(status_code=404, detail=f"Process {proc_id!r} not found")
+        rec = _process_registry[proc_id]
+        lines = rec["log"].splitlines()[-tail:]
+        return {
+            "process_id": proc_id,
+            "status": rec["status"],
+            "lines": lines,
+            "total_lines": len(rec["log"].splitlines()),
+        }
+
+    @app.delete("/process/{proc_id}")
+    async def process_stop(proc_id: str) -> dict[str, Any]:
+        """Send SIGTERM to a running process and mark it stopped."""
+        if proc_id not in _process_registry:
+            raise HTTPException(status_code=404, detail=f"Process {proc_id!r} not found")
+        rec = _process_registry[proc_id]
+        proc_obj = rec.get("_proc")
+        if rec["status"] == "running" and proc_obj is not None:
+            try:
+                proc_obj.terminate()
+            except Exception:
+                pass
+            rec["status"] = "stopped"
+            rec["stopped_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _process_registry.pop(proc_id)
+        return {"success": True, "stopped": proc_id}
+
+    # ── Phase 56: Knowledge Base / Notes Manager ──────────────────────────────
+
+    @app.post("/kb/entry")
+    async def kb_entry_create(req: KBEntryCreateRequest) -> dict[str, Any]:
+        """Add a new knowledge-base entry."""
+        global _kb_id_counter
+        if not req.title.strip():
+            raise HTTPException(status_code=400, detail="title must not be empty")
+        if len(_kb_entries) >= _MAX_KB_ENTRIES:
+            raise HTTPException(status_code=429, detail="Knowledge base full. Delete some entries first.")
+        _kb_id_counter += 1
+        entry_id = f"kb-{_kb_id_counter}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        entry: dict[str, Any] = {
+            "id": entry_id,
+            "title": req.title.strip(),
+            "content": req.content,
+            "tags": [t.strip().lower() for t in req.tags if t.strip()],
+            "category": req.category.strip().lower(),
+            "created_at": now,
+            "updated_at": now,
+        }
+        _kb_entries[entry_id] = entry
+        return {"success": True, "id": entry_id, "entry": entry}
+
+    @app.get("/kb/entries")
+    async def kb_entries_list(
+        tag: str = Query("", description="Filter by tag"),
+        category: str = Query("", description="Filter by category"),
+        limit: int = Query(50, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """List knowledge-base entries, optionally filtered."""
+        entries = list(_kb_entries.values())
+        if tag:
+            entries = [e for e in entries if tag.lower() in e["tags"]]
+        if category:
+            entries = [e for e in entries if e["category"] == category.lower()]
+        return {"entries": entries[:limit], "total": len(_kb_entries)}
+
+    @app.get("/kb/search")
+    async def kb_search(
+        q: str = Query(..., description="Search query"),
+        limit: int = Query(20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        """Full-text keyword search across title, content, and tags."""
+        q_lower = q.lower()
+        results = [
+            e for e in _kb_entries.values()
+            if q_lower in e["title"].lower()
+            or q_lower in e["content"].lower()
+            or any(q_lower in t for t in e["tags"])
+        ]
+        return {"results": results[:limit], "total": len(results)}
+
+    @app.get("/kb/entry/{entry_id}")
+    async def kb_entry_get(entry_id: str) -> dict[str, Any]:
+        """Get a single knowledge-base entry by ID."""
+        if entry_id not in _kb_entries:
+            raise HTTPException(status_code=404, detail=f"Entry {entry_id!r} not found")
+        return _kb_entries[entry_id]
+
+    @app.patch("/kb/entry/{entry_id}")
+    async def kb_entry_update(entry_id: str, req: KBEntryUpdateRequest) -> dict[str, Any]:
+        """Update one or more fields of a knowledge-base entry."""
+        if entry_id not in _kb_entries:
+            raise HTTPException(status_code=404, detail=f"Entry {entry_id!r} not found")
+        entry = _kb_entries[entry_id]
+        if req.title is not None:
+            if not req.title.strip():
+                raise HTTPException(status_code=400, detail="title must not be empty")
+            entry["title"] = req.title.strip()
+        if req.content is not None:
+            entry["content"] = req.content
+        if req.tags is not None:
+            entry["tags"] = [t.strip().lower() for t in req.tags if t.strip()]
+        if req.category is not None:
+            entry["category"] = req.category.strip().lower()
+        entry["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "entry": entry}
+
+    @app.delete("/kb/entry/{entry_id}")
+    async def kb_entry_delete(entry_id: str) -> dict[str, Any]:
+        """Delete a knowledge-base entry."""
+        if entry_id not in _kb_entries:
+            raise HTTPException(status_code=404, detail=f"Entry {entry_id!r} not found")
+        _kb_entries.pop(entry_id)
+        return {"success": True, "deleted": entry_id}
+
+    # ── Phase 57: HTTP Mock Server ─────────────────────────────────────────────
+
+    _MOCK_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+    _MOCK_ROUTE_MAX = 200
+
+    @app.post("/mockserver/route")
+    async def mockserver_route_create(req: MockRouteCreateRequest) -> dict[str, Any]:
+        """Define a new mock HTTP route."""
+        global _mockserver_route_id_counter
+        method = req.method.upper().strip()
+        if method not in _MOCK_METHODS:
+            raise HTTPException(status_code=400, detail=f"Invalid method {method!r}. Use one of {sorted(_MOCK_METHODS)}")
+        path = req.path.strip()
+        if not path.startswith("/"):
+            raise HTTPException(status_code=400, detail="path must start with '/'")
+        if len(_mockserver_routes) >= _MOCK_ROUTE_MAX:
+            raise HTTPException(status_code=429, detail="Too many mock routes. Delete some first.")
+        _mockserver_route_id_counter += 1
+        route_id = f"route-{_mockserver_route_id_counter}"
+        route: dict[str, Any] = {
+            "id": route_id,
+            "method": method,
+            "path": path,
+            "status_code": req.status_code,
+            "response_body": req.response_body,
+            "headers": req.headers,
+            "label": req.label or route_id,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "hit_count": 0,
+        }
+        _mockserver_routes[route_id] = route
+        return {"success": True, "route_id": route_id, "route": route}
+
+    @app.get("/mockserver/routes")
+    async def mockserver_routes_list() -> dict[str, Any]:
+        """List all defined mock routes."""
+        return {"routes": list(_mockserver_routes.values()), "total": len(_mockserver_routes)}
+
+    @app.get("/mockserver/route/{route_id}")
+    async def mockserver_route_get(route_id: str) -> dict[str, Any]:
+        """Get a single mock route by ID."""
+        if route_id not in _mockserver_routes:
+            raise HTTPException(status_code=404, detail=f"Route {route_id!r} not found")
+        return _mockserver_routes[route_id]
+
+    @app.delete("/mockserver/route/{route_id}")
+    async def mockserver_route_delete(route_id: str) -> dict[str, Any]:
+        """Delete a mock route."""
+        if route_id not in _mockserver_routes:
+            raise HTTPException(status_code=404, detail=f"Route {route_id!r} not found")
+        _mockserver_routes.pop(route_id)
+        return {"success": True, "deleted": route_id}
+
+    @app.post("/mockserver/request")
+    async def mockserver_simulate_request(req: MockRequestRequest) -> dict[str, Any]:
+        """Simulate an HTTP request against the defined mock routes."""
+        method = req.method.upper().strip()
+        path = req.path.strip()
+        ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # Find the first matching route (method + exact path)
+        matched: dict[str, Any] | None = None
+        for route in _mockserver_routes.values():
+            if route["method"] == method and route["path"] == path:
+                matched = route
+                break
+
+        record: dict[str, Any] = {
+            "method": method,
+            "path": path,
+            "body": req.body,
+            "headers": req.headers,
+            "ts": ts,
+            "matched_route_id": matched["id"] if matched else None,
+            "status_code": matched["status_code"] if matched else 404,
+            "response_body": matched["response_body"] if matched else {"detail": "No mock route matched"},
+            "response_headers": matched["headers"] if matched else {},
+        }
+        if matched:
+            matched["hit_count"] += 1
+
+        _mockserver_requests.append(record)
+        if len(_mockserver_requests) > _MAX_MOCK_REQUESTS:
+            _mockserver_requests[:] = _mockserver_requests[-_MAX_MOCK_REQUESTS:]
+
+        return record
+
+    @app.get("/mockserver/requests")
+    async def mockserver_requests_list(
+        limit: int = Query(50, ge=1, le=500),
+        method: str = Query("", description="Filter by HTTP method"),
+    ) -> dict[str, Any]:
+        """List recorded simulated requests, newest-first."""
+        reqs = list(reversed(_mockserver_requests))
+        if method:
+            reqs = [r for r in reqs if r["method"] == method.upper()]
+        return {"requests": reqs[:limit], "total": len(_mockserver_requests)}
+
+    @app.delete("/mockserver/requests")
+    async def mockserver_requests_clear() -> dict[str, Any]:
+        """Clear all recorded simulated requests."""
+        count = len(_mockserver_requests)
+        _mockserver_requests.clear()
+        return {"success": True, "cleared": count}
+
+    # ── Phase 58: Bookmark Manager ────────────────────────────────────────────
+
+    @app.post("/bookmark")
+    async def bookmark_create(req: BookmarkCreateRequest) -> dict[str, Any]:
+        """Add a new bookmark."""
+        global _bookmark_id_counter
+        url = req.url.strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="url must not be empty")
+        if len(_bookmarks) >= _MAX_BOOKMARKS:
+            raise HTTPException(status_code=429, detail="Bookmark store full. Delete some bookmarks first.")
+        _bookmark_id_counter += 1
+        bm_id = f"bm-{_bookmark_id_counter}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        bm: dict[str, Any] = {
+            "id": bm_id,
+            "url": url,
+            "title": req.title.strip() or url,
+            "description": req.description,
+            "tags": [t.strip().lower() for t in req.tags if t.strip()],
+            "category": req.category.strip().lower(),
+            "created_at": now,
+            "updated_at": now,
+        }
+        _bookmarks[bm_id] = bm
+        return {"success": True, "id": bm_id, "bookmark": bm}
+
+    @app.get("/bookmarks")
+    async def bookmarks_list(
+        tag: str = Query("", description="Filter by tag"),
+        category: str = Query("", description="Filter by category"),
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List bookmarks, optionally filtered by tag or category."""
+        bms = list(_bookmarks.values())
+        if tag:
+            bms = [b for b in bms if tag.lower() in b["tags"]]
+        if category:
+            bms = [b for b in bms if b["category"] == category.lower()]
+        return {"bookmarks": bms[:limit], "total": len(_bookmarks)}
+
+    @app.get("/bookmarks/search")
+    async def bookmarks_search(
+        q: str = Query(..., description="Search query"),
+        limit: int = Query(20, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """Search bookmarks by keyword across url, title, description, and tags."""
+        q_lower = q.lower()
+        results = [
+            b for b in _bookmarks.values()
+            if q_lower in b["url"].lower()
+            or q_lower in b["title"].lower()
+            or q_lower in b["description"].lower()
+            or any(q_lower in t for t in b["tags"])
+        ]
+        return {"results": results[:limit], "total": len(results)}
+
+    @app.get("/bookmark/{bm_id}")
+    async def bookmark_get(bm_id: str) -> dict[str, Any]:
+        """Get a single bookmark by ID."""
+        if bm_id not in _bookmarks:
+            raise HTTPException(status_code=404, detail=f"Bookmark {bm_id!r} not found")
+        return _bookmarks[bm_id]
+
+    @app.patch("/bookmark/{bm_id}")
+    async def bookmark_update(bm_id: str, req: BookmarkUpdateRequest) -> dict[str, Any]:
+        """Partially update a bookmark."""
+        if bm_id not in _bookmarks:
+            raise HTTPException(status_code=404, detail=f"Bookmark {bm_id!r} not found")
+        bm = _bookmarks[bm_id]
+        if req.url is not None:
+            url = req.url.strip()
+            if not url:
+                raise HTTPException(status_code=400, detail="url must not be empty")
+            bm["url"] = url
+        if req.title is not None:
+            bm["title"] = req.title.strip() or bm["url"]
+        if req.description is not None:
+            bm["description"] = req.description
+        if req.tags is not None:
+            bm["tags"] = [t.strip().lower() for t in req.tags if t.strip()]
+        if req.category is not None:
+            bm["category"] = req.category.strip().lower()
+        bm["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "bookmark": bm}
+
+    @app.delete("/bookmark/{bm_id}")
+    async def bookmark_delete(bm_id: str) -> dict[str, Any]:
+        """Delete a bookmark."""
+        if bm_id not in _bookmarks:
+            raise HTTPException(status_code=404, detail=f"Bookmark {bm_id!r} not found")
+        _bookmarks.pop(bm_id)
+        return {"success": True, "deleted": bm_id}
+
+    # ── Phase 59: Schema Registry ─────────────────────────────────────────────
+
+    def _jsonschema_validate(schema: dict[str, Any], data: Any) -> list[str]:
+        """Validate *data* against *schema* using only stdlib.
+
+        Returns a list of error message strings (empty → valid).
+        Supports: type, required, properties, minLength, maxLength,
+                  minimum, maximum, enum, items, minItems, maxItems.
+        """
+        errors: list[str] = []
+
+        def _check(s: Any, d: Any, path: str) -> None:
+            if not isinstance(s, dict):
+                return
+            typ = s.get("type")
+            if typ is not None:
+                type_map: dict[str, type | tuple[type, ...]] = {
+                    "string": str,
+                    "number": (int, float),
+                    "integer": int,
+                    "boolean": bool,
+                    "array": list,
+                    "object": dict,
+                    "null": type(None),
+                }
+                expected = type_map.get(typ)
+                if expected and not isinstance(d, expected):
+                    errors.append(f"{path}: expected type {typ!r}, got {type(d).__name__!r}")
+                    return  # no point checking constraints if type mismatch
+            # string constraints
+            if isinstance(d, str):
+                if "minLength" in s and len(d) < s["minLength"]:
+                    errors.append(f"{path}: string length {len(d)} < minLength {s['minLength']}")
+                if "maxLength" in s and len(d) > s["maxLength"]:
+                    errors.append(f"{path}: string length {len(d)} > maxLength {s['maxLength']}")
+            # numeric constraints
+            if isinstance(d, (int, float)) and not isinstance(d, bool):
+                if "minimum" in s and d < s["minimum"]:
+                    errors.append(f"{path}: {d} < minimum {s['minimum']}")
+                if "maximum" in s and d > s["maximum"]:
+                    errors.append(f"{path}: {d} > maximum {s['maximum']}")
+            # enum
+            if "enum" in s and d not in s["enum"]:
+                errors.append(f"{path}: {d!r} not in enum {s['enum']}")
+            # object constraints
+            if isinstance(d, dict):
+                for req_key in s.get("required", []):
+                    if req_key not in d:
+                        errors.append(f"{path}: missing required property {req_key!r}")
+                for prop_name, prop_schema in s.get("properties", {}).items():
+                    if prop_name in d:
+                        _check(prop_schema, d[prop_name], f"{path}.{prop_name}")
+            # array constraints
+            if isinstance(d, list):
+                if "minItems" in s and len(d) < s["minItems"]:
+                    errors.append(f"{path}: array length {len(d)} < minItems {s['minItems']}")
+                if "maxItems" in s and len(d) > s["maxItems"]:
+                    errors.append(f"{path}: array length {len(d)} > maxItems {s['maxItems']}")
+                item_schema = s.get("items")
+                if item_schema:
+                    for i, item in enumerate(d):
+                        _check(item_schema, item, f"{path}[{i}]")
+
+        _check(schema, data, "$")
+        return errors
+
+    @app.post("/schema")
+    async def schema_register(req: SchemaRegisterRequest) -> dict[str, Any]:
+        """Register a new named JSON schema."""
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name must not be empty")
+        if name in _schema_registry:
+            raise HTTPException(status_code=409, detail=f"Schema {name!r} already exists. Use PUT to update.")
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        record: dict[str, Any] = {
+            "name": name,
+            "schema": req.schema_body,
+            "description": req.description,
+            "tags": [t.strip().lower() for t in req.tags if t.strip()],
+            "created_at": now,
+            "updated_at": now,
+        }
+        _schema_registry[name] = record
+        return {"success": True, "name": name, "schema_record": record}
+
+    @app.get("/schemas")
+    async def schemas_list(
+        tag: str = Query("", description="Filter by tag"),
+    ) -> dict[str, Any]:
+        """List all registered schemas."""
+        records = list(_schema_registry.values())
+        if tag:
+            records = [r for r in records if tag.lower() in r["tags"]]
+        return {"schemas": records, "total": len(_schema_registry)}
+
+    @app.get("/schema/{schema_name}")
+    async def schema_get(schema_name: str) -> dict[str, Any]:
+        """Get a registered schema by name."""
+        if schema_name not in _schema_registry:
+            raise HTTPException(status_code=404, detail=f"Schema {schema_name!r} not found")
+        return _schema_registry[schema_name]
+
+    @app.put("/schema/{schema_name}")
+    async def schema_upsert(schema_name: str, req: SchemaUpsertRequest) -> dict[str, Any]:
+        """Create or replace a named schema."""
+        name = schema_name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="schema name must not be empty")
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        existing = _schema_registry.get(name)
+        record: dict[str, Any] = {
+            "name": name,
+            "schema": req.schema_body,
+            "description": req.description,
+            "tags": [t.strip().lower() for t in req.tags if t.strip()],
+            "created_at": existing["created_at"] if existing else now,
+            "updated_at": now,
+        }
+        _schema_registry[name] = record
+        return {"success": True, "created": existing is None, "name": name, "schema_record": record}
+
+    @app.delete("/schema/{schema_name}")
+    async def schema_delete(schema_name: str) -> dict[str, Any]:
+        """Delete a registered schema."""
+        if schema_name not in _schema_registry:
+            raise HTTPException(status_code=404, detail=f"Schema {schema_name!r} not found")
+        _schema_registry.pop(schema_name)
+        return {"success": True, "deleted": schema_name}
+
+    @app.post("/schema/{schema_name}/validate")
+    async def schema_validate(schema_name: str, req: SchemaValidateRequest) -> dict[str, Any]:
+        """Validate arbitrary JSON data against a registered schema."""
+        if schema_name not in _schema_registry:
+            raise HTTPException(status_code=404, detail=f"Schema {schema_name!r} not found")
+        schema_obj = _schema_registry[schema_name]["schema"]
+        errors = _jsonschema_validate(schema_obj, req.data)
+        return {"valid": len(errors) == 0, "errors": errors, "schema_name": schema_name}
+
+    # ── Phase 60: Code Template Engine ───────────────────────────────────────
+
+    def _render_template(content: str, vars: dict[str, str]) -> str:
+        """Replace {{variable}} placeholders with values from *vars*."""
+        import re
+        def replacer(m: "re.Match[str]") -> str:
+            key = m.group(1).strip()
+            return vars.get(key, m.group(0))  # leave unreplaced if not provided
+        return re.sub(r"\{\{([^}]+)\}\}", replacer, content)
+
+    @app.post("/codetpl")
+    async def template_create(req: TemplateCreateRequest) -> dict[str, Any]:
+        """Create a new code/text template."""
+        global _template_id_counter
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name must not be empty")
+        if len(_templates) >= _MAX_TEMPLATES:
+            raise HTTPException(status_code=429, detail="Template store full.")
+        _template_id_counter += 1
+        tmpl_id = f"tmpl-{_template_id_counter}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        tmpl: dict[str, Any] = {
+            "id": tmpl_id,
+            "name": name,
+            "content": req.content,
+            "description": req.description,
+            "tags": [t.strip().lower() for t in req.tags if t.strip()],
+            "variables": req.variables,
+            "created_at": now,
+            "updated_at": now,
+        }
+        _templates[tmpl_id] = tmpl
+        return {"success": True, "id": tmpl_id, "template": tmpl}
+
+    @app.get("/codetpls")
+    async def templates_list(
+        tag: str = Query("", description="Filter by tag"),
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List templates, optionally filtered by tag."""
+        tmpls = list(_templates.values())
+        if tag:
+            tmpls = [t for t in tmpls if tag.lower() in t["tags"]]
+        return {"templates": tmpls[:limit], "total": len(_templates)}
+
+    @app.get("/codetpl/search")
+    async def templates_search(
+        q: str = Query(..., description="Keyword to search for"),
+        limit: int = Query(20, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """Search templates by keyword across name, description, content, and tags."""
+        q_lower = q.lower()
+        results = [
+            t for t in _templates.values()
+            if q_lower in t["name"].lower()
+            or q_lower in t["description"].lower()
+            or q_lower in t["content"].lower()
+            or any(q_lower in tag for tag in t["tags"])
+        ]
+        return {"results": results[:limit], "total": len(results)}
+
+    @app.get("/codetpl/{tmpl_id}")
+    async def template_get(tmpl_id: str) -> dict[str, Any]:
+        """Get a single template by ID."""
+        if tmpl_id not in _templates:
+            raise HTTPException(status_code=404, detail=f"Template {tmpl_id!r} not found")
+        return _templates[tmpl_id]
+
+    @app.patch("/codetpl/{tmpl_id}")
+    async def template_update(tmpl_id: str, req: TemplateUpdateRequest) -> dict[str, Any]:
+        """Partially update a template."""
+        if tmpl_id not in _templates:
+            raise HTTPException(status_code=404, detail=f"Template {tmpl_id!r} not found")
+        tmpl = _templates[tmpl_id]
+        if req.name is not None:
+            name = req.name.strip()
+            if not name:
+                raise HTTPException(status_code=400, detail="name must not be empty")
+            tmpl["name"] = name
+        if req.content is not None:
+            tmpl["content"] = req.content
+        if req.description is not None:
+            tmpl["description"] = req.description
+        if req.tags is not None:
+            tmpl["tags"] = [t.strip().lower() for t in req.tags if t.strip()]
+        if req.variables is not None:
+            tmpl["variables"] = req.variables
+        tmpl["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "template": tmpl}
+
+    @app.delete("/codetpl/{tmpl_id}")
+    async def template_delete(tmpl_id: str) -> dict[str, Any]:
+        """Delete a template."""
+        if tmpl_id not in _templates:
+            raise HTTPException(status_code=404, detail=f"Template {tmpl_id!r} not found")
+        _templates.pop(tmpl_id)
+        return {"success": True, "deleted": tmpl_id}
+
+    @app.post("/codetpl/{tmpl_id}/render")
+    async def template_render(tmpl_id: str, req: TemplateRenderRequest) -> dict[str, Any]:
+        """Render a template by substituting {{variable}} placeholders."""
+        if tmpl_id not in _templates:
+            raise HTTPException(status_code=404, detail=f"Template {tmpl_id!r} not found")
+        content = _templates[tmpl_id]["content"]
+        rendered = _render_template(content, req.vars)
+        return {"rendered": rendered, "template_id": tmpl_id}
+
+    # ── Phase 61: Changelog Generator ────────────────────────────────────────
+
+    def _parse_conventional_commits(commits: list[str]) -> dict[str, list[str]]:
+        """Parse Conventional Commits lines into groups by type.
+
+        Recognised types: feat, fix, docs, style, refactor, perf, test, build,
+        ci, chore, revert, breaking.  Unknown types land in 'other'.
+        """
+        import re
+        # type map → display heading
+        TYPE_HEADINGS: dict[str, str] = {
+            "feat":      "✨ Features",
+            "fix":       "🐛 Bug Fixes",
+            "docs":      "📝 Documentation",
+            "style":     "💄 Styles",
+            "refactor":  "♻️ Refactoring",
+            "perf":      "⚡ Performance",
+            "test":      "✅ Tests",
+            "build":     "🏗️ Build",
+            "ci":        "🔧 CI",
+            "chore":     "🔨 Chores",
+            "revert":    "⏪ Reverts",
+        }
+        groups: dict[str, list[str]] = {h: [] for h in TYPE_HEADINGS.values()}
+        groups["💥 Breaking Changes"] = []
+        groups["📦 Other"] = []
+
+        cc_re = re.compile(
+            r"^(?P<type>[a-z]+)(?P<scope>\([^)]*\))?(?P<breaking>!)?:\s*(?P<desc>.+)$",
+            re.IGNORECASE,
+        )
+        for raw in commits:
+            line = raw.strip()
+            if not line:
+                continue
+            # Check for BREAKING CHANGE footer tag
+            if "BREAKING CHANGE" in line or "BREAKING-CHANGE" in line:
+                groups["💥 Breaking Changes"].append(line)
+                continue
+            m = cc_re.match(line)
+            if m:
+                typ = m.group("type").lower()
+                desc = m.group("desc")
+                scope = m.group("scope") or ""
+                breaking = m.group("breaking")
+                entry = f"{scope} {desc}".strip() if scope else desc
+                if breaking:
+                    groups["💥 Breaking Changes"].append(entry)
+                else:
+                    heading = TYPE_HEADINGS.get(typ)
+                    if heading:
+                        groups[heading].append(entry)
+                    else:
+                        groups["📦 Other"].append(line)
+            else:
+                groups["📦 Other"].append(line)
+        # Remove empty groups
+        return {k: v for k, v in groups.items() if v}
+
+    def _format_changelog(
+        groups: dict[str, list[str]],
+        version: str,
+        title: str,
+        generated_at: str,
+    ) -> str:
+        """Render grouped commits as a Markdown changelog string."""
+        lines: list[str] = []
+        header = f"## {version}" if version else "## Unreleased"
+        if title:
+            header += f" — {title}"
+        lines.append(header)
+        lines.append(f"*Generated: {generated_at}*")
+        lines.append("")
+        for heading, entries in groups.items():
+            lines.append(f"### {heading}")
+            for entry in entries:
+                lines.append(f"- {entry}")
+            lines.append("")
+        return "\n".join(lines).rstrip()
+
+    @app.post("/changelog/generate")
+    async def changelog_generate(req: ChangelogGenerateRequest) -> dict[str, Any]:
+        """Generate a changelog from a list of commit messages."""
+        global _changelog_id_counter
+        if not req.commits:
+            raise HTTPException(status_code=400, detail="commits list must not be empty")
+        if len(_changelog_history) >= _MAX_CHANGELOG_HISTORY:
+            _changelog_history.pop(0)  # evict oldest to make room
+        _changelog_id_counter += 1
+        cl_id = f"cl-{_changelog_id_counter}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        groups = _parse_conventional_commits(req.commits)
+        markdown = _format_changelog(groups, req.version, req.title, now)
+        record: dict[str, Any] = {
+            "id": cl_id,
+            "version": req.version,
+            "title": req.title,
+            "commit_count": len(req.commits),
+            "groups": groups,
+            "markdown": markdown,
+            "generated_at": now,
+        }
+        _changelog_history.append(record)
+        return {"success": True, "id": cl_id, "changelog": record}
+
+    @app.get("/changelog/history")
+    async def changelog_history_list(
+        limit: int = Query(20, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """List all generated changelogs (newest first)."""
+        items = list(reversed(_changelog_history))
+        return {"changelogs": items[:limit], "total": len(_changelog_history)}
+
+    @app.get("/changelog/history/{cl_id}")
+    async def changelog_history_get(cl_id: str) -> dict[str, Any]:
+        """Get a specific generated changelog by ID."""
+        for record in _changelog_history:
+            if record["id"] == cl_id:
+                return record
+        raise HTTPException(status_code=404, detail=f"Changelog {cl_id!r} not found")
+
+    @app.delete("/changelog/history/{cl_id}")
+    async def changelog_history_delete(cl_id: str) -> dict[str, Any]:
+        """Delete a specific changelog from history."""
+        for i, record in enumerate(_changelog_history):
+            if record["id"] == cl_id:
+                _changelog_history.pop(i)
+                return {"success": True, "deleted": cl_id}
+        raise HTTPException(status_code=404, detail=f"Changelog {cl_id!r} not found")
+
+    # ── Phase 62: Regex Playground ───────────────────────────────────────────
+
+    def _build_re_flags(flags: list[str]) -> int:
+        """Convert a list of flag strings into a combined re flags int."""
+        import re as _re
+        result = 0
+        for f in flags:
+            fl = f.strip().lower()
+            if fl in ("i", "ignorecase"):
+                result |= _re.IGNORECASE
+            elif fl in ("m", "multiline"):
+                result |= _re.MULTILINE
+            elif fl in ("s", "dotall"):
+                result |= _re.DOTALL
+            elif fl in ("x", "verbose"):
+                result |= _re.VERBOSE
+        return result
+
+    @app.post("/regex/test")
+    async def regex_test(req: RegexTestRequest) -> dict[str, Any]:
+        """Test a regex pattern against text; returns all matches with groups and spans."""
+        import re as _re
+        try:
+            compiled = _re.compile(req.pattern, _build_re_flags(req.flags))
+        except _re.error as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid regex: {exc}")
+        matches = []
+        for m in compiled.finditer(req.text):
+            matches.append({
+                "match": m.group(0),
+                "start": m.start(),
+                "end": m.end(),
+                "groups": list(m.groups()),
+                "named_groups": m.groupdict(),
+            })
+        return {
+            "pattern": req.pattern,
+            "flags": req.flags,
+            "match_count": len(matches),
+            "matches": matches,
+        }
+
+    @app.post("/regex/replace")
+    async def regex_replace(req: RegexReplaceRequest) -> dict[str, Any]:
+        """Replace regex matches in text."""
+        import re as _re
+        try:
+            compiled = _re.compile(req.pattern, _build_re_flags(req.flags))
+        except _re.error as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid regex: {exc}")
+        result = compiled.sub(req.replacement, req.text, count=req.count)
+        return {"original": req.text, "result": result, "pattern": req.pattern}
+
+    @app.post("/regex/split")
+    async def regex_split(req: RegexSplitRequest) -> dict[str, Any]:
+        """Split text using a regex pattern."""
+        import re as _re
+        try:
+            compiled = _re.compile(req.pattern, _build_re_flags(req.flags))
+        except _re.error as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid regex: {exc}")
+        parts = compiled.split(req.text, maxsplit=req.maxsplit)
+        return {"parts": parts, "count": len(parts), "pattern": req.pattern}
+
+    @app.post("/regex/history")
+    async def regex_save(req: RegexSaveRequest) -> dict[str, Any]:
+        """Save a regex pattern to history."""
+        global _regex_history_id_counter
+        if len(_regex_history) >= _MAX_REGEX_HISTORY:
+            _regex_history.pop(0)
+        _regex_history_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": f"rx-{_regex_history_id_counter}",
+            "pattern": req.pattern,
+            "description": req.description,
+            "flags": req.flags,
+            "saved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _regex_history.append(entry)
+        return {"success": True, "entry": entry}
+
+    @app.get("/regex/history")
+    async def regex_history_list(
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List saved regex history (newest first)."""
+        return {"history": list(reversed(_regex_history))[:limit], "total": len(_regex_history)}
+
+    @app.delete("/regex/history/{rx_id}")
+    async def regex_history_delete(rx_id: str) -> dict[str, Any]:
+        """Delete a saved regex history entry."""
+        for i, entry in enumerate(_regex_history):
+            if entry["id"] == rx_id:
+                _regex_history.pop(i)
+                return {"success": True, "deleted": rx_id}
+        raise HTTPException(status_code=404, detail=f"Regex history entry {rx_id!r} not found")
+
+    # ── Phase 63: Color Palette Manager ──────────────────────────────────────
+
+    def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+        """Parse a hex color string (#RGB or #RRGGBB) to (r, g, b) integers."""
+        h = hex_color.lstrip("#")
+        if len(h) == 3:
+            h = h[0]*2 + h[1]*2 + h[2]*2
+        if len(h) != 6:
+            raise ValueError(f"Invalid hex color: {hex_color!r}")
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+    def _rgb_to_hsl(r: int, g: int, b: int) -> tuple[float, float, float]:
+        """Convert RGB (0-255) to HSL (h: 0-360, s: 0-100, l: 0-100)."""
+        r_f, g_f, b_f = r / 255.0, g / 255.0, b / 255.0
+        cmax = max(r_f, g_f, b_f)
+        cmin = min(r_f, g_f, b_f)
+        delta = cmax - cmin
+        l = (cmax + cmin) / 2.0
+        if delta == 0:
+            h = s = 0.0
+        else:
+            s = delta / (1 - abs(2 * l - 1))
+            if cmax == r_f:
+                h = 60.0 * (((g_f - b_f) / delta) % 6)
+            elif cmax == g_f:
+                h = 60.0 * (((b_f - r_f) / delta) + 2)
+            else:
+                h = 60.0 * (((r_f - g_f) / delta) + 4)
+        return round(h, 2), round(s * 100, 2), round(l * 100, 2)
+
+    def _normalize_hex(hex_color: str) -> str:
+        """Normalise to uppercase 7-char #RRGGBB."""
+        r, g, b = _hex_to_rgb(hex_color)
+        return f"#{r:02X}{g:02X}{b:02X}"
+
+    @app.post("/palette")
+    async def palette_create(req: PaletteCreateRequest) -> dict[str, Any]:
+        """Create a new color palette."""
+        global _palette_id_counter
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name must not be empty")
+        if len(_palettes) >= _MAX_PALETTES:
+            raise HTTPException(status_code=429, detail="Palette store full.")
+        _palette_id_counter += 1
+        palette_id = f"pal-{_palette_id_counter}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        colors = []
+        for c in req.colors:
+            try:
+                hex_norm = _normalize_hex(c.hex)
+            except (ValueError, Exception):
+                raise HTTPException(status_code=400, detail=f"Invalid hex color: {c.hex!r}")
+            colors.append({"hex": hex_norm, "name": c.name})
+        palette: dict[str, Any] = {
+            "id": palette_id,
+            "name": name,
+            "description": req.description,
+            "colors": colors,
+            "created_at": now,
+            "updated_at": now,
+        }
+        _palettes[palette_id] = palette
+        return {"success": True, "id": palette_id, "palette": palette}
+
+    @app.get("/palettes")
+    async def palettes_list(
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List all palettes."""
+        return {"palettes": list(_palettes.values())[:limit], "total": len(_palettes)}
+
+    @app.get("/palette/{palette_id}")
+    async def palette_get(palette_id: str) -> dict[str, Any]:
+        """Get a palette by ID."""
+        if palette_id not in _palettes:
+            raise HTTPException(status_code=404, detail=f"Palette {palette_id!r} not found")
+        return _palettes[palette_id]
+
+    @app.patch("/palette/{palette_id}")
+    async def palette_update(palette_id: str, req: PaletteUpdateRequest) -> dict[str, Any]:
+        """Partially update a palette's name or description."""
+        if palette_id not in _palettes:
+            raise HTTPException(status_code=404, detail=f"Palette {palette_id!r} not found")
+        pal = _palettes[palette_id]
+        if req.name is not None:
+            name = req.name.strip()
+            if not name:
+                raise HTTPException(status_code=400, detail="name must not be empty")
+            pal["name"] = name
+        if req.description is not None:
+            pal["description"] = req.description
+        pal["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "palette": pal}
+
+    @app.delete("/palette/{palette_id}")
+    async def palette_delete(palette_id: str) -> dict[str, Any]:
+        """Delete a palette."""
+        if palette_id not in _palettes:
+            raise HTTPException(status_code=404, detail=f"Palette {palette_id!r} not found")
+        _palettes.pop(palette_id)
+        return {"success": True, "deleted": palette_id}
+
+    @app.post("/palette/{palette_id}/color")
+    async def palette_add_color(palette_id: str, req: PaletteAddColorRequest) -> dict[str, Any]:
+        """Add a color to an existing palette."""
+        if palette_id not in _palettes:
+            raise HTTPException(status_code=404, detail=f"Palette {palette_id!r} not found")
+        try:
+            hex_norm = _normalize_hex(req.hex)
+        except (ValueError, Exception):
+            raise HTTPException(status_code=400, detail=f"Invalid hex color: {req.hex!r}")
+        color_entry = {"hex": hex_norm, "name": req.name}
+        _palettes[palette_id]["colors"].append(color_entry)
+        _palettes[palette_id]["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "palette": _palettes[palette_id]}
+
+    @app.delete("/palette/{palette_id}/color/{color_idx}")
+    async def palette_remove_color(palette_id: str, color_idx: int) -> dict[str, Any]:
+        """Remove a color from a palette by its index."""
+        if palette_id not in _palettes:
+            raise HTTPException(status_code=404, detail=f"Palette {palette_id!r} not found")
+        colors = _palettes[palette_id]["colors"]
+        if color_idx < 0 or color_idx >= len(colors):
+            raise HTTPException(status_code=400, detail=f"Color index {color_idx} out of range (0-{len(colors)-1})")
+        colors.pop(color_idx)
+        _palettes[palette_id]["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "palette": _palettes[palette_id]}
+
+    @app.post("/color/convert")
+    async def color_convert(req: ColorConvertRequest) -> dict[str, Any]:
+        """Convert a hex color to hex (normalised), RGB, and HSL."""
+        try:
+            r, g, b = _hex_to_rgb(req.hex)
+        except (ValueError, Exception):
+            raise HTTPException(status_code=400, detail=f"Invalid hex color: {req.hex!r}")
+        h, s, l = _rgb_to_hsl(r, g, b)
+        hex_norm = f"#{r:02X}{g:02X}{b:02X}"
+        return {
+            "hex": hex_norm,
+            "rgb": {"r": r, "g": g, "b": b},
+            "hsl": {"h": h, "s": s, "l": l},
+            "css": {
+                "hex": hex_norm,
+                "rgb": f"rgb({r}, {g}, {b})",
+                "hsl": f"hsl({h}, {s}%, {l}%)",
+            },
+        }
+
+    # ── Phase 64: UUID / Token Generator ─────────────────────────────────────
+
+    @app.post("/uuid/generate")
+    async def uuid_generate(req: UUIDGenerateRequest) -> dict[str, Any]:
+        """Generate one or more UUIDs (version 1 or 4)."""
+        import uuid as _uuid
+        if req.version not in (1, 4):
+            raise HTTPException(status_code=400, detail="version must be 1 or 4")
+        if not 1 <= req.count <= 100:
+            raise HTTPException(status_code=400, detail="count must be between 1 and 100")
+        results = []
+        for _ in range(req.count):
+            val = str(_uuid.uuid1()) if req.version == 1 else str(_uuid.uuid4())
+            results.append(val.upper() if req.uppercase else val)
+        return {"version": req.version, "count": len(results), "values": results}
+
+    @app.post("/uuid/validate")
+    async def uuid_validate(req: UUIDValidateRequest) -> dict[str, Any]:
+        """Validate a UUID string and return its parsed components."""
+        import uuid as _uuid
+        try:
+            parsed = _uuid.UUID(req.value)
+        except ValueError:
+            return {"valid": False, "value": req.value}
+        return {
+            "valid": True,
+            "value": str(parsed),
+            "version": parsed.version,
+            "variant": str(parsed.variant),
+            "hex": parsed.hex,
+            "int": parsed.int,
+            "urn": parsed.urn,
+        }
+
+    @app.post("/uuid/history")
+    async def uuid_history_save(req: UUIDSaveRequest) -> dict[str, Any]:
+        """Save generated UUIDs to history."""
+        global _uuid_history_id_counter
+        if not req.values:
+            raise HTTPException(status_code=400, detail="values must not be empty")
+        if len(_uuid_history) >= _MAX_UUID_HISTORY:
+            _uuid_history.pop(0)
+        _uuid_history_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": f"uid-{_uuid_history_id_counter}",
+            "label": req.label,
+            "values": req.values,
+            "count": len(req.values),
+            "saved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _uuid_history.append(entry)
+        return {"success": True, "entry": entry}
+
+    @app.get("/uuid/history")
+    async def uuid_history_list(
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List UUID generation history (newest first)."""
+        return {"history": list(reversed(_uuid_history))[:limit], "total": len(_uuid_history)}
+
+    @app.delete("/uuid/history/{uid_id}")
+    async def uuid_history_delete(uid_id: str) -> dict[str, Any]:
+        """Delete a UUID history entry."""
+        for i, entry in enumerate(_uuid_history):
+            if entry["id"] == uid_id:
+                _uuid_history.pop(i)
+                return {"success": True, "deleted": uid_id}
+        raise HTTPException(status_code=404, detail=f"UUID history entry {uid_id!r} not found")
+
+    # ── Phase 65: Text Statistics / Readability Analyzer ─────────────────────
+
+    def _analyze_text(text: str, top_n: int = 10) -> dict[str, Any]:
+        """Compute text statistics and a Flesch Reading Ease score."""
+        import re as _re
+        import math as _math
+
+        char_count = len(text)
+        char_no_spaces = len(text.replace(" ", "").replace("\n", "").replace("\t", ""))
+
+        # Sentence count — split on . ! ? followed by whitespace or end
+        sentences = [s.strip() for s in _re.split(r'[.!?]+', text) if s.strip()]
+        sentence_count = max(len(sentences), 1)
+
+        # Word count
+        words = _re.findall(r"[A-Za-z']+", text)
+        word_count = len(words)
+
+        # Paragraph count (blank-line delimited)
+        paragraphs = [p for p in _re.split(r'\n\s*\n', text) if p.strip()]
+        paragraph_count = max(len(paragraphs), 1)
+
+        # Average word length
+        avg_word_length = round(sum(len(w) for w in words) / max(word_count, 1), 2)
+
+        # Average words per sentence
+        avg_words_per_sentence = round(word_count / sentence_count, 2)
+
+        # Top N most frequent words (lowercased, ignore short stop-words)
+        _STOPWORDS = {"the","a","an","and","or","but","is","in","on","at","to","of","for","it","its","be","as","by"}
+        freq: dict[str, int] = {}
+        for w in words:
+            lw = w.lower()
+            if len(lw) > 2 and lw not in _STOPWORDS:
+                freq[lw] = freq.get(lw, 0) + 1
+        top_words = sorted(freq.items(), key=lambda x: -x[1])[:top_n]
+
+        # Syllable count (simple heuristic)
+        def _syllables(word: str) -> int:
+            word = word.lower()
+            count = len(_re.findall(r'[aeiou]+', word))
+            if word.endswith('e') and len(word) > 2:
+                count -= 1
+            return max(count, 1)
+
+        total_syllables = sum(_syllables(w) for w in words)
+
+        # Flesch Reading Ease = 206.835 - 1.015*(words/sentences) - 84.6*(syllables/words)
+        if word_count > 0:
+            flesch = round(
+                206.835
+                - 1.015 * (word_count / sentence_count)
+                - 84.6 * (total_syllables / max(word_count, 1)),
+                2,
+            )
+        else:
+            flesch = 0.0
+
+        return {
+            "char_count": char_count,
+            "char_count_no_spaces": char_no_spaces,
+            "word_count": word_count,
+            "sentence_count": sentence_count,
+            "paragraph_count": paragraph_count,
+            "avg_word_length": avg_word_length,
+            "avg_words_per_sentence": avg_words_per_sentence,
+            "syllable_count": total_syllables,
+            "flesch_reading_ease": flesch,
+            "top_words": [{"word": w, "count": c} for w, c in top_words],
+        }
+
+    @app.post("/textstats/analyze")
+    async def textstats_analyze(req: TextStatsAnalyzeRequest) -> dict[str, Any]:
+        """Analyze text statistics and readability."""
+        if not req.text.strip():
+            raise HTTPException(status_code=400, detail="text must not be empty")
+        if not 1 <= req.top_n <= 100:
+            raise HTTPException(status_code=400, detail="top_n must be between 1 and 100")
+        return _analyze_text(req.text, req.top_n)
+
+    @app.post("/textstats/history")
+    async def textstats_history_save(req: TextStatsSaveRequest) -> dict[str, Any]:
+        """Analyze text and save the result to history."""
+        global _textstats_history_id_counter
+        if not req.text.strip():
+            raise HTTPException(status_code=400, detail="text must not be empty")
+        if not 1 <= req.top_n <= 100:
+            raise HTTPException(status_code=400, detail="top_n must be between 1 and 100")
+        stats = _analyze_text(req.text, req.top_n)
+        if len(_textstats_history) >= _MAX_TEXTSTATS_HISTORY:
+            _textstats_history.pop(0)
+        _textstats_history_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": f"ts-{_textstats_history_id_counter}",
+            "label": req.label,
+            "text_preview": req.text[:120].replace("\n", " "),
+            "stats": stats,
+            "saved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _textstats_history.append(entry)
+        return {"success": True, "entry": entry}
+
+    @app.get("/textstats/history")
+    async def textstats_history_list(
+        limit: int = Query(50, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """List text stats history (newest first)."""
+        return {"history": list(reversed(_textstats_history))[:limit], "total": len(_textstats_history)}
+
+    @app.delete("/textstats/history/{ts_id}")
+    async def textstats_history_delete(ts_id: str) -> dict[str, Any]:
+        """Delete a text stats history entry."""
+        for i, entry in enumerate(_textstats_history):
+            if entry["id"] == ts_id:
+                _textstats_history.pop(i)
+                return {"success": True, "deleted": ts_id}
+        raise HTTPException(status_code=404, detail=f"Text stats history entry {ts_id!r} not found")
+
+    # ── Phase 66: JSON/YAML Converter & Formatter ────────────────────────────
+
+    @app.post("/jsonformat/format")
+    async def jsonformat_format(req: JsonFormatRequest) -> dict[str, Any]:
+        """Format or minify a JSON string."""
+        import json as _json
+        try:
+            parsed = _json.loads(req.content)
+        except _json.JSONDecodeError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+        if req.minify:
+            result = _json.dumps(parsed, separators=(",", ":"), ensure_ascii=False)
+        else:
+            indent = max(1, min(req.indent, 8))
+            result = _json.dumps(parsed, indent=indent, sort_keys=req.sort_keys, ensure_ascii=False)
+        return {"output": result, "minified": req.minify, "sorted": req.sort_keys}
+
+    @app.post("/jsonformat/validate")
+    async def jsonformat_validate(req: JsonValidateRequest) -> dict[str, Any]:
+        """Validate a JSON or YAML string; return parse errors on failure."""
+        import json as _json
+        if req.mode == "yaml":
+            try:
+                import yaml as _yaml
+                _yaml.safe_load(req.content)
+                return {"valid": True, "mode": "yaml"}
+            except Exception as e:
+                return {"valid": False, "mode": "yaml", "error": str(e)}
+        else:
+            try:
+                _json.loads(req.content)
+                return {"valid": True, "mode": "json"}
+            except _json.JSONDecodeError as e:
+                return {"valid": False, "mode": "json", "error": str(e), "line": e.lineno, "col": e.colno}
+
+    @app.post("/jsonformat/convert")
+    async def jsonformat_convert(req: JsonConvertRequest) -> dict[str, Any]:
+        """Convert JSON→YAML or YAML→JSON."""
+        import json as _json
+        try:
+            import yaml as _yaml
+        except ImportError:
+            raise HTTPException(status_code=500, detail="PyYAML is not installed")
+        if req.direction == "json_to_yaml":
+            try:
+                parsed = _json.loads(req.content)
+            except _json.JSONDecodeError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+            output = _yaml.dump(parsed, allow_unicode=True, default_flow_style=False).rstrip()
+            return {"direction": "json_to_yaml", "output": output}
+        elif req.direction == "yaml_to_json":
+            try:
+                parsed = _yaml.safe_load(req.content)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
+            output = _json.dumps(parsed, indent=2, ensure_ascii=False)
+            return {"direction": "yaml_to_json", "output": output}
+        else:
+            raise HTTPException(status_code=400, detail="direction must be 'json_to_yaml' or 'yaml_to_json'")
+
+    @app.post("/jsonformat/history")
+    async def jsonformat_history_save(req: JsonFormatSaveRequest) -> dict[str, Any]:
+        """Save a format/convert/validate operation to history."""
+        global _jsonformat_history_id_counter
+        if len(_jsonformat_history) >= _MAX_JSONFORMAT_HISTORY:
+            _jsonformat_history.pop(0)
+        _jsonformat_history_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": f"jf-{_jsonformat_history_id_counter}",
+            "label": req.label,
+            "operation": req.operation,
+            "input_preview": req.input[:120].replace("\n", " "),
+            "output_preview": req.output[:120].replace("\n", " "),
+            "saved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _jsonformat_history.append(entry)
+        return {"success": True, "entry": entry}
+
+    @app.get("/jsonformat/history")
+    async def jsonformat_history_list(
+        limit: int = Query(50, ge=1, le=300),
+    ) -> dict[str, Any]:
+        """List format/convert history (newest first)."""
+        return {"history": list(reversed(_jsonformat_history))[:limit], "total": len(_jsonformat_history)}
+
+    @app.delete("/jsonformat/history/{jf_id}")
+    async def jsonformat_history_delete(jf_id: str) -> dict[str, Any]:
+        """Delete a format history entry."""
+        for i, entry in enumerate(_jsonformat_history):
+            if entry["id"] == jf_id:
+                _jsonformat_history.pop(i)
+                return {"success": True, "deleted": jf_id}
+        raise HTTPException(status_code=404, detail=f"JSON format history entry {jf_id!r} not found")
+
+    # ── Phase 67: Hash & Checksum Tool ───────────────────────────────────────
+
+    _HASH_ALGOS = {"md5", "sha1", "sha256", "sha512", "sha3_256"}
+
+    @app.post("/hash/generate")
+    async def hash_generate(req: HashGenerateRequest) -> dict[str, Any]:
+        """Hash a string using the specified algorithm."""
+        import hashlib as _hl
+        if req.algorithm not in _HASH_ALGOS:
+            raise HTTPException(status_code=400, detail=f"algorithm must be one of {sorted(_HASH_ALGOS)}")
+        try:
+            raw = req.text.encode(req.encoding)
+        except LookupError:
+            raise HTTPException(status_code=400, detail=f"Unknown encoding: {req.encoding!r}")
+        h = _hl.new(req.algorithm, raw).hexdigest()
+        return {"algorithm": req.algorithm, "hash": h, "length": len(h)}
+
+    @app.post("/hash/compare")
+    async def hash_compare(req: HashCompareRequest) -> dict[str, Any]:
+        """Compare a string's hash against a known hash value."""
+        import hashlib as _hl
+        import hmac as _hmac
+        if req.algorithm not in _HASH_ALGOS:
+            raise HTTPException(status_code=400, detail=f"algorithm must be one of {sorted(_HASH_ALGOS)}")
+        try:
+            raw = req.text.encode(req.encoding)
+        except LookupError:
+            raise HTTPException(status_code=400, detail=f"Unknown encoding: {req.encoding!r}")
+        computed = _hl.new(req.algorithm, raw).hexdigest()
+        match = _hmac.compare_digest(computed.lower(), req.hash.lower())
+        return {"match": match, "computed": computed, "expected": req.hash, "algorithm": req.algorithm}
+
+    @app.post("/hash/detect")
+    async def hash_detect(req: HashDetectRequest) -> dict[str, Any]:
+        """Guess the hash algorithm from the length and character set of the hash."""
+        import re as _re
+        h = req.hash.strip()
+        hex_only = bool(_re.fullmatch(r"[0-9a-fA-F]+", h))
+        length = len(h)
+        candidates: list[str] = []
+        if hex_only:
+            if length == 32:
+                candidates = ["md5"]
+            elif length == 40:
+                candidates = ["sha1"]
+            elif length == 64:
+                candidates = ["sha256", "sha3_256"]
+            elif length == 128:
+                candidates = ["sha512"]
+            else:
+                candidates = []
+        return {
+            "hash": h,
+            "length": length,
+            "hex_chars_only": hex_only,
+            "likely_algorithms": candidates,
+        }
+
+    @app.post("/hash/history")
+    async def hash_history_save(req: HashSaveRequest) -> dict[str, Any]:
+        """Save a hash result to history."""
+        global _hash_history_id_counter
+        if len(_hash_history) >= _MAX_HASH_HISTORY:
+            _hash_history.pop(0)
+        _hash_history_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": f"hsh-{_hash_history_id_counter}",
+            "label": req.label,
+            "algorithm": req.algorithm,
+            "text_preview": req.text_preview[:80],
+            "hash": req.hash,
+            "saved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _hash_history.append(entry)
+        return {"success": True, "entry": entry}
+
+    @app.get("/hash/history")
+    async def hash_history_list(
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List hash history (newest first)."""
+        return {"history": list(reversed(_hash_history))[:limit], "total": len(_hash_history)}
+
+    @app.delete("/hash/history/{hsh_id}")
+    async def hash_history_delete(hsh_id: str) -> dict[str, Any]:
+        """Delete a hash history entry."""
+        for i, entry in enumerate(_hash_history):
+            if entry["id"] == hsh_id:
+                _hash_history.pop(i)
+                return {"success": True, "deleted": hsh_id}
+        raise HTTPException(status_code=404, detail=f"Hash history entry {hsh_id!r} not found")
+
     return app
 
 
@@ -8068,5 +9838,76 @@ _testrunner_id_counter: int = 0
 _terminal_sessions: dict[str, Any] = {}
 _terminal_id_counter: int = 0
 _MAX_TERMINAL_OUTPUT = 200_000  # chars per session
+
+# ── Phase 54: File Watcher ─────────────────────────────────────────────────────
+_watcher_watches: dict[str, Any] = {}
+_watcher_events: list[dict[str, Any]] = []
+_watcher_id_counter: int = 0
+_MAX_WATCHER_EVENTS = 1_000   # cap stored events
+_watcher_threads: dict[str, Any] = {}   # watch_id → threading.Thread
+
+# ── Phase 55: Process Manager ─────────────────────────────────────────────────
+_process_registry: dict[str, Any] = {}
+_process_id_counter: int = 0
+_MAX_PROCESS_LOG = 200_000    # chars of captured output per process
+
+# ── Phase 56: Knowledge Base / Notes Manager ──────────────────────────────────
+_kb_entries: dict[str, Any] = {}
+_kb_id_counter: int = 0
+_MAX_KB_ENTRIES = 2_000
+
+# ── Phase 57: HTTP Mock Server ────────────────────────────────────────────────
+_mockserver_routes: dict[str, Any] = {}
+_mockserver_route_id_counter: int = 0
+_mockserver_requests: list[dict[str, Any]] = []
+_MAX_MOCK_REQUESTS = 500
+
+# ── Phase 58: Bookmark Manager ────────────────────────────────────────────────
+_bookmarks: dict[str, Any] = {}
+_bookmark_id_counter: int = 0
+_MAX_BOOKMARKS = 2_000
+
+# ── Phase 59: Schema Registry ─────────────────────────────────────────────────
+_schema_registry: dict[str, Any] = {}   # name → schema record
+
+# ── Phase 60: Code Template Engine ────────────────────────────────────────────
+_templates: dict[str, Any] = {}
+_template_id_counter: int = 0
+_MAX_TEMPLATES = 1_000
+
+# ── Phase 61: Changelog Generator ─────────────────────────────────────────────
+_changelog_history: list[dict[str, Any]] = []
+_changelog_id_counter: int = 0
+_MAX_CHANGELOG_HISTORY = 200
+
+# ── Phase 62: Regex Playground ────────────────────────────────────────────────
+_regex_history: list[dict[str, Any]] = []
+_regex_history_id_counter: int = 0
+_MAX_REGEX_HISTORY = 500
+
+# ── Phase 63: Color Palette Manager ───────────────────────────────────────────
+_palettes: dict[str, Any] = {}
+_palette_id_counter: int = 0
+_MAX_PALETTES = 500
+
+# ── Phase 64: UUID / Token Generator ──────────────────────────────────────────
+_uuid_history: list[dict[str, Any]] = []
+_uuid_history_id_counter: int = 0
+_MAX_UUID_HISTORY = 500
+
+# ── Phase 65: Text Statistics / Readability Analyzer ─────────────────────────
+_textstats_history: list[dict[str, Any]] = []
+_textstats_history_id_counter: int = 0
+_MAX_TEXTSTATS_HISTORY = 200
+
+# ── Phase 66: JSON/YAML Converter & Formatter ─────────────────────────────────
+_jsonformat_history: list[dict[str, Any]] = []
+_jsonformat_history_id_counter: int = 0
+_MAX_JSONFORMAT_HISTORY = 300
+
+# ── Phase 67: Hash & Checksum Tool ────────────────────────────────────────────
+_hash_history: list[dict[str, Any]] = []
+_hash_history_id_counter: int = 0
+_MAX_HASH_HISTORY = 500
 
 # ── End of module-level state ─────────────────────────────────────────────────

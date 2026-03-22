@@ -341,7 +341,7 @@
     {
       "id": "m11",
       "title": "Test Runner, Terminal & Developer Productivity",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t11-1",
@@ -356,6 +356,132 @@
           "status": "done",
           "priority": "high",
           "description": "Create/list/exec/delete named terminal sessions with command history and sandboxed cwd"
+        }
+      ]
+    },
+    {
+      "id": "m12",
+      "title": "File Watcher, Process Manager & Automation",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t12-1",
+          "title": "File Watcher",
+          "status": "done",
+          "priority": "high",
+          "description": "Watch files/directories for changes, record events, list/delete watches"
+        },
+        {
+          "id": "t12-2",
+          "title": "Process Manager",
+          "status": "done",
+          "priority": "high",
+          "description": "Start/stop background processes, stream logs, list by status"
+        }
+      ]
+    },
+    {
+      "id": "m13",
+      "title": "Knowledge Base, Mock Server & Developer Tools",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t13-1",
+          "title": "Knowledge Base / Notes Manager",
+          "status": "done",
+          "priority": "high",
+          "description": "CRUD + full-text search for notes/knowledge entries with tags and categories"
+        },
+        {
+          "id": "t13-2",
+          "title": "HTTP Mock Server",
+          "status": "done",
+          "priority": "high",
+          "description": "Define stub routes, simulate HTTP requests, record request history"
+        },
+        {
+          "id": "t13-3",
+          "title": "Bookmark Manager",
+          "status": "done",
+          "priority": "medium",
+          "description": "CRUD + keyword search for URL/file/code bookmarks with tags and categories"
+        },
+        {
+          "id": "t13-4",
+          "title": "Schema Registry",
+          "status": "done",
+          "priority": "high",
+          "description": "Register, retrieve, and validate JSON schemas; built-in validator with type/required/enum/constraint support"
+        }
+      ]
+    },
+    {
+      "id": "m14",
+      "title": "Advanced Tooling & Integrations",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t14-1",
+          "title": "Code Template Engine",
+          "status": "done",
+          "priority": "high",
+          "description": "CRUD + render for text/code templates with {{variable}} placeholder substitution"
+        },
+        {
+          "id": "t14-2",
+          "title": "Changelog Generator",
+          "status": "done",
+          "priority": "medium",
+          "description": "Parse Conventional Commits messages, group by type, generate Markdown changelog; CRUD history"
+        },
+        {
+          "id": "t14-3",
+          "title": "Regex Playground",
+          "status": "done",
+          "priority": "medium",
+          "description": "Test/replace/split regex patterns against text; save history"
+        },
+        {
+          "id": "t14-4",
+          "title": "Color Palette Manager",
+          "status": "done",
+          "priority": "medium",
+          "description": "CRUD color palettes; add/remove colors; hex/rgb/hsl conversion"
+        },
+        {
+          "id": "t14-5",
+          "title": "UUID / Token Generator",
+          "status": "done",
+          "priority": "medium",
+          "description": "Generate and validate UUIDs v1/v4; maintain generation history"
+        },
+        {
+          "id": "t14-6",
+          "title": "Text Statistics / Readability Analyzer",
+          "status": "done",
+          "priority": "medium",
+          "description": "Word/char/sentence counts, Flesch reading ease, top words, history"
+        }
+      ]
+    },
+    {
+      "id": "m15",
+      "title": "Data Utilities & Developer Helpers",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t15-1",
+          "title": "JSON/YAML Converter & Formatter",
+          "status": "done",
+          "priority": "medium",
+          "description": "Format/minify JSON, validate JSON/YAML, convert JSON<->YAML with history"
+        },
+        {
+          "id": "t15-2",
+          "title": "Hash & Checksum Tool",
+          "status": "done",
+          "priority": "medium",
+          "description": "Generate MD5/SHA1/SHA256/SHA512 hashes, compare, detect algorithm, history"
         }
       ]
     }

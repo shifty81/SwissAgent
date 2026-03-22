@@ -4358,3 +4358,1544 @@ def test_terminal_cwd_init(client):
     finally:
         import shutil
         shutil.rmtree(ws_sub, ignore_errors=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 54: File Watcher
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_watcher_create_and_list(client):
+    """POST /watcher/watch creates a watch; GET /watcher/watches lists it."""
+    import os, shutil
+    ws = os.path.join(os.getcwd(), "workspace", "test_watch54")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        r = client.post("/watcher/watch", json={"path": "test_watch54", "label": "w54"})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["success"] is True
+        wid = d["watch_id"]
+        assert wid.startswith("watch-")
+        assert d["watch"]["label"] == "w54"
+
+        rl = client.get("/watcher/watches")
+        assert rl.status_code == 200
+        ids = [w["id"] for w in rl.json()["watches"]]
+        assert wid in ids
+    finally:
+        client.delete(f"/watcher/watch/{wid}")
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_watcher_get(client):
+    """GET /watcher/watch/{id} returns watch details."""
+    import os, shutil
+    ws = os.path.join(os.getcwd(), "workspace", "test_watch54g")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        r = client.post("/watcher/watch", json={"path": "test_watch54g"})
+        wid = r.json()["watch_id"]
+        rg = client.get(f"/watcher/watch/{wid}")
+        assert rg.status_code == 200
+        assert rg.json()["id"] == wid
+    finally:
+        client.delete(f"/watcher/watch/{wid}")
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_watcher_get_not_found(client):
+    r = client.get("/watcher/watch/no-such-watch")
+    assert r.status_code == 404
+
+
+def test_watcher_delete(client):
+    """DELETE /watcher/watch/{id} removes the watch."""
+    import os, shutil
+    ws = os.path.join(os.getcwd(), "workspace", "test_watch54d")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        r = client.post("/watcher/watch", json={"path": "test_watch54d"})
+        wid = r.json()["watch_id"]
+        rd = client.delete(f"/watcher/watch/{wid}")
+        assert rd.status_code == 200
+        assert rd.json()["success"] is True
+        rg = client.get(f"/watcher/watch/{wid}")
+        assert rg.status_code == 404
+    finally:
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_watcher_delete_not_found(client):
+    r = client.delete("/watcher/watch/ghost-watch")
+    assert r.status_code == 404
+
+
+def test_watcher_path_not_found(client):
+    """Creating a watch on a non-existent path returns 404."""
+    r = client.post("/watcher/watch", json={"path": "does/not/exist"})
+    assert r.status_code == 404
+
+
+def test_watcher_empty_path_rejected(client):
+    """Empty path returns 400."""
+    r = client.post("/watcher/watch", json={"path": "  "})
+    assert r.status_code == 400
+
+
+def test_watcher_events_list(client):
+    """GET /watcher/events returns a list (possibly empty)."""
+    r = client.get("/watcher/events")
+    assert r.status_code == 200
+    d = r.json()
+    assert "events" in d
+    assert isinstance(d["events"], list)
+
+
+def test_watcher_events_filter_by_watch_id(client):
+    """GET /watcher/events?watch_id= filters events."""
+    r = client.get("/watcher/events?watch_id=watch-9999")
+    assert r.status_code == 200
+    d = r.json()
+    assert all(e["watch_id"] == "watch-9999" for e in d["events"])
+
+
+def test_watcher_events_filter_by_type(client):
+    """GET /watcher/events?event_type= filters events."""
+    r = client.get("/watcher/events?event_type=created")
+    assert r.status_code == 200
+    d = r.json()
+    assert all(e["type"] == "created" for e in d["events"])
+
+
+def test_watcher_path_traversal_blocked(client):
+    """Path traversal outside workspace is blocked."""
+    r = client.post("/watcher/watch", json={"path": "../../etc"})
+    assert r.status_code in (400, 403, 404)
+
+
+def test_watcher_file_watch(client):
+    """Can watch a single file."""
+    import os, shutil
+    ws = os.path.join(os.getcwd(), "workspace", "test_watch54f.txt")
+    with open(ws, "w") as f:
+        f.write("hello")
+    try:
+        r = client.post("/watcher/watch", json={"path": "test_watch54f.txt"})
+        assert r.status_code == 200
+        wid = r.json()["watch_id"]
+        client.delete(f"/watcher/watch/{wid}")
+    finally:
+        os.unlink(ws)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 55: Process Manager
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_process_start_and_list(client):
+    """POST /process/start starts a process; GET /process/list shows it."""
+    r = client.post("/process/start", json={"command": "sleep 60", "label": "sleeper"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    pid = d["process_id"]
+    assert pid.startswith("proc-")
+    assert d["process"]["label"] == "sleeper"
+
+    rl = client.get("/process/list")
+    assert rl.status_code == 200
+    ids = [p["id"] for p in rl.json()["processes"]]
+    assert pid in ids
+
+    # Clean up
+    client.delete(f"/process/{pid}")
+
+
+def test_process_get(client):
+    """GET /process/{id} returns process details."""
+    r = client.post("/process/start", json={"command": "sleep 60"})
+    pid = r.json()["process_id"]
+    rg = client.get(f"/process/{pid}")
+    assert rg.status_code == 200
+    assert rg.json()["id"] == pid
+    client.delete(f"/process/{pid}")
+
+
+def test_process_get_not_found(client):
+    r = client.get("/process/no-such-proc")
+    assert r.status_code == 404
+
+
+def test_process_stop(client):
+    """DELETE /process/{id} stops and removes the process."""
+    r = client.post("/process/start", json={"command": "sleep 60"})
+    pid = r.json()["process_id"]
+    rd = client.delete(f"/process/{pid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    rg = client.get(f"/process/{pid}")
+    assert rg.status_code == 404
+
+
+def test_process_stop_not_found(client):
+    r = client.delete("/process/ghost-proc")
+    assert r.status_code == 404
+
+
+def test_process_logs(client):
+    """GET /process/{id}/logs returns log output."""
+    import time
+    r = client.post("/process/start", json={"command": "echo hello_proc_log"})
+    pid = r.json()["process_id"]
+    time.sleep(0.5)  # allow process to finish
+    rl = client.get(f"/process/{pid}/logs")
+    assert rl.status_code == 200
+    d = rl.json()
+    assert "lines" in d
+    assert "status" in d
+    client.delete(f"/process/{pid}")
+
+
+def test_process_logs_not_found(client):
+    r = client.get("/process/no-such/logs")
+    assert r.status_code == 404
+
+
+def test_process_list_filter_status(client):
+    """GET /process/list?status=running filters by status."""
+    r = client.post("/process/start", json={"command": "sleep 60"})
+    pid = r.json()["process_id"]
+    rl = client.get("/process/list?status=running")
+    assert rl.status_code == 200
+    procs = rl.json()["processes"]
+    assert all(p["status"] == "running" for p in procs)
+    client.delete(f"/process/{pid}")
+
+
+def test_process_empty_command_rejected(client):
+    """Empty command returns 400."""
+    r = client.post("/process/start", json={"command": "  "})
+    assert r.status_code == 400
+
+
+def test_process_bad_cwd(client):
+    """Non-existent cwd returns 404."""
+    r = client.post("/process/start", json={"command": "echo hi", "cwd": "no/such/dir"})
+    assert r.status_code == 404
+
+
+def test_process_finished_status(client):
+    """Process that exits immediately transitions to 'stopped'."""
+    import time
+    r = client.post("/process/start", json={"command": "echo done_test"})
+    pid = r.json()["process_id"]
+    time.sleep(0.5)
+    rg = client.get(f"/process/{pid}")
+    assert rg.status_code == 200
+    assert rg.json()["status"] == "stopped"
+    assert rg.json()["exit_code"] == 0
+    client.delete(f"/process/{pid}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 56: Knowledge Base / Notes Manager
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_kb_create_and_list(client):
+    """POST /kb/entry creates entry; GET /kb/entries lists it."""
+    r = client.post("/kb/entry", json={"title": "Python Tips", "content": "Use list comprehensions", "tags": ["python", "tips"], "category": "coding"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    eid = d["id"]
+    assert eid.startswith("kb-")
+    assert d["entry"]["title"] == "Python Tips"
+    assert "python" in d["entry"]["tags"]
+
+    rl = client.get("/kb/entries")
+    assert rl.status_code == 200
+    ids = [e["id"] for e in rl.json()["entries"]]
+    assert eid in ids
+
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_get_entry(client):
+    """GET /kb/entry/{id} returns the entry."""
+    r = client.post("/kb/entry", json={"title": "Docker Notes"})
+    eid = r.json()["id"]
+    rg = client.get(f"/kb/entry/{eid}")
+    assert rg.status_code == 200
+    assert rg.json()["title"] == "Docker Notes"
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_get_not_found(client):
+    r = client.get("/kb/entry/kb-9999999")
+    assert r.status_code == 404
+
+
+def test_kb_update_entry(client):
+    """PATCH /kb/entry/{id} updates fields."""
+    r = client.post("/kb/entry", json={"title": "Old Title", "content": "old content"})
+    eid = r.json()["id"]
+    ru = client.patch(f"/kb/entry/{eid}", json={"title": "New Title", "tags": ["updated"]})
+    assert ru.status_code == 200
+    assert ru.json()["entry"]["title"] == "New Title"
+    assert "updated" in ru.json()["entry"]["tags"]
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_update_not_found(client):
+    r = client.patch("/kb/entry/kb-9999999", json={"title": "X"})
+    assert r.status_code == 404
+
+
+def test_kb_delete_entry(client):
+    """DELETE /kb/entry/{id} removes the entry."""
+    r = client.post("/kb/entry", json={"title": "To Delete"})
+    eid = r.json()["id"]
+    rd = client.delete(f"/kb/entry/{eid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/kb/entry/{eid}").status_code == 404
+
+
+def test_kb_delete_not_found(client):
+    r = client.delete("/kb/entry/kb-9999999")
+    assert r.status_code == 404
+
+
+def test_kb_empty_title_rejected(client):
+    """Empty title returns 400."""
+    r = client.post("/kb/entry", json={"title": "  "})
+    assert r.status_code == 400
+
+
+def test_kb_filter_by_tag(client):
+    """GET /kb/entries?tag= filters by tag."""
+    r = client.post("/kb/entry", json={"title": "Tagged", "tags": ["special56tag"]})
+    eid = r.json()["id"]
+    rl = client.get("/kb/entries?tag=special56tag")
+    assert rl.status_code == 200
+    ids = [e["id"] for e in rl.json()["entries"]]
+    assert eid in ids
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_filter_by_category(client):
+    """GET /kb/entries?category= filters by category."""
+    r = client.post("/kb/entry", json={"title": "Cat Entry", "category": "cattest56"})
+    eid = r.json()["id"]
+    rl = client.get("/kb/entries?category=cattest56")
+    assert rl.status_code == 200
+    ids = [e["id"] for e in rl.json()["entries"]]
+    assert eid in ids
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_search(client):
+    """GET /kb/search?q= returns matching entries."""
+    r = client.post("/kb/entry", json={"title": "uniqueterm56abc", "content": "some note"})
+    eid = r.json()["id"]
+    rs = client.get("/kb/search?q=uniqueterm56abc")
+    assert rs.status_code == 200
+    ids = [e["id"] for e in rs.json()["results"]]
+    assert eid in ids
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_search_no_match(client):
+    """Search with no match returns empty results."""
+    rs = client.get("/kb/search?q=zzznomatchterm99xyz")
+    assert rs.status_code == 200
+    assert rs.json()["results"] == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 57: HTTP Mock Server
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_mockserver_create_route(client):
+    """POST /mockserver/route creates a route."""
+    r = client.post("/mockserver/route", json={"method": "GET", "path": "/api/test57", "status_code": 200, "response_body": {"msg": "ok"}})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    rid = d["route_id"]
+    assert rid.startswith("route-")
+    assert d["route"]["path"] == "/api/test57"
+
+    client.delete(f"/mockserver/route/{rid}")
+
+
+def test_mockserver_list_routes(client):
+    """GET /mockserver/routes lists all routes."""
+    r = client.post("/mockserver/route", json={"method": "POST", "path": "/api/list57"})
+    rid = r.json()["route_id"]
+    rl = client.get("/mockserver/routes")
+    assert rl.status_code == 200
+    ids = [rt["id"] for rt in rl.json()["routes"]]
+    assert rid in ids
+    client.delete(f"/mockserver/route/{rid}")
+
+
+def test_mockserver_get_route(client):
+    """GET /mockserver/route/{id} returns route details."""
+    r = client.post("/mockserver/route", json={"method": "GET", "path": "/api/get57"})
+    rid = r.json()["route_id"]
+    rg = client.get(f"/mockserver/route/{rid}")
+    assert rg.status_code == 200
+    assert rg.json()["id"] == rid
+    client.delete(f"/mockserver/route/{rid}")
+
+
+def test_mockserver_get_route_not_found(client):
+    r = client.get("/mockserver/route/route-9999999")
+    assert r.status_code == 404
+
+
+def test_mockserver_delete_route(client):
+    """DELETE /mockserver/route/{id} removes the route."""
+    r = client.post("/mockserver/route", json={"method": "DELETE", "path": "/api/del57"})
+    rid = r.json()["route_id"]
+    rd = client.delete(f"/mockserver/route/{rid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/mockserver/route/{rid}").status_code == 404
+
+
+def test_mockserver_delete_route_not_found(client):
+    r = client.delete("/mockserver/route/route-9999999")
+    assert r.status_code == 404
+
+
+def test_mockserver_invalid_method(client):
+    """Invalid HTTP method returns 400."""
+    r = client.post("/mockserver/route", json={"method": "INVALID", "path": "/x"})
+    assert r.status_code == 400
+
+
+def test_mockserver_path_must_start_with_slash(client):
+    r = client.post("/mockserver/route", json={"method": "GET", "path": "no-slash"})
+    assert r.status_code == 400
+
+
+def test_mockserver_simulate_request_match(client):
+    """POST /mockserver/request returns matched route response."""
+    r = client.post("/mockserver/route", json={"method": "GET", "path": "/mocked57", "status_code": 201, "response_body": {"data": "mocked"}})
+    rid = r.json()["route_id"]
+    rs = client.post("/mockserver/request", json={"method": "GET", "path": "/mocked57"})
+    assert rs.status_code == 200
+    d = rs.json()
+    assert d["status_code"] == 201
+    assert d["response_body"] == {"data": "mocked"}
+    assert d["matched_route_id"] == rid
+    client.delete(f"/mockserver/route/{rid}")
+
+
+def test_mockserver_simulate_request_no_match(client):
+    """POST /mockserver/request with no matching route returns 404 stub."""
+    rs = client.post("/mockserver/request", json={"method": "GET", "path": "/no-match-57xyz"})
+    assert rs.status_code == 200
+    d = rs.json()
+    assert d["status_code"] == 404
+    assert d["matched_route_id"] is None
+
+
+def test_mockserver_hit_count_increments(client):
+    """Matched route hit_count increments on each simulated request."""
+    r = client.post("/mockserver/route", json={"method": "GET", "path": "/hitcount57"})
+    rid = r.json()["route_id"]
+    client.post("/mockserver/request", json={"method": "GET", "path": "/hitcount57"})
+    client.post("/mockserver/request", json={"method": "GET", "path": "/hitcount57"})
+    rg = client.get(f"/mockserver/route/{rid}")
+    assert rg.json()["hit_count"] == 2
+    client.delete(f"/mockserver/route/{rid}")
+
+
+def test_mockserver_list_requests(client):
+    """GET /mockserver/requests returns recorded requests."""
+    client.post("/mockserver/request", json={"method": "GET", "path": "/listreqs57"})
+    rl = client.get("/mockserver/requests")
+    assert rl.status_code == 200
+    assert isinstance(rl.json()["requests"], list)
+
+
+def test_mockserver_list_requests_filter_method(client):
+    """GET /mockserver/requests?method= filters by method."""
+    client.post("/mockserver/request", json={"method": "POST", "path": "/filtermeth57"})
+    rl = client.get("/mockserver/requests?method=POST")
+    assert rl.status_code == 200
+    assert all(r["method"] == "POST" for r in rl.json()["requests"])
+
+
+def test_mockserver_clear_requests(client):
+    """DELETE /mockserver/requests clears all recorded requests."""
+    client.post("/mockserver/request", json={"method": "GET", "path": "/clear57"})
+    rc = client.delete("/mockserver/requests")
+    assert rc.status_code == 200
+    assert rc.json()["success"] is True
+    rl = client.get("/mockserver/requests")
+    assert rl.json()["requests"] == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 58: Bookmark Manager
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_bookmark_create_and_list(client):
+    """POST /bookmark creates; GET /bookmarks lists it."""
+    r = client.post("/bookmark", json={"url": "https://example58.com", "title": "Example 58", "tags": ["web", "test58"], "category": "dev"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    bid = d["id"]
+    assert bid.startswith("bm-")
+    assert d["bookmark"]["url"] == "https://example58.com"
+
+    rl = client.get("/bookmarks")
+    assert rl.status_code == 200
+    ids = [b["id"] for b in rl.json()["bookmarks"]]
+    assert bid in ids
+
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_title_defaults_to_url(client):
+    r = client.post("/bookmark", json={"url": "https://notitle58.com"})
+    d = r.json()
+    assert d["bookmark"]["title"] == "https://notitle58.com"
+    client.delete(f"/bookmark/{d['id']}")
+
+
+def test_bookmark_get(client):
+    r = client.post("/bookmark", json={"url": "https://get58.com", "title": "Get58"})
+    bid = r.json()["id"]
+    rg = client.get(f"/bookmark/{bid}")
+    assert rg.status_code == 200
+    assert rg.json()["title"] == "Get58"
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_get_not_found(client):
+    r = client.get("/bookmark/bm-9999999")
+    assert r.status_code == 404
+
+
+def test_bookmark_update(client):
+    r = client.post("/bookmark", json={"url": "https://update58.com", "title": "Old"})
+    bid = r.json()["id"]
+    ru = client.patch(f"/bookmark/{bid}", json={"title": "New", "tags": ["updated58"]})
+    assert ru.status_code == 200
+    bm = ru.json()["bookmark"]
+    assert bm["title"] == "New"
+    assert "updated58" in bm["tags"]
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_update_not_found(client):
+    r = client.patch("/bookmark/bm-9999999", json={"title": "X"})
+    assert r.status_code == 404
+
+
+def test_bookmark_delete(client):
+    r = client.post("/bookmark", json={"url": "https://del58.com"})
+    bid = r.json()["id"]
+    rd = client.delete(f"/bookmark/{bid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/bookmark/{bid}").status_code == 404
+
+
+def test_bookmark_delete_not_found(client):
+    r = client.delete("/bookmark/bm-9999999")
+    assert r.status_code == 404
+
+
+def test_bookmark_empty_url_rejected(client):
+    r = client.post("/bookmark", json={"url": "  "})
+    assert r.status_code == 400
+
+
+def test_bookmark_filter_by_tag(client):
+    r = client.post("/bookmark", json={"url": "https://tag58.com", "tags": ["special58tag"]})
+    bid = r.json()["id"]
+    rl = client.get("/bookmarks?tag=special58tag")
+    assert bid in [b["id"] for b in rl.json()["bookmarks"]]
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_filter_by_category(client):
+    r = client.post("/bookmark", json={"url": "https://cat58.com", "category": "cattest58"})
+    bid = r.json()["id"]
+    rl = client.get("/bookmarks?category=cattest58")
+    assert bid in [b["id"] for b in rl.json()["bookmarks"]]
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_search(client):
+    r = client.post("/bookmark", json={"url": "https://search58unique.com", "title": "search58unique"})
+    bid = r.json()["id"]
+    rs = client.get("/bookmarks/search?q=search58unique")
+    assert rs.status_code == 200
+    assert bid in [b["id"] for b in rs.json()["results"]]
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_search_no_match(client):
+    rs = client.get("/bookmarks/search?q=zzznomatch58xyz")
+    assert rs.status_code == 200
+    assert rs.json()["results"] == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 59: Schema Registry
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SIMPLE_SCHEMA_59 = {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "age": {"type": "integer"}}}
+
+
+def test_schema_register_and_list(client):
+    """POST /schema registers; GET /schemas lists it."""
+    r = client.post("/schema", json={"name": "person59", "schema": _SIMPLE_SCHEMA_59, "description": "Person schema"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["name"] == "person59"
+
+    rl = client.get("/schemas")
+    assert rl.status_code == 200
+    names = [s["name"] for s in rl.json()["schemas"]]
+    assert "person59" in names
+
+    client.delete("/schema/person59")
+
+
+def test_schema_get(client):
+    client.post("/schema", json={"name": "getschema59", "schema": {"type": "string"}})
+    rg = client.get("/schema/getschema59")
+    assert rg.status_code == 200
+    assert rg.json()["name"] == "getschema59"
+    client.delete("/schema/getschema59")
+
+
+def test_schema_get_not_found(client):
+    r = client.get("/schema/doesnotexist59xyz")
+    assert r.status_code == 404
+
+
+def test_schema_duplicate_returns_409(client):
+    client.post("/schema", json={"name": "dup59", "schema": {"type": "string"}})
+    r = client.post("/schema", json={"name": "dup59", "schema": {"type": "number"}})
+    assert r.status_code == 409
+    client.delete("/schema/dup59")
+
+
+def test_schema_upsert_creates_new(client):
+    r = client.put("/schema/upsert59new", json={"schema": {"type": "boolean"}})
+    assert r.status_code == 200
+    assert r.json()["created"] is True
+    client.delete("/schema/upsert59new")
+
+
+def test_schema_upsert_updates_existing(client):
+    client.post("/schema", json={"name": "upsert59existing", "schema": {"type": "string"}})
+    r = client.put("/schema/upsert59existing", json={"schema": {"type": "number"}})
+    assert r.status_code == 200
+    assert r.json()["created"] is False
+    client.delete("/schema/upsert59existing")
+
+
+def test_schema_delete(client):
+    client.post("/schema", json={"name": "del59", "schema": {"type": "null"}})
+    rd = client.delete("/schema/del59")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get("/schema/del59").status_code == 404
+
+
+def test_schema_delete_not_found(client):
+    r = client.delete("/schema/doesnotexist59xyz")
+    assert r.status_code == 404
+
+
+def test_schema_validate_valid(client):
+    client.post("/schema", json={"name": "valok59", "schema": _SIMPLE_SCHEMA_59})
+    r = client.post("/schema/valok59/validate", json={"data": {"name": "Alice", "age": 30}})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valid"] is True
+    assert d["errors"] == []
+    client.delete("/schema/valok59")
+
+
+def test_schema_validate_missing_required(client):
+    client.post("/schema", json={"name": "valmissing59", "schema": _SIMPLE_SCHEMA_59})
+    r = client.post("/schema/valmissing59/validate", json={"data": {"age": 25}})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valid"] is False
+    assert any("name" in e for e in d["errors"])
+    client.delete("/schema/valmissing59")
+
+
+def test_schema_validate_wrong_type(client):
+    client.post("/schema", json={"name": "valtype59", "schema": {"type": "string"}})
+    r = client.post("/schema/valtype59/validate", json={"data": 123})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valid"] is False
+    client.delete("/schema/valtype59")
+
+
+def test_schema_validate_enum(client):
+    schema = {"type": "string", "enum": ["red", "green", "blue"]}
+    client.post("/schema", json={"name": "valenum59", "schema": schema})
+    r_ok = client.post("/schema/valenum59/validate", json={"data": "red"})
+    assert r_ok.json()["valid"] is True
+    r_bad = client.post("/schema/valenum59/validate", json={"data": "yellow"})
+    assert r_bad.json()["valid"] is False
+    client.delete("/schema/valenum59")
+
+
+def test_schema_validate_not_found(client):
+    r = client.post("/schema/doesnotexist59xyz/validate", json={"data": {}})
+    assert r.status_code == 404
+
+
+def test_schema_filter_by_tag(client):
+    client.post("/schema", json={"name": "tagged59", "schema": {"type": "null"}, "tags": ["special59tag"]})
+    rl = client.get("/schemas?tag=special59tag")
+    assert rl.status_code == 200
+    names = [s["name"] for s in rl.json()["schemas"]]
+    assert "tagged59" in names
+    client.delete("/schema/tagged59")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 60: Code Template Engine
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_template_create_and_list(client):
+    r = client.post("/codetpl", json={"name": "hello60", "content": "Hello, {{name}}!", "tags": ["greet60"]})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    tid = d["id"]
+    assert tid.startswith("tmpl-")
+    rl = client.get("/codetpls")
+    assert tid in [t["id"] for t in rl.json()["templates"]]
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_empty_name_rejected(client):
+    r = client.post("/codetpl", json={"name": "  ", "content": "x"})
+    assert r.status_code == 400
+
+
+def test_template_get(client):
+    r = client.post("/codetpl", json={"name": "getme60", "content": "content60"})
+    tid = r.json()["id"]
+    rg = client.get(f"/codetpl/{tid}")
+    assert rg.status_code == 200
+    assert rg.json()["name"] == "getme60"
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_get_not_found(client):
+    assert client.get("/codetpl/tmpl-9999999").status_code == 404
+
+
+def test_template_update(client):
+    r = client.post("/codetpl", json={"name": "upd60", "content": "old"})
+    tid = r.json()["id"]
+    ru = client.patch(f"/codetpl/{tid}", json={"content": "new {{x}}", "tags": ["updated60"]})
+    assert ru.status_code == 200
+    tmpl = ru.json()["template"]
+    assert tmpl["content"] == "new {{x}}"
+    assert "updated60" in tmpl["tags"]
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_update_not_found(client):
+    assert client.patch("/codetpl/tmpl-9999999", json={"name": "x"}).status_code == 404
+
+
+def test_template_delete(client):
+    r = client.post("/codetpl", json={"name": "del60", "content": "bye"})
+    tid = r.json()["id"]
+    rd = client.delete(f"/codetpl/{tid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/codetpl/{tid}").status_code == 404
+
+
+def test_template_delete_not_found(client):
+    assert client.delete("/codetpl/tmpl-9999999").status_code == 404
+
+
+def test_template_render_basic(client):
+    r = client.post("/codetpl", json={"name": "render60", "content": "Hi {{name}}, you are {{age}} years old."})
+    tid = r.json()["id"]
+    rr = client.post(f"/codetpl/{tid}/render", json={"vars": {"name": "Alice", "age": "30"}})
+    assert rr.status_code == 200
+    assert rr.json()["rendered"] == "Hi Alice, you are 30 years old."
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_render_missing_var_kept(client):
+    """Unreplaced placeholders stay as-is when var is not provided."""
+    r = client.post("/codetpl", json={"name": "partial60", "content": "Hello {{name}}, {{missing}}!"})
+    tid = r.json()["id"]
+    rr = client.post(f"/codetpl/{tid}/render", json={"vars": {"name": "Bob"}})
+    assert rr.status_code == 200
+    assert "{{missing}}" in rr.json()["rendered"]
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_render_not_found(client):
+    assert client.post("/codetpl/tmpl-9999999/render", json={"vars": {}}).status_code == 404
+
+
+def test_template_search(client):
+    r = client.post("/codetpl", json={"name": "uniquesearch60tmpl", "content": "content"})
+    tid = r.json()["id"]
+    rs = client.get("/codetpl/search?q=uniquesearch60tmpl")
+    assert rs.status_code == 200
+    assert tid in [t["id"] for t in rs.json()["results"]]
+    client.delete(f"/codetpl/{tid}")
+
+
+def test_template_search_no_match(client):
+    rs = client.get("/codetpl/search?q=zzznomatch60xyz")
+    assert rs.json()["results"] == []
+
+
+def test_template_filter_by_tag(client):
+    r = client.post("/codetpl", json={"name": "tagged60", "content": "x", "tags": ["special60tag"]})
+    tid = r.json()["id"]
+    rl = client.get("/codetpls?tag=special60tag")
+    assert tid in [t["id"] for t in rl.json()["templates"]]
+    client.delete(f"/codetpl/{tid}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 61: Changelog Generator
+# ─────────────────────────────────────────────────────────────────────────────
+
+_COMMITS_61 = [
+    "feat(auth): add OAuth2 login",
+    "fix: correct null pointer in user service",
+    "docs: update README with new endpoints",
+    "chore: bump dependencies",
+    "BREAKING CHANGE: removed legacy /v1 API",
+    "random commit without conventional prefix",
+]
+
+
+def test_changelog_generate(client):
+    r = client.post("/changelog/generate", json={"commits": _COMMITS_61, "version": "v2.0.0", "title": "Major Release"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    cl = d["changelog"]
+    assert cl["id"].startswith("cl-")
+    assert cl["version"] == "v2.0.0"
+    assert cl["commit_count"] == len(_COMMITS_61)
+    assert "markdown" in cl
+    assert "v2.0.0" in cl["markdown"]
+    # cleanup
+    client.delete(f"/changelog/history/{cl['id']}")
+
+
+def test_changelog_groups_feat(client):
+    r = client.post("/changelog/generate", json={"commits": ["feat: new cool feature"]})
+    cl = r.json()["changelog"]
+    assert "✨ Features" in cl["groups"]
+    assert any("new cool feature" in e for e in cl["groups"]["✨ Features"])
+    client.delete(f"/changelog/history/{cl['id']}")
+
+
+def test_changelog_groups_fix(client):
+    r = client.post("/changelog/generate", json={"commits": ["fix(db): fix broken query"]})
+    cl = r.json()["changelog"]
+    assert "🐛 Bug Fixes" in cl["groups"]
+    client.delete(f"/changelog/history/{cl['id']}")
+
+
+def test_changelog_breaking_change(client):
+    r = client.post("/changelog/generate", json={"commits": ["feat!: redesign API", "BREAKING CHANGE: old endpoints removed"]})
+    cl = r.json()["changelog"]
+    assert "💥 Breaking Changes" in cl["groups"]
+    client.delete(f"/changelog/history/{cl['id']}")
+
+
+def test_changelog_other_group(client):
+    r = client.post("/changelog/generate", json={"commits": ["just a regular message"]})
+    cl = r.json()["changelog"]
+    assert "📦 Other" in cl["groups"]
+    client.delete(f"/changelog/history/{cl['id']}")
+
+
+def test_changelog_empty_commits_rejected(client):
+    r = client.post("/changelog/generate", json={"commits": []})
+    assert r.status_code == 400
+
+
+def test_changelog_history_list(client):
+    r = client.post("/changelog/generate", json={"commits": ["feat: for history test61"]})
+    cl_id = r.json()["changelog"]["id"]
+    rl = client.get("/changelog/history")
+    assert rl.status_code == 200
+    assert cl_id in [c["id"] for c in rl.json()["changelogs"]]
+    client.delete(f"/changelog/history/{cl_id}")
+
+
+def test_changelog_history_get(client):
+    r = client.post("/changelog/generate", json={"commits": ["fix: get test61"], "version": "v1.0.61"})
+    cl_id = r.json()["changelog"]["id"]
+    rg = client.get(f"/changelog/history/{cl_id}")
+    assert rg.status_code == 200
+    assert rg.json()["version"] == "v1.0.61"
+    client.delete(f"/changelog/history/{cl_id}")
+
+
+def test_changelog_history_get_not_found(client):
+    assert client.get("/changelog/history/cl-9999999").status_code == 404
+
+
+def test_changelog_history_delete(client):
+    r = client.post("/changelog/generate", json={"commits": ["chore: delete test61"]})
+    cl_id = r.json()["changelog"]["id"]
+    rd = client.delete(f"/changelog/history/{cl_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/changelog/history/{cl_id}").status_code == 404
+
+
+def test_changelog_history_delete_not_found(client):
+    assert client.delete("/changelog/history/cl-9999999").status_code == 404
+
+
+def test_changelog_markdown_contains_entries(client):
+    r = client.post("/changelog/generate", json={
+        "commits": ["feat: markdown check", "fix: another fix"],
+        "version": "v3.0.0",
+    })
+    cl = r.json()["changelog"]
+    assert "markdown check" in cl["markdown"]
+    assert "another fix" in cl["markdown"]
+    client.delete(f"/changelog/history/{cl['id']}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 62: Regex Playground
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_regex_test_basic(client):
+    r = client.post("/regex/test", json={"pattern": r"\d+", "text": "foo 123 bar 456"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["match_count"] == 2
+    assert d["matches"][0]["match"] == "123"
+    assert d["matches"][1]["match"] == "456"
+
+
+def test_regex_test_named_groups(client):
+    r = client.post("/regex/test", json={
+        "pattern": r"(?P<year>\d{4})-(?P<month>\d{2})",
+        "text": "Date: 2024-03",
+    })
+    assert r.status_code == 200
+    m = r.json()["matches"][0]
+    assert m["named_groups"]["year"] == "2024"
+    assert m["named_groups"]["month"] == "03"
+
+
+def test_regex_test_no_match(client):
+    r = client.post("/regex/test", json={"pattern": r"xyz999", "text": "hello world"})
+    assert r.status_code == 200
+    assert r.json()["match_count"] == 0
+
+
+def test_regex_test_invalid_pattern(client):
+    r = client.post("/regex/test", json={"pattern": r"[invalid", "text": "text"})
+    assert r.status_code == 400
+
+
+def test_regex_test_flags_ignorecase(client):
+    r = client.post("/regex/test", json={"pattern": "hello", "text": "Hello HELLO", "flags": ["i"]})
+    assert r.status_code == 200
+    assert r.json()["match_count"] == 2
+
+
+def test_regex_replace_basic(client):
+    r = client.post("/regex/replace", json={"pattern": r"\d+", "text": "foo 123 bar 456", "replacement": "NUM"})
+    assert r.status_code == 200
+    assert r.json()["result"] == "foo NUM bar NUM"
+
+
+def test_regex_replace_count(client):
+    r = client.post("/regex/replace", json={"pattern": r"\d+", "text": "1 2 3", "replacement": "N", "count": 1})
+    assert r.status_code == 200
+    assert r.json()["result"] == "N 2 3"
+
+
+def test_regex_replace_invalid_pattern(client):
+    r = client.post("/regex/replace", json={"pattern": r"[bad", "text": "x", "replacement": "y"})
+    assert r.status_code == 400
+
+
+def test_regex_split_basic(client):
+    r = client.post("/regex/split", json={"pattern": r"\s+", "text": "foo   bar  baz"})
+    assert r.status_code == 200
+    assert r.json()["parts"] == ["foo", "bar", "baz"]
+
+
+def test_regex_split_maxsplit(client):
+    r = client.post("/regex/split", json={"pattern": r"\s+", "text": "a b c d", "maxsplit": 2})
+    assert r.status_code == 200
+    assert r.json()["parts"] == ["a", "b", "c d"]
+
+
+def test_regex_split_invalid_pattern(client):
+    r = client.post("/regex/split", json={"pattern": r"[bad", "text": "x"})
+    assert r.status_code == 400
+
+
+def test_regex_history_save_and_list(client):
+    r = client.post("/regex/history", json={"pattern": r"\d+", "description": "match digits"})
+    assert r.status_code == 200
+    entry_id = r.json()["entry"]["id"]
+    assert entry_id.startswith("rx-")
+    rl = client.get("/regex/history")
+    assert rl.status_code == 200
+    assert entry_id in [e["id"] for e in rl.json()["history"]]
+    client.delete(f"/regex/history/{entry_id}")
+
+
+def test_regex_history_delete(client):
+    r = client.post("/regex/history", json={"pattern": r"[a-z]+"})
+    entry_id = r.json()["entry"]["id"]
+    rd = client.delete(f"/regex/history/{entry_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    rl = client.get("/regex/history")
+    assert entry_id not in [e["id"] for e in rl.json()["history"]]
+
+
+def test_regex_history_delete_not_found(client):
+    assert client.delete("/regex/history/rx-9999999").status_code == 404
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 63: Color Palette Manager
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_palette_create_and_list(client):
+    r = client.post("/palette", json={"name": "Sunset63", "colors": [{"hex": "#FF5733", "name": "Orange"}]})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    pid = d["id"]
+    assert pid.startswith("pal-")
+    rl = client.get("/palettes")
+    assert pid in [p["id"] for p in rl.json()["palettes"]]
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_empty_name_rejected(client):
+    r = client.post("/palette", json={"name": "  "})
+    assert r.status_code == 400
+
+
+def test_palette_invalid_hex_rejected(client):
+    r = client.post("/palette", json={"name": "bad63", "colors": [{"hex": "notahex"}]})
+    assert r.status_code == 400
+
+
+def test_palette_get(client):
+    r = client.post("/palette", json={"name": "getme63"})
+    pid = r.json()["id"]
+    rg = client.get(f"/palette/{pid}")
+    assert rg.status_code == 200
+    assert rg.json()["name"] == "getme63"
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_get_not_found(client):
+    assert client.get("/palette/pal-9999999").status_code == 404
+
+
+def test_palette_update(client):
+    r = client.post("/palette", json={"name": "upd63"})
+    pid = r.json()["id"]
+    ru = client.patch(f"/palette/{pid}", json={"name": "updated63", "description": "new desc"})
+    assert ru.status_code == 200
+    pal = ru.json()["palette"]
+    assert pal["name"] == "updated63"
+    assert pal["description"] == "new desc"
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_update_not_found(client):
+    assert client.patch("/palette/pal-9999999", json={"name": "x"}).status_code == 404
+
+
+def test_palette_delete(client):
+    r = client.post("/palette", json={"name": "del63"})
+    pid = r.json()["id"]
+    rd = client.delete(f"/palette/{pid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/palette/{pid}").status_code == 404
+
+
+def test_palette_delete_not_found(client):
+    assert client.delete("/palette/pal-9999999").status_code == 404
+
+
+def test_palette_add_color(client):
+    r = client.post("/palette", json={"name": "addcolor63"})
+    pid = r.json()["id"]
+    ra = client.post(f"/palette/{pid}/color", json={"hex": "#336699", "name": "Blue"})
+    assert ra.status_code == 200
+    assert len(ra.json()["palette"]["colors"]) == 1
+    assert ra.json()["palette"]["colors"][0]["hex"] == "#336699"
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_add_color_invalid_hex(client):
+    r = client.post("/palette", json={"name": "badhex63"})
+    pid = r.json()["id"]
+    ra = client.post(f"/palette/{pid}/color", json={"hex": "zzz"})
+    assert ra.status_code == 400
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_add_color_not_found(client):
+    assert client.post("/palette/pal-9999999/color", json={"hex": "#FFFFFF"}).status_code == 404
+
+
+def test_palette_remove_color(client):
+    r = client.post("/palette", json={"name": "rmcolor63", "colors": [{"hex": "#111111"}, {"hex": "#222222"}]})
+    pid = r.json()["id"]
+    rd = client.delete(f"/palette/{pid}/color/0")
+    assert rd.status_code == 200
+    assert len(rd.json()["palette"]["colors"]) == 1
+    assert rd.json()["palette"]["colors"][0]["hex"] == "#222222"
+    client.delete(f"/palette/{pid}")
+
+
+def test_palette_remove_color_out_of_range(client):
+    r = client.post("/palette", json={"name": "oob63", "colors": [{"hex": "#AABBCC"}]})
+    pid = r.json()["id"]
+    rd = client.delete(f"/palette/{pid}/color/5")
+    assert rd.status_code == 400
+    client.delete(f"/palette/{pid}")
+
+
+def test_color_convert_basic(client):
+    r = client.post("/color/convert", json={"hex": "#FF5733"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["hex"] == "#FF5733"
+    assert d["rgb"]["r"] == 255
+    assert d["rgb"]["g"] == 87
+    assert d["rgb"]["b"] == 51
+    assert "hsl" in d
+    assert "css" in d
+
+
+def test_color_convert_shorthand_hex(client):
+    r = client.post("/color/convert", json={"hex": "#F00"})
+    assert r.status_code == 200
+    assert r.json()["hex"] == "#FF0000"
+    assert r.json()["rgb"] == {"r": 255, "g": 0, "b": 0}
+
+
+def test_color_convert_invalid_hex(client):
+    r = client.post("/color/convert", json={"hex": "notacolor"})
+    assert r.status_code == 400
+
+
+def test_color_convert_lowercase_hex(client):
+    r = client.post("/color/convert", json={"hex": "#ff5733"})
+    assert r.status_code == 200
+    assert r.json()["hex"] == "#FF5733"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 64: UUID / Token Generator
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_uuid_generate_v4_default(client):
+    r = client.post("/uuid/generate", json={})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["version"] == 4
+    assert d["count"] == 1
+    assert len(d["values"]) == 1
+    import uuid
+    uuid.UUID(d["values"][0])  # must be a valid UUID
+
+
+def test_uuid_generate_v1(client):
+    r = client.post("/uuid/generate", json={"version": 1, "count": 3})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["version"] == 1
+    assert d["count"] == 3
+    assert len(d["values"]) == 3
+
+
+def test_uuid_generate_uppercase(client):
+    r = client.post("/uuid/generate", json={"uppercase": True})
+    assert r.status_code == 200
+    val = r.json()["values"][0]
+    assert val == val.upper()
+
+
+def test_uuid_generate_multiple(client):
+    r = client.post("/uuid/generate", json={"count": 10})
+    assert r.status_code == 200
+    assert len(r.json()["values"]) == 10
+
+
+def test_uuid_generate_invalid_version(client):
+    r = client.post("/uuid/generate", json={"version": 3})
+    assert r.status_code == 400
+
+
+def test_uuid_generate_count_out_of_range(client):
+    assert client.post("/uuid/generate", json={"count": 200}).status_code == 400
+    assert client.post("/uuid/generate", json={"count": 0}).status_code == 400
+
+
+def test_uuid_validate_valid(client):
+    import uuid
+    val = str(uuid.uuid4())
+    r = client.post("/uuid/validate", json={"value": val})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valid"] is True
+    assert d["version"] == 4
+
+
+def test_uuid_validate_invalid(client):
+    r = client.post("/uuid/validate", json={"value": "not-a-uuid"})
+    assert r.status_code == 200
+    assert r.json()["valid"] is False
+
+
+def test_uuid_history_save_and_list(client):
+    import uuid
+    vals = [str(uuid.uuid4()) for _ in range(2)]
+    r = client.post("/uuid/history", json={"values": vals, "label": "test batch"})
+    assert r.status_code == 200
+    entry_id = r.json()["entry"]["id"]
+    assert entry_id.startswith("uid-")
+    rl = client.get("/uuid/history")
+    assert rl.status_code == 200
+    assert entry_id in [e["id"] for e in rl.json()["history"]]
+    client.delete(f"/uuid/history/{entry_id}")
+
+
+def test_uuid_history_delete(client):
+    import uuid
+    r = client.post("/uuid/history", json={"values": [str(uuid.uuid4())]})
+    entry_id = r.json()["entry"]["id"]
+    rd = client.delete(f"/uuid/history/{entry_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    rl = client.get("/uuid/history")
+    assert entry_id not in [e["id"] for e in rl.json()["history"]]
+
+
+def test_uuid_history_delete_not_found(client):
+    assert client.delete("/uuid/history/uid-9999999").status_code == 404
+
+
+def test_uuid_history_empty_values_rejected(client):
+    assert client.post("/uuid/history", json={"values": []}).status_code == 400
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 65: Text Statistics / Readability Analyzer
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SAMPLE_TEXT = (
+    "The quick brown fox jumps over the lazy dog. "
+    "This sentence is here to test word counting and readability analysis. "
+    "Python is a great programming language."
+)
+
+
+def test_textstats_analyze_basic(client):
+    r = client.post("/textstats/analyze", json={"text": _SAMPLE_TEXT})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["word_count"] > 0
+    assert d["sentence_count"] >= 3
+    assert "flesch_reading_ease" in d
+    assert "top_words" in d
+
+
+def test_textstats_analyze_char_count(client):
+    text = "Hello world"
+    r = client.post("/textstats/analyze", json={"text": text})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["char_count"] == len(text)
+    assert d["char_count_no_spaces"] == len("Helloworld")
+
+
+def test_textstats_analyze_top_n(client):
+    r = client.post("/textstats/analyze", json={"text": _SAMPLE_TEXT, "top_n": 3})
+    assert r.status_code == 200
+    assert len(r.json()["top_words"]) <= 3
+
+
+def test_textstats_analyze_empty_text_rejected(client):
+    r = client.post("/textstats/analyze", json={"text": "   "})
+    assert r.status_code == 400
+
+
+def test_textstats_analyze_invalid_top_n(client):
+    assert client.post("/textstats/analyze", json={"text": "hello", "top_n": 0}).status_code == 400
+    assert client.post("/textstats/analyze", json={"text": "hello", "top_n": 200}).status_code == 400
+
+
+def test_textstats_history_save_and_list(client):
+    r = client.post("/textstats/history", json={"text": _SAMPLE_TEXT, "label": "sample"})
+    assert r.status_code == 200
+    d = r.json()
+    entry_id = d["entry"]["id"]
+    assert entry_id.startswith("ts-")
+    assert "stats" in d["entry"]
+    rl = client.get("/textstats/history")
+    assert rl.status_code == 200
+    assert entry_id in [e["id"] for e in rl.json()["history"]]
+    client.delete(f"/textstats/history/{entry_id}")
+
+
+def test_textstats_history_delete(client):
+    r = client.post("/textstats/history", json={"text": "some text to analyze"})
+    entry_id = r.json()["entry"]["id"]
+    rd = client.delete(f"/textstats/history/{entry_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    rl = client.get("/textstats/history")
+    assert entry_id not in [e["id"] for e in rl.json()["history"]]
+
+
+def test_textstats_history_delete_not_found(client):
+    assert client.delete("/textstats/history/ts-9999999").status_code == 404
+
+
+def test_textstats_history_empty_text_rejected(client):
+    assert client.post("/textstats/history", json={"text": ""}).status_code == 400
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 66: JSON/YAML Converter & Formatter
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SAMPLE_JSON = '{"b": 1, "a": [1, 2, 3]}'
+_SAMPLE_JSON_PRETTY = '{\n  "b": 1,\n  "a": [\n    1,\n    2,\n    3\n  ]\n}'
+
+
+def test_jsonformat_format_pretty(client):
+    r = client.post("/jsonformat/format", json={"content": _SAMPLE_JSON, "indent": 2})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["minified"] is False
+    import json
+    assert json.loads(d["output"]) == json.loads(_SAMPLE_JSON)
+
+
+def test_jsonformat_format_minify(client):
+    r = client.post("/jsonformat/format", json={"content": _SAMPLE_JSON_PRETTY, "minify": True})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["minified"] is True
+    assert "\n" not in d["output"]
+
+
+def test_jsonformat_format_sort_keys(client):
+    r = client.post("/jsonformat/format", json={"content": _SAMPLE_JSON, "sort_keys": True})
+    assert r.status_code == 200
+    output = r.json()["output"]
+    # "a" should come before "b"
+    assert output.index('"a"') < output.index('"b"')
+
+
+def test_jsonformat_format_invalid_json(client):
+    r = client.post("/jsonformat/format", json={"content": "{bad json}"})
+    assert r.status_code == 400
+
+
+def test_jsonformat_validate_valid_json(client):
+    r = client.post("/jsonformat/validate", json={"content": _SAMPLE_JSON, "mode": "json"})
+    assert r.status_code == 200
+    assert r.json()["valid"] is True
+
+
+def test_jsonformat_validate_invalid_json(client):
+    r = client.post("/jsonformat/validate", json={"content": "{bad}", "mode": "json"})
+    assert r.status_code == 200
+    assert r.json()["valid"] is False
+
+
+def test_jsonformat_validate_valid_yaml(client):
+    r = client.post("/jsonformat/validate", json={"content": "key: value\nlist:\n  - 1\n  - 2", "mode": "yaml"})
+    assert r.status_code == 200
+    assert r.json()["valid"] is True
+
+
+def test_jsonformat_convert_json_to_yaml(client):
+    r = client.post("/jsonformat/convert", json={"content": '{"hello": "world"}', "direction": "json_to_yaml"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["direction"] == "json_to_yaml"
+    assert "hello" in d["output"]
+
+
+def test_jsonformat_convert_yaml_to_json(client):
+    r = client.post("/jsonformat/convert", json={"content": "hello: world\n", "direction": "yaml_to_json"})
+    assert r.status_code == 200
+    import json
+    parsed = json.loads(r.json()["output"])
+    assert parsed["hello"] == "world"
+
+
+def test_jsonformat_convert_invalid_direction(client):
+    r = client.post("/jsonformat/convert", json={"content": "{}", "direction": "xml_to_json"})
+    assert r.status_code == 400
+
+
+def test_jsonformat_history_save_and_list(client):
+    r = client.post("/jsonformat/history", json={
+        "operation": "format",
+        "label": "my format",
+        "input": _SAMPLE_JSON,
+        "output": _SAMPLE_JSON_PRETTY,
+    })
+    assert r.status_code == 200
+    entry_id = r.json()["entry"]["id"]
+    assert entry_id.startswith("jf-")
+    rl = client.get("/jsonformat/history")
+    assert rl.status_code == 200
+    assert entry_id in [e["id"] for e in rl.json()["history"]]
+    client.delete(f"/jsonformat/history/{entry_id}")
+
+
+def test_jsonformat_history_delete(client):
+    r = client.post("/jsonformat/history", json={"operation": "validate", "input": "{}", "output": "valid"})
+    entry_id = r.json()["entry"]["id"]
+    rd = client.delete(f"/jsonformat/history/{entry_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+
+
+def test_jsonformat_history_delete_not_found(client):
+    assert client.delete("/jsonformat/history/jf-9999999").status_code == 404
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 67: Hash & Checksum Tool
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_hash_generate_sha256(client):
+    r = client.post("/hash/generate", json={"text": "hello", "algorithm": "sha256"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["algorithm"] == "sha256"
+    assert len(d["hash"]) == 64  # sha256 hex digest length
+    assert d["length"] == 64
+
+
+def test_hash_generate_md5(client):
+    r = client.post("/hash/generate", json={"text": "hello", "algorithm": "md5"})
+    assert r.status_code == 200
+    assert len(r.json()["hash"]) == 32
+
+
+def test_hash_generate_sha512(client):
+    r = client.post("/hash/generate", json={"text": "hello", "algorithm": "sha512"})
+    assert r.status_code == 200
+    assert len(r.json()["hash"]) == 128
+
+
+def test_hash_generate_invalid_algorithm(client):
+    r = client.post("/hash/generate", json={"text": "hello", "algorithm": "crc32"})
+    assert r.status_code == 400
+
+
+def test_hash_generate_deterministic(client):
+    r1 = client.post("/hash/generate", json={"text": "abc", "algorithm": "sha256"})
+    r2 = client.post("/hash/generate", json={"text": "abc", "algorithm": "sha256"})
+    assert r1.json()["hash"] == r2.json()["hash"]
+
+
+def test_hash_compare_match(client):
+    import hashlib
+    expected = hashlib.sha256(b"hello").hexdigest()
+    r = client.post("/hash/compare", json={"text": "hello", "hash": expected, "algorithm": "sha256"})
+    assert r.status_code == 200
+    assert r.json()["match"] is True
+
+
+def test_hash_compare_no_match(client):
+    r = client.post("/hash/compare", json={"text": "hello", "hash": "deadbeef" * 8, "algorithm": "sha256"})
+    assert r.status_code == 200
+    assert r.json()["match"] is False
+
+
+def test_hash_detect_sha256(client):
+    import hashlib
+    h = hashlib.sha256(b"test").hexdigest()
+    r = client.post("/hash/detect", json={"hash": h})
+    assert r.status_code == 200
+    d = r.json()
+    assert "sha256" in d["likely_algorithms"]
+
+
+def test_hash_detect_md5(client):
+    import hashlib
+    h = hashlib.md5(b"test").hexdigest()
+    r = client.post("/hash/detect", json={"hash": h})
+    assert r.status_code == 200
+    assert "md5" in r.json()["likely_algorithms"]
+
+
+def test_hash_detect_unknown(client):
+    r = client.post("/hash/detect", json={"hash": "abc123"})
+    assert r.status_code == 200
+    assert r.json()["likely_algorithms"] == []
+
+
+def test_hash_history_save_and_list(client):
+    import hashlib
+    h = hashlib.sha256(b"hello").hexdigest()
+    r = client.post("/hash/history", json={"algorithm": "sha256", "text_preview": "hello", "hash": h, "label": "test"})
+    assert r.status_code == 200
+    entry_id = r.json()["entry"]["id"]
+    assert entry_id.startswith("hsh-")
+    rl = client.get("/hash/history")
+    assert rl.status_code == 200
+    assert entry_id in [e["id"] for e in rl.json()["history"]]
+    client.delete(f"/hash/history/{entry_id}")
+
+
+def test_hash_history_delete(client):
+    r = client.post("/hash/history", json={"algorithm": "md5", "text_preview": "x", "hash": "a" * 32})
+    entry_id = r.json()["entry"]["id"]
+    rd = client.delete(f"/hash/history/{entry_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+
+
+def test_hash_history_delete_not_found(client):
+    assert client.delete("/hash/history/hsh-9999999").status_code == 404
