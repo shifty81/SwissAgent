@@ -337,6 +337,27 @@
           "description": "Commit stats, contributor breakdown, activity heatmap, file churn"
         }
       ]
+    },
+    {
+      "id": "m11",
+      "title": "Test Runner, Terminal & Developer Productivity",
+      "status": "in_progress",
+      "tasks": [
+        {
+          "id": "t11-1",
+          "title": "Test Runner & Coverage Dashboard",
+          "status": "done",
+          "priority": "high",
+          "description": "Run pytest/jest/go-test/cargo-test for a project, capture results, list/get/delete reports"
+        },
+        {
+          "id": "t11-2",
+          "title": "Terminal Manager",
+          "status": "done",
+          "priority": "high",
+          "description": "Create/list/exec/delete named terminal sessions with command history and sandboxed cwd"
+        }
+      ]
     }
   ]
 }

@@ -4020,3 +4020,341 @@ def test_gitstats_file_churn_limit(client):
     r = client.get("/gitstats/file-churn?limit=5")
     assert r.status_code == 200
     assert len(r.json()["files"]) <= 5
+
+
+# ── Phase 52: Test Runner & Coverage Dashboard ────────────────────────────────
+
+def test_testrunner_run_pytest_basic(client):
+    """POST /testrunner/run with pytest on a simple project returns a report."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_tr_52a")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        with open(os.path.join(ws, "test_example.py"), "w") as f:
+            f.write("def test_pass(): assert 1 == 1\n")
+        r = client.post("/testrunner/run", json={"project_path": "test_tr_52a", "framework": "pytest"})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["success"] is True
+        assert "id" in d
+        report = d["report"]
+        assert report["framework"] == "pytest"
+        assert report["status"] in ("passed", "failed")
+        assert "summary" in report
+        assert "stdout" in report
+        assert "stderr" in report
+        assert "exit_code" in report
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_testrunner_run_creates_report(client):
+    """POST /testrunner/run followed by GET /testrunner/reports lists the report."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_tr_52b")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        with open(os.path.join(ws, "test_example.py"), "w") as f:
+            f.write("def test_ok(): pass\n")
+        r = client.post("/testrunner/run", json={"project_path": "test_tr_52b"})
+        assert r.status_code == 200
+        report_id = r.json()["id"]
+
+        r2 = client.get("/testrunner/reports")
+        assert r2.status_code == 200
+        d2 = r2.json()
+        assert "reports" in d2
+        assert "total" in d2
+        ids = [rep["id"] for rep in d2["reports"]]
+        assert report_id in ids
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_testrunner_report_get_single(client):
+    """Run, then retrieve the report by ID."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_tr_52c")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        with open(os.path.join(ws, "test_example.py"), "w") as f:
+            f.write("def test_one(): assert True\n")
+        r = client.post("/testrunner/run", json={"project_path": "test_tr_52c"})
+        assert r.status_code == 200
+        report_id = r.json()["id"]
+
+        r2 = client.get(f"/testrunner/report/{report_id}")
+        assert r2.status_code == 200
+        assert r2.json()["id"] == report_id
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_testrunner_report_get_not_found(client):
+    r = client.get("/testrunner/report/999999")
+    assert r.status_code == 404
+
+
+def test_testrunner_report_delete(client):
+    """Run then delete the report."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_tr_52d")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        with open(os.path.join(ws, "test_example.py"), "w") as f:
+            f.write("def test_del(): pass\n")
+        r = client.post("/testrunner/run", json={"project_path": "test_tr_52d"})
+        assert r.status_code == 200
+        report_id = r.json()["id"]
+
+        r2 = client.delete(f"/testrunner/report/{report_id}")
+        assert r2.status_code == 200
+        assert r2.json()["success"] is True
+
+        r3 = client.get(f"/testrunner/report/{report_id}")
+        assert r3.status_code == 404
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_testrunner_report_delete_not_found(client):
+    r = client.delete("/testrunner/report/999999")
+    assert r.status_code == 404
+
+
+def test_testrunner_reports_pagination(client):
+    r = client.get("/testrunner/reports?limit=3")
+    assert r.status_code == 200
+    d = r.json()
+    assert "reports" in d
+    assert len(d["reports"]) <= 3
+
+
+def test_testrunner_unknown_framework(client):
+    """Unknown framework returns 400."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_tr_52e")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        r = client.post("/testrunner/run", json={"project_path": "test_tr_52e", "framework": "unknown_fw"})
+        assert r.status_code == 400
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_testrunner_path_traversal_blocked(client):
+    """Path traversal outside workspace must be blocked."""
+    r = client.post("/testrunner/run", json={"project_path": "../etc"})
+    assert r.status_code in (403, 404)
+
+
+def test_testrunner_path_not_found(client):
+    """Non-existent project path returns 404."""
+    r = client.post("/testrunner/run", json={"project_path": "no_such_dir_xyz"})
+    assert r.status_code == 404
+
+
+def test_testrunner_failing_tests(client):
+    """A test file that fails: report.status == 'failed', exit_code != 0."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_tr_52f")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        with open(os.path.join(ws, "test_fail.py"), "w") as f:
+            f.write("def test_boom(): assert False\n")
+        r = client.post("/testrunner/run", json={"project_path": "test_tr_52f"})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["success"] is True
+        report = d["report"]
+        assert report["status"] == "failed"
+        assert report["exit_code"] != 0
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_testrunner_summary_fields(client):
+    """Summary has passed/failed/errors/skipped."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_tr_52g")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        with open(os.path.join(ws, "test_example.py"), "w") as f:
+            f.write("def test_a(): pass\ndef test_b(): pass\n")
+        r = client.post("/testrunner/run", json={"project_path": "test_tr_52g"})
+        assert r.status_code == 200
+        summary = r.json()["report"]["summary"]
+        assert "passed" in summary
+        assert "failed" in summary
+        assert "errors" in summary
+        assert "skipped" in summary
+        assert isinstance(summary["passed"], int)
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+# ── Phase 53: Terminal Manager ────────────────────────────────────────────────
+
+def test_terminal_create_session(client):
+    """POST /terminal/session creates a new session."""
+    r = client.post("/terminal/session", json={"name": "my-term"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert "session_id" in d
+    sid = d["session_id"]
+    assert sid.startswith("term-")
+    session = d["session"]
+    assert session["name"] == "my-term"
+    assert "cwd" in session
+    assert "created_at" in session
+    # cleanup
+    client.delete(f"/terminal/session/{sid}")
+
+
+def test_terminal_list_sessions(client):
+    """GET /terminal/sessions lists all open sessions."""
+    r1 = client.post("/terminal/session", json={"name": "list-test"})
+    sid = r1.json()["session_id"]
+    r2 = client.get("/terminal/sessions")
+    assert r2.status_code == 200
+    d = r2.json()
+    assert "sessions" in d
+    assert "total" in d
+    ids = [s["id"] for s in d["sessions"]]
+    assert sid in ids
+    client.delete(f"/terminal/session/{sid}")
+
+
+def test_terminal_get_session(client):
+    """GET /terminal/session/{id} returns full session."""
+    r1 = client.post("/terminal/session", json={})
+    sid = r1.json()["session_id"]
+    r2 = client.get(f"/terminal/session/{sid}")
+    assert r2.status_code == 200
+    d = r2.json()
+    assert d["id"] == sid
+    assert "history" in d
+    client.delete(f"/terminal/session/{sid}")
+
+
+def test_terminal_get_session_not_found(client):
+    r = client.get("/terminal/session/no-such-session")
+    assert r.status_code == 404
+
+
+def test_terminal_exec_basic(client):
+    """POST /terminal/session/{id}/exec runs a command and returns output."""
+    r1 = client.post("/terminal/session", json={})
+    sid = r1.json()["session_id"]
+    r2 = client.post(f"/terminal/session/{sid}/exec", json={"command": "echo hello"})
+    assert r2.status_code == 200
+    d = r2.json()
+    assert "stdout" in d
+    assert "hello" in d["stdout"]
+    assert d["exit_code"] == 0
+    client.delete(f"/terminal/session/{sid}")
+
+
+def test_terminal_exec_exit_code(client):
+    """A failing command returns non-zero exit_code."""
+    r1 = client.post("/terminal/session", json={})
+    sid = r1.json()["session_id"]
+    r2 = client.post(f"/terminal/session/{sid}/exec", json={"command": "exit 42"})
+    assert r2.status_code == 200
+    d = r2.json()
+    assert d["exit_code"] != 0 or d["success"] is False
+    client.delete(f"/terminal/session/{sid}")
+
+
+def test_terminal_exec_records_history(client):
+    """Executed commands appear in session history."""
+    r1 = client.post("/terminal/session", json={})
+    sid = r1.json()["session_id"]
+    client.post(f"/terminal/session/{sid}/exec", json={"command": "echo history_test"})
+    r2 = client.get(f"/terminal/session/{sid}")
+    assert r2.status_code == 200
+    history = r2.json()["history"]
+    assert any("echo history_test" in h["command"] for h in history)
+    client.delete(f"/terminal/session/{sid}")
+
+
+def test_terminal_exec_empty_command(client):
+    """Empty command returns 400."""
+    r1 = client.post("/terminal/session", json={})
+    sid = r1.json()["session_id"]
+    r2 = client.post(f"/terminal/session/{sid}/exec", json={"command": "  "})
+    assert r2.status_code == 400
+    client.delete(f"/terminal/session/{sid}")
+
+
+def test_terminal_exec_not_found(client):
+    r = client.post("/terminal/session/no-such/exec", json={"command": "ls"})
+    assert r.status_code == 404
+
+
+def test_terminal_delete_session(client):
+    """DELETE /terminal/session/{id} removes the session."""
+    r1 = client.post("/terminal/session", json={})
+    sid = r1.json()["session_id"]
+    r2 = client.delete(f"/terminal/session/{sid}")
+    assert r2.status_code == 200
+    assert r2.json()["success"] is True
+    r3 = client.get(f"/terminal/session/{sid}")
+    assert r3.status_code == 404
+
+
+def test_terminal_delete_session_not_found(client):
+    r = client.delete("/terminal/session/no-such-session")
+    assert r.status_code == 404
+
+
+def test_terminal_cd_builtin(client):
+    """cd command updates session cwd."""
+    import os
+    ws = os.path.join(os.getcwd(), "workspace", "test_term_53cd")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        r1 = client.post("/terminal/session", json={})
+        sid = r1.json()["session_id"]
+        r2 = client.post(f"/terminal/session/{sid}/exec", json={"command": f"cd {ws}"})
+        assert r2.status_code == 200
+        assert r2.json()["exit_code"] == 0
+        r3 = client.get(f"/terminal/session/{sid}")
+        assert ws in r3.json()["cwd"]
+        client.delete(f"/terminal/session/{sid}")
+    finally:
+        import shutil
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_terminal_cd_outside_workspace_blocked(client):
+    """cd outside workspace returns 403."""
+    r1 = client.post("/terminal/session", json={})
+    sid = r1.json()["session_id"]
+    r2 = client.post(f"/terminal/session/{sid}/exec", json={"command": "cd /etc"})
+    assert r2.status_code == 403
+    client.delete(f"/terminal/session/{sid}")
+
+
+def test_terminal_cwd_init(client):
+    """Session cwd can be set at creation time."""
+    import os
+    ws_sub = os.path.join(os.getcwd(), "workspace", "test_term_53cwd")
+    os.makedirs(ws_sub, exist_ok=True)
+    try:
+        r1 = client.post("/terminal/session", json={"cwd": "test_term_53cwd"})
+        assert r1.status_code == 200
+        d = r1.json()
+        assert "test_term_53cwd" in d["session"]["cwd"]
+        client.delete(f"/terminal/session/{d['session_id']}")
+    finally:
+        import shutil
+        shutil.rmtree(ws_sub, ignore_errors=True)

@@ -2650,6 +2650,8 @@
     if (panel === "snippets")   loadSnippetsPanel();
     if (panel === "aitimeline") loadTimelinePanel();
     if (panel === "healthdash") loadHealthPanel();
+    if (panel === "testrunner") loadTestRunnerPanel();
+    if (panel === "terminal")   loadTerminalPanel();
   }
 
   document.querySelectorAll(".ab-icon[data-panel]").forEach((btn) => {
@@ -6860,6 +6862,209 @@
 
     $("btn-deps-analyze")?.addEventListener("click", analyzeProject);
     $("btn-deps-reports")?.addEventListener("click", showReports);
+  })();
+
+  // ── Phase 52: Test Runner & Coverage Dashboard panel ─────────────────────
+  (function () {
+    const resultEl = $("testrunner-result");
+
+    async function loadTestRunnerPanel() {
+      if (resultEl) resultEl.innerHTML = '';
+    }
+
+    async function runTests() {
+      const projectPath = $("testrunner-project-path")?.value.trim() || "";
+      const framework = $("testrunner-framework")?.value || "pytest";
+      if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-dim)">Running tests…</span>';
+      try {
+        const res = await fetch("/testrunner/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_path: projectPath, framework }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.detail || "Error");
+        const r = d.report;
+        const statusColor = r.status === "passed" ? "#4caf50" : r.status === "timeout" ? "#ff9800" : "var(--danger)";
+        const s = r.summary;
+        if (resultEl) resultEl.innerHTML = `
+          <div style="border:1px solid var(--border);border-radius:4px;padding:8px;margin-top:4px">
+            <div style="font-size:11px;font-weight:600;color:${statusColor};margin-bottom:4px">
+              ${r.status.toUpperCase()} · exit ${r.exit_code} · ${escHtmlSimple(r.framework)}
+            </div>
+            <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">
+              ✅ ${s.passed} passed &nbsp; ❌ ${s.failed} failed &nbsp; ⚠️ ${s.errors} errors &nbsp; ⏭ ${s.skipped} skipped
+            </div>
+            <details>
+              <summary style="font-size:10px;cursor:pointer;color:var(--text-dim)">stdout / stderr</summary>
+              <pre style="font-size:10px;white-space:pre-wrap;margin-top:4px;overflow-x:auto;max-height:200px;overflow-y:auto;background:var(--bg-3,var(--bg));padding:6px;border-radius:4px">${escHtmlSimple((r.stdout + (r.stderr ? "\n--- stderr ---\n" + r.stderr : "")).slice(0, 4000))}</pre>
+            </details>
+          </div>
+        `;
+      } catch (e) {
+        if (resultEl) resultEl.innerHTML = `<span style="color:var(--danger)">${escHtmlSimple(e.message)}</span>`;
+      }
+    }
+
+    async function showTestReports() {
+      if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-dim)">Loading…</span>';
+      try {
+        const res = await fetch("/testrunner/reports?limit=20");
+        const d = await res.json();
+        if (!d.reports || d.reports.length === 0) {
+          if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-dim)">No reports yet.</span>';
+          return;
+        }
+        if (resultEl) resultEl.innerHTML = d.reports.map(r => {
+          const statusColor = r.status === "passed" ? "#4caf50" : r.status === "timeout" ? "#ff9800" : "var(--danger)";
+          const s = r.summary;
+          return `
+            <div style="border:1px solid var(--border);border-radius:4px;padding:6px;margin-bottom:4px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:10px;font-weight:600;color:${statusColor}">#${r.id} ${r.status.toUpperCase()}</span>
+                <button data-del-report="${r.id}" style="font-size:9px;color:var(--danger);padding:1px 4px">✕</button>
+              </div>
+              <div style="font-size:10px;color:var(--text-dim)">${escHtmlSimple(r.framework)} · ${escHtmlSimple(r.project_path)} · ✅${s.passed} ❌${s.failed} ⏭${s.skipped}</div>
+              <div style="font-size:9px;color:var(--text-dim)">${new Date(r.started_at).toLocaleString()}</div>
+            </div>
+          `;
+        }).join("");
+        resultEl.querySelectorAll("[data-del-report]").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            await fetch(`/testrunner/report/${btn.dataset.delReport}`, { method: "DELETE" });
+            showTestReports();
+          });
+        });
+      } catch (e) {
+        if (resultEl) resultEl.innerHTML = `<span style="color:var(--danger)">${escHtmlSimple(e.message)}</span>`;
+      }
+    }
+
+    $("btn-testrunner-run")?.addEventListener("click", runTests);
+    $("btn-testrunner-reports")?.addEventListener("click", showTestReports);
+    window.loadTestRunnerPanel = loadTestRunnerPanel;
+  })();
+
+  // ── Phase 53: Terminal Manager panel ─────────────────────────────────────
+  (function () {
+    let _activeSessionId = null;
+
+    async function loadTerminalPanel() {
+      await refreshSessionsList();
+    }
+
+    async function refreshSessionsList() {
+      const listEl = $("terminal-sessions-list");
+      if (!listEl) return;
+      try {
+        const res = await fetch("/terminal/sessions");
+        const d = await res.json();
+        if (d.sessions.length === 0) {
+          listEl.innerHTML = '<div style="color:var(--text-dim);font-size:11px">No sessions. Click ＋ to create one.</div>';
+          return;
+        }
+        listEl.innerHTML = d.sessions.map(s => `
+          <div style="border:1px solid var(--border);border-radius:4px;padding:6px;margin-bottom:4px;cursor:pointer;display:flex;justify-content:space-between;align-items:center"
+               data-open-session="${escHtmlSimple(s.id)}">
+            <div>
+              <div style="font-size:11px;font-weight:600">${escHtmlSimple(s.name)}</div>
+              <div style="font-size:9px;color:var(--text-dim)">${escHtmlSimple(s.id)}</div>
+            </div>
+            <button data-del-session="${escHtmlSimple(s.id)}" style="font-size:9px;color:var(--danger);padding:1px 4px">✕</button>
+          </div>
+        `).join("");
+        listEl.querySelectorAll("[data-open-session]").forEach(el => {
+          el.addEventListener("click", (e) => {
+            if (e.target.dataset.delSession) return;
+            openSession(el.dataset.openSession);
+          });
+        });
+        listEl.querySelectorAll("[data-del-session]").forEach(btn => {
+          btn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            await fetch(`/terminal/session/${encodeURIComponent(btn.dataset.delSession)}`, { method: "DELETE" });
+            if (_activeSessionId === btn.dataset.delSession) closeSessionView();
+            await refreshSessionsList();
+          });
+        });
+      } catch (e) {
+        if (listEl) listEl.innerHTML = `<span style="color:var(--danger);font-size:11px">${escHtmlSimple(e.message)}</span>`;
+      }
+    }
+
+    async function openSession(sessionId) {
+      _activeSessionId = sessionId;
+      const viewEl = $("terminal-session-view");
+      const titleEl = $("terminal-session-title");
+      if (viewEl) { viewEl.style.display = "flex"; viewEl.classList.remove("hidden"); }
+      if (titleEl) titleEl.textContent = `Session: ${sessionId}`;
+      await refreshSessionOutput();
+      $("terminal-cmd-input")?.focus();
+    }
+
+    function closeSessionView() {
+      _activeSessionId = null;
+      const viewEl = $("terminal-session-view");
+      if (viewEl) { viewEl.style.display = "none"; viewEl.classList.add("hidden"); }
+    }
+
+    async function refreshSessionOutput() {
+      if (!_activeSessionId) return;
+      const outputEl = $("terminal-output");
+      if (!outputEl) return;
+      try {
+        const res = await fetch(`/terminal/session/${encodeURIComponent(_activeSessionId)}`);
+        if (!res.ok) { closeSessionView(); return; }
+        const d = await res.json();
+        outputEl.innerHTML = d.history.map(h => {
+          const exitColor = h.exit_code === 0 ? "#4caf50" : "var(--danger)";
+          return `<div style="margin-bottom:4px">` +
+            `<span style="color:var(--text-dim);user-select:none">$ </span>` +
+            `<span style="color:var(--text);font-weight:600">${escHtmlSimple(h.command)}</span>` +
+            (h.stdout ? `\n<span style="white-space:pre-wrap">${escHtmlSimple(h.stdout.trimEnd())}</span>` : "") +
+            (h.stderr ? `\n<span style="color:${exitColor};white-space:pre-wrap">${escHtmlSimple(h.stderr.trimEnd())}</span>` : "") +
+            `</div>`;
+        }).join("");
+        outputEl.scrollTop = outputEl.scrollHeight;
+      } catch (e) { /* ignore */ }
+    }
+
+    async function execCommand() {
+      if (!_activeSessionId) return;
+      const input = $("terminal-cmd-input");
+      const cmd = input?.value.trim();
+      if (!cmd) return;
+      if (input) input.value = "";
+      try {
+        await fetch(`/terminal/session/${encodeURIComponent(_activeSessionId)}/exec`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command: cmd }),
+        });
+        await refreshSessionOutput();
+      } catch (e) { /* ignore */ }
+    }
+
+    $("btn-terminal-new")?.addEventListener("click", async () => {
+      const name = prompt("Session name (optional):") || "";
+      const res = await fetch("/terminal/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const d = await res.json();
+      if (d.success) { await refreshSessionsList(); openSession(d.session_id); }
+    });
+
+    $("btn-terminal-refresh")?.addEventListener("click", refreshSessionsList);
+    $("btn-terminal-exec")?.addEventListener("click", execCommand);
+    $("btn-terminal-close-session")?.addEventListener("click", closeSessionView);
+
+    $("terminal-cmd-input")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") execCommand();
+    });
+
+    window.loadTerminalPanel = loadTerminalPanel;
   })();
 
   // ── UI: Focus Mode & Theme Toggle ────────────────────────────────────────
