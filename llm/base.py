@@ -4,6 +4,21 @@ from abc import ABC, abstractmethod
 from typing import Any, Iterator
 
 
+def _fmt_unavailable(backend_name: str, url: str) -> str:
+    """Return a user-friendly message when a local LLM backend cannot be reached."""
+    return (
+        f"⚠️ **{backend_name} is not reachable** at `{url}`.\n\n"
+        "The service appears to be offline or the URL is incorrect. "
+        "Please start the backend and try again, or switch to a different LLM in the model selector.\n\n"
+        "| Backend | How to start |\n"
+        "|---|---|\n"
+        "| **Ollama** *(recommended)* | Install from https://ollama.ai, then `ollama pull llama3` |\n"
+        "| **LM Studio** | Download from https://lmstudio.ai and start the local server |\n"
+        "| **LocalAI** | See https://localai.io |\n"
+        "| **llama.cpp** | Run `./llama-server -m model.gguf --port 8080` |\n"
+    )
+
+
 class BaseLLM(ABC):
     @abstractmethod
     def chat(self, messages: list[dict[str, str]]) -> str:

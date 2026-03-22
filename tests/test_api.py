@@ -1644,6 +1644,58 @@ def test_tabby_instantiation():
     assert llm.model == "StarCoder"
 
 
+def test_ollama_connection_error_returns_friendly_message():
+    """OllamaLLM returns a user-friendly message when the server is not reachable."""
+    import requests as req
+    from unittest.mock import patch
+    from llm.ollama import OllamaLLM
+    llm = OllamaLLM(base_url="http://localhost:11434", model="llama3")
+    with patch.object(req.Session, "request", side_effect=req.exceptions.ConnectionError("refused")):
+        result = llm.chat([{"role": "user", "content": "hello"}])
+    assert result.startswith("⚠️")
+    assert "Ollama" in result
+    assert "[ERROR]" not in result
+
+
+def test_lmstudio_connection_error_returns_friendly_message():
+    """LMStudioLLM returns a user-friendly message when the server is not reachable."""
+    import requests as req
+    from unittest.mock import patch
+    from llm.lmstudio import LMStudioLLM
+    llm = LMStudioLLM(base_url="http://localhost:1234", model="test-model")
+    with patch.object(req.Session, "request", side_effect=req.exceptions.ConnectionError("refused")):
+        result = llm.chat([{"role": "user", "content": "hello"}])
+    assert result.startswith("⚠️")
+    assert "LM Studio" in result
+    assert "[ERROR]" not in result
+
+
+def test_llamacpp_connection_error_returns_friendly_message():
+    """LlamaCppLLM returns a user-friendly message when the server is not reachable."""
+    import requests as req
+    from unittest.mock import patch
+    from llm.llamacpp import LlamaCppLLM
+    llm = LlamaCppLLM(base_url="http://localhost:8080", model="")
+    with patch.object(req.Session, "request", side_effect=req.exceptions.ConnectionError("refused")):
+        result = llm.chat([{"role": "user", "content": "hello"}])
+    assert result.startswith("⚠️")
+    assert "llama.cpp" in result
+    assert "[ERROR]" not in result
+
+
+def test_openwebui_connection_error_returns_friendly_message():
+    """OpenWebUILLM returns a user-friendly message when the server is not reachable."""
+    import requests as req
+    from unittest.mock import patch
+    from llm.openwebui import OpenWebUILLM
+    llm = OpenWebUILLM(base_url="http://localhost:3000", model="llama3")
+    with patch.object(req.Session, "request", side_effect=req.exceptions.ConnectionError("refused")):
+        result = llm.chat([{"role": "user", "content": "hello"}])
+    assert result.startswith("⚠️")
+    assert "Open WebUI" in result
+    assert "[ERROR]" not in result
+
+
 # ── Phase 21: Project Initialization Wizard ───────────────────────────────────
 
 def test_project_init_detect_python(client):

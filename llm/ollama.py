@@ -4,7 +4,7 @@ import json
 from typing import Any, Iterator
 import requests
 from core.logger import get_logger
-from llm.base import BaseLLM
+from llm.base import BaseLLM, _fmt_unavailable
 
 logger = get_logger(__name__)
 
@@ -20,6 +20,9 @@ class OllamaLLM(BaseLLM):
             resp = requests.post(f"{self.base_url}/api/chat", json=payload, timeout=120)
             resp.raise_for_status()
             return resp.json().get("message", {}).get("content", "")
+        except requests.exceptions.ConnectionError:
+            logger.error("Ollama is not reachable at %s", self.base_url)
+            return _fmt_unavailable("Ollama", self.base_url)
         except Exception as exc:
             logger.error("Ollama chat error: %s", exc)
             return f"[ERROR] {exc}"
@@ -43,6 +46,9 @@ class OllamaLLM(BaseLLM):
                         yield content
                     if data.get("done"):
                         break
+        except requests.exceptions.ConnectionError:
+            logger.error("Ollama is not reachable at %s", self.base_url)
+            yield _fmt_unavailable("Ollama", self.base_url)
         except Exception as exc:
             logger.error("Ollama stream_chat error: %s", exc)
             yield f"[ERROR] {exc}"
@@ -54,6 +60,9 @@ class OllamaLLM(BaseLLM):
             resp = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=120)
             resp.raise_for_status()
             return resp.json().get("response", "")
+        except requests.exceptions.ConnectionError:
+            logger.error("Ollama is not reachable at %s", self.base_url)
+            return _fmt_unavailable("Ollama", self.base_url)
         except Exception as exc:
             logger.error("Ollama generate error: %s", exc)
             return f"[ERROR] {exc}"
