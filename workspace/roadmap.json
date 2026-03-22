@@ -341,7 +341,7 @@
     {
       "id": "m11",
       "title": "Test Runner, Terminal & Developer Productivity",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t11-1",
@@ -356,6 +356,27 @@
           "status": "done",
           "priority": "high",
           "description": "Create/list/exec/delete named terminal sessions with command history and sandboxed cwd"
+        }
+      ]
+    },
+    {
+      "id": "m12",
+      "title": "File Watcher, Process Manager & Automation",
+      "status": "in_progress",
+      "tasks": [
+        {
+          "id": "t12-1",
+          "title": "File Watcher",
+          "status": "done",
+          "priority": "high",
+          "description": "Watch files/directories for changes, record events, list/delete watches"
+        },
+        {
+          "id": "t12-2",
+          "title": "Process Manager",
+          "status": "done",
+          "priority": "high",
+          "description": "Start/stop background processes, stream logs, list by status"
         }
       ]
     }

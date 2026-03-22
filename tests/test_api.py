@@ -4358,3 +4358,240 @@ def test_terminal_cwd_init(client):
     finally:
         import shutil
         shutil.rmtree(ws_sub, ignore_errors=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 54: File Watcher
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_watcher_create_and_list(client):
+    """POST /watcher/watch creates a watch; GET /watcher/watches lists it."""
+    import os, shutil
+    ws = os.path.join(os.getcwd(), "workspace", "test_watch54")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        r = client.post("/watcher/watch", json={"path": "test_watch54", "label": "w54"})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["success"] is True
+        wid = d["watch_id"]
+        assert wid.startswith("watch-")
+        assert d["watch"]["label"] == "w54"
+
+        rl = client.get("/watcher/watches")
+        assert rl.status_code == 200
+        ids = [w["id"] for w in rl.json()["watches"]]
+        assert wid in ids
+    finally:
+        client.delete(f"/watcher/watch/{wid}")
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_watcher_get(client):
+    """GET /watcher/watch/{id} returns watch details."""
+    import os, shutil
+    ws = os.path.join(os.getcwd(), "workspace", "test_watch54g")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        r = client.post("/watcher/watch", json={"path": "test_watch54g"})
+        wid = r.json()["watch_id"]
+        rg = client.get(f"/watcher/watch/{wid}")
+        assert rg.status_code == 200
+        assert rg.json()["id"] == wid
+    finally:
+        client.delete(f"/watcher/watch/{wid}")
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_watcher_get_not_found(client):
+    r = client.get("/watcher/watch/no-such-watch")
+    assert r.status_code == 404
+
+
+def test_watcher_delete(client):
+    """DELETE /watcher/watch/{id} removes the watch."""
+    import os, shutil
+    ws = os.path.join(os.getcwd(), "workspace", "test_watch54d")
+    os.makedirs(ws, exist_ok=True)
+    try:
+        r = client.post("/watcher/watch", json={"path": "test_watch54d"})
+        wid = r.json()["watch_id"]
+        rd = client.delete(f"/watcher/watch/{wid}")
+        assert rd.status_code == 200
+        assert rd.json()["success"] is True
+        rg = client.get(f"/watcher/watch/{wid}")
+        assert rg.status_code == 404
+    finally:
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+def test_watcher_delete_not_found(client):
+    r = client.delete("/watcher/watch/ghost-watch")
+    assert r.status_code == 404
+
+
+def test_watcher_path_not_found(client):
+    """Creating a watch on a non-existent path returns 404."""
+    r = client.post("/watcher/watch", json={"path": "does/not/exist"})
+    assert r.status_code == 404
+
+
+def test_watcher_empty_path_rejected(client):
+    """Empty path returns 400."""
+    r = client.post("/watcher/watch", json={"path": "  "})
+    assert r.status_code == 400
+
+
+def test_watcher_events_list(client):
+    """GET /watcher/events returns a list (possibly empty)."""
+    r = client.get("/watcher/events")
+    assert r.status_code == 200
+    d = r.json()
+    assert "events" in d
+    assert isinstance(d["events"], list)
+
+
+def test_watcher_events_filter_by_watch_id(client):
+    """GET /watcher/events?watch_id= filters events."""
+    r = client.get("/watcher/events?watch_id=watch-9999")
+    assert r.status_code == 200
+    d = r.json()
+    assert all(e["watch_id"] == "watch-9999" for e in d["events"])
+
+
+def test_watcher_events_filter_by_type(client):
+    """GET /watcher/events?event_type= filters events."""
+    r = client.get("/watcher/events?event_type=created")
+    assert r.status_code == 200
+    d = r.json()
+    assert all(e["type"] == "created" for e in d["events"])
+
+
+def test_watcher_path_traversal_blocked(client):
+    """Path traversal outside workspace is blocked."""
+    r = client.post("/watcher/watch", json={"path": "../../etc"})
+    assert r.status_code in (400, 403, 404)
+
+
+def test_watcher_file_watch(client):
+    """Can watch a single file."""
+    import os, shutil
+    ws = os.path.join(os.getcwd(), "workspace", "test_watch54f.txt")
+    with open(ws, "w") as f:
+        f.write("hello")
+    try:
+        r = client.post("/watcher/watch", json={"path": "test_watch54f.txt"})
+        assert r.status_code == 200
+        wid = r.json()["watch_id"]
+        client.delete(f"/watcher/watch/{wid}")
+    finally:
+        os.unlink(ws)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 55: Process Manager
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_process_start_and_list(client):
+    """POST /process/start starts a process; GET /process/list shows it."""
+    r = client.post("/process/start", json={"command": "sleep 60", "label": "sleeper"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    pid = d["process_id"]
+    assert pid.startswith("proc-")
+    assert d["process"]["label"] == "sleeper"
+
+    rl = client.get("/process/list")
+    assert rl.status_code == 200
+    ids = [p["id"] for p in rl.json()["processes"]]
+    assert pid in ids
+
+    # Clean up
+    client.delete(f"/process/{pid}")
+
+
+def test_process_get(client):
+    """GET /process/{id} returns process details."""
+    r = client.post("/process/start", json={"command": "sleep 60"})
+    pid = r.json()["process_id"]
+    rg = client.get(f"/process/{pid}")
+    assert rg.status_code == 200
+    assert rg.json()["id"] == pid
+    client.delete(f"/process/{pid}")
+
+
+def test_process_get_not_found(client):
+    r = client.get("/process/no-such-proc")
+    assert r.status_code == 404
+
+
+def test_process_stop(client):
+    """DELETE /process/{id} stops and removes the process."""
+    r = client.post("/process/start", json={"command": "sleep 60"})
+    pid = r.json()["process_id"]
+    rd = client.delete(f"/process/{pid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    rg = client.get(f"/process/{pid}")
+    assert rg.status_code == 404
+
+
+def test_process_stop_not_found(client):
+    r = client.delete("/process/ghost-proc")
+    assert r.status_code == 404
+
+
+def test_process_logs(client):
+    """GET /process/{id}/logs returns log output."""
+    import time
+    r = client.post("/process/start", json={"command": "echo hello_proc_log"})
+    pid = r.json()["process_id"]
+    time.sleep(0.5)  # allow process to finish
+    rl = client.get(f"/process/{pid}/logs")
+    assert rl.status_code == 200
+    d = rl.json()
+    assert "lines" in d
+    assert "status" in d
+    client.delete(f"/process/{pid}")
+
+
+def test_process_logs_not_found(client):
+    r = client.get("/process/no-such/logs")
+    assert r.status_code == 404
+
+
+def test_process_list_filter_status(client):
+    """GET /process/list?status=running filters by status."""
+    r = client.post("/process/start", json={"command": "sleep 60"})
+    pid = r.json()["process_id"]
+    rl = client.get("/process/list?status=running")
+    assert rl.status_code == 200
+    procs = rl.json()["processes"]
+    assert all(p["status"] == "running" for p in procs)
+    client.delete(f"/process/{pid}")
+
+
+def test_process_empty_command_rejected(client):
+    """Empty command returns 400."""
+    r = client.post("/process/start", json={"command": "  "})
+    assert r.status_code == 400
+
+
+def test_process_bad_cwd(client):
+    """Non-existent cwd returns 404."""
+    r = client.post("/process/start", json={"command": "echo hi", "cwd": "no/such/dir"})
+    assert r.status_code == 404
+
+
+def test_process_finished_status(client):
+    """Process that exits immediately transitions to 'stopped'."""
+    import time
+    r = client.post("/process/start", json={"command": "echo done_test"})
+    pid = r.json()["process_id"]
+    time.sleep(0.5)
+    rg = client.get(f"/process/{pid}")
+    assert rg.status_code == 200
+    assert rg.json()["status"] == "stopped"
+    assert rg.json()["exit_code"] == 0
+    client.delete(f"/process/{pid}")

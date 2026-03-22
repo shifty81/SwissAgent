@@ -857,6 +857,21 @@ class TerminalExecRequest(BaseModel):
     command: str             # shell command to execute
     timeout: int = 30        # max seconds
 
+# ── Phase 54: File Watcher request models ─────────────────────────────────────
+
+class WatcherCreateRequest(BaseModel):
+    path: str                # path to watch (relative to workspace/)
+    recursive: bool = False  # watch subdirectories too
+    label: str = ""          # optional human-readable label
+
+# ── Phase 55: Process Manager request models ──────────────────────────────────
+
+class ProcessStartRequest(BaseModel):
+    command: str             # shell command to run as a background process
+    cwd: str = ""            # working directory (sub-path under workspace/)
+    label: str = ""          # optional human-readable label
+    env: dict[str, str] = {} # extra environment variables
+
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
 # needs enough to understand what follows the cursor.
@@ -7864,6 +7879,272 @@ indent_style = tab
         _terminal_sessions.pop(session_id)
         return {"success": True, "deleted": session_id}
 
+    # ── Phase 54: File Watcher ────────────────────────────────────────────────
+
+    _WATCHER_MAX = 50   # max concurrent watches
+
+    @app.post("/watcher/watch")
+    async def watcher_create(req: WatcherCreateRequest) -> dict[str, Any]:
+        """Register a new file-system watch on a path inside workspace/."""
+        global _watcher_id_counter
+
+        if len(_watcher_watches) >= _WATCHER_MAX:
+            raise HTTPException(status_code=429, detail="Too many active watches. Delete one first.")
+
+        rel = req.path.strip().lstrip("/")
+        if not rel:
+            raise HTTPException(status_code=400, detail="path must not be empty")
+
+        target = _safe_path(base_dir / "workspace", rel)
+        if not target.exists():
+            raise HTTPException(status_code=404, detail=f"Path not found: {rel}")
+
+        _watcher_id_counter += 1
+        watch_id = f"watch-{_watcher_id_counter}"
+        watch = {
+            "id": watch_id,
+            "path": rel,
+            "recursive": req.recursive,
+            "label": req.label or watch_id,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "active": True,
+            "event_count": 0,
+        }
+        _watcher_watches[watch_id] = watch
+
+        # Background thread that polls mtime of the watched path
+        def _poll(wid: str, abs_path: Path, recursive: bool) -> None:
+            import time as _t
+            known: dict[str, float] = {}
+
+            def _scan() -> dict[str, float]:
+                result: dict[str, float] = {}
+                try:
+                    if abs_path.is_file():
+                        result[str(abs_path)] = abs_path.stat().st_mtime
+                    elif abs_path.is_dir():
+                        iter_fn = abs_path.rglob("*") if recursive else abs_path.iterdir()
+                        for p in iter_fn:
+                            try:
+                                result[str(p)] = p.stat().st_mtime
+                            except OSError:
+                                pass
+                except OSError:
+                    pass
+                return result
+
+            known = _scan()
+
+            while _watcher_watches.get(wid, {}).get("active"):
+                _t.sleep(1)
+                current = _scan()
+                now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                for fp, mtime in current.items():
+                    if fp not in known:
+                        _record_watcher_event(wid, "created", fp, now_ts)
+                    elif mtime != known[fp]:
+                        _record_watcher_event(wid, "modified", fp, now_ts)
+                for fp in list(known):
+                    if fp not in current:
+                        _record_watcher_event(wid, "deleted", fp, now_ts)
+                known = current
+
+        t = threading.Thread(target=_poll, args=(watch_id, target, req.recursive), daemon=True)
+        _watcher_threads[watch_id] = t
+        t.start()
+
+        return {"success": True, "watch_id": watch_id, "watch": watch}
+
+    def _record_watcher_event(watch_id: str, event_type: str, path: str, ts: str) -> None:
+        """Append a watcher event to the global event list."""
+        watch = _watcher_watches.get(watch_id)
+        if watch is None:
+            return  # watch was deleted; discard event
+        watch["event_count"] += 1
+        _watcher_events.append({
+            "watch_id": watch_id,
+            "type": event_type,
+            "path": path,
+            "ts": ts,
+        })
+        if len(_watcher_events) > _MAX_WATCHER_EVENTS:
+            _watcher_events[:] = _watcher_events[-_MAX_WATCHER_EVENTS:]
+
+    @app.get("/watcher/watches")
+    async def watcher_list() -> dict[str, Any]:
+        """List all active and inactive file-system watches."""
+        return {"watches": list(_watcher_watches.values()), "total": len(_watcher_watches)}
+
+    @app.get("/watcher/watch/{watch_id}")
+    async def watcher_get(watch_id: str) -> dict[str, Any]:
+        """Get details for a single watch."""
+        if watch_id not in _watcher_watches:
+            raise HTTPException(status_code=404, detail=f"Watch {watch_id!r} not found")
+        return _watcher_watches[watch_id]
+
+    @app.delete("/watcher/watch/{watch_id}")
+    async def watcher_delete(watch_id: str) -> dict[str, Any]:
+        """Stop and remove a file-system watch."""
+        if watch_id not in _watcher_watches:
+            raise HTTPException(status_code=404, detail=f"Watch {watch_id!r} not found")
+        _watcher_watches[watch_id]["active"] = False
+        _watcher_watches.pop(watch_id)
+        _watcher_threads.pop(watch_id, None)
+        return {"success": True, "deleted": watch_id}
+
+    @app.get("/watcher/events")
+    async def watcher_events_list(
+        watch_id: str = Query("", description="Filter by watch ID"),
+        event_type: str = Query("", description="Filter by event type: created/modified/deleted"),
+        limit: int = Query(100, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        """List recorded file-system change events, newest-first."""
+        events = list(reversed(_watcher_events))
+        if watch_id:
+            events = [e for e in events if e["watch_id"] == watch_id]
+        if event_type:
+            events = [e for e in events if e["type"] == event_type]
+        return {"events": events[:limit], "total": len(_watcher_events)}
+
+    # ── Phase 55: Process Manager ─────────────────────────────────────────────
+
+    _PROCESS_MAX = 20   # max concurrent managed processes
+
+    @app.post("/process/start")
+    async def process_start(req: ProcessStartRequest) -> dict[str, Any]:
+        """Start a long-running background process and register it."""
+        global _process_id_counter
+        import subprocess as _sp
+
+        if len([p for p in _process_registry.values() if p["status"] == "running"]) >= _PROCESS_MAX:
+            raise HTTPException(status_code=429, detail="Too many running processes. Stop one first.")
+
+        cwd_rel = req.cwd.strip().lstrip("/")
+        if cwd_rel:
+            resolved_cwd = _safe_path(base_dir / "workspace", cwd_rel)
+            if not resolved_cwd.is_dir():
+                raise HTTPException(status_code=404, detail=f"cwd not found: {cwd_rel}")
+            cwd_str = str(resolved_cwd)
+        else:
+            cwd_str = str(base_dir / "workspace")
+
+        command = req.command.strip()
+        if not command:
+            raise HTTPException(status_code=400, detail="command must not be empty")
+
+        env = {**os.environ, **req.env}
+
+        _process_id_counter += 1
+        proc_id = f"proc-{_process_id_counter}"
+
+        started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        try:
+            proc = _sp.Popen(
+                command,
+                shell=True,
+                stdout=_sp.PIPE,
+                stderr=_sp.STDOUT,
+                text=True,
+                cwd=cwd_str,
+                env=env,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed to start process: {exc}")
+
+        record: dict[str, Any] = {
+            "id": proc_id,
+            "command": command,
+            "cwd": cwd_rel or "workspace",
+            "label": req.label or proc_id,
+            "started_at": started_at,
+            "stopped_at": None,
+            "pid": proc.pid,
+            "exit_code": None,
+            "status": "running",
+            "log": "",
+            "_proc": proc,
+        }
+        _process_registry[proc_id] = record
+
+        def _stream_output(pid: str, p: _sp.Popen) -> None:  # type: ignore[type-arg]
+            assert p.stdout is not None
+            for line in iter(p.stdout.readline, ""):
+                rec = _process_registry.get(pid)
+                if rec is None:
+                    break
+                rec["log"] = (rec["log"] + line)[-_MAX_PROCESS_LOG:]
+            p.stdout.close()
+            ret = p.wait()
+            rec = _process_registry.get(pid)
+            if rec:
+                rec["exit_code"] = ret
+                rec["status"] = "stopped"
+                rec["stopped_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        threading.Thread(target=_stream_output, args=(proc_id, proc), daemon=True).start()
+
+        return {
+            "success": True,
+            "process_id": proc_id,
+            "process": {k: v for k, v in record.items() if k != "_proc"},
+        }
+
+    @app.get("/process/list")
+    async def process_list(
+        status: str = Query("", description="Filter by status: running / stopped"),
+    ) -> dict[str, Any]:
+        """List all managed processes."""
+        procs = [
+            {k: v for k, v in p.items() if k != "_proc"}
+            for p in _process_registry.values()
+        ]
+        if status:
+            procs = [p for p in procs if p["status"] == status]
+        return {"processes": procs, "total": len(procs)}
+
+    @app.get("/process/{proc_id}")
+    async def process_get(proc_id: str) -> dict[str, Any]:
+        """Get details and latest log tail for a managed process."""
+        if proc_id not in _process_registry:
+            raise HTTPException(status_code=404, detail=f"Process {proc_id!r} not found")
+        rec = _process_registry[proc_id]
+        return {k: v for k, v in rec.items() if k != "_proc"}
+
+    @app.get("/process/{proc_id}/logs")
+    async def process_logs(
+        proc_id: str,
+        tail: int = Query(200, ge=1, le=2000),
+    ) -> dict[str, Any]:
+        """Return the last *tail* lines of a process's captured output."""
+        if proc_id not in _process_registry:
+            raise HTTPException(status_code=404, detail=f"Process {proc_id!r} not found")
+        rec = _process_registry[proc_id]
+        lines = rec["log"].splitlines()[-tail:]
+        return {
+            "process_id": proc_id,
+            "status": rec["status"],
+            "lines": lines,
+            "total_lines": len(rec["log"].splitlines()),
+        }
+
+    @app.delete("/process/{proc_id}")
+    async def process_stop(proc_id: str) -> dict[str, Any]:
+        """Send SIGTERM to a running process and mark it stopped."""
+        if proc_id not in _process_registry:
+            raise HTTPException(status_code=404, detail=f"Process {proc_id!r} not found")
+        rec = _process_registry[proc_id]
+        proc_obj = rec.get("_proc")
+        if rec["status"] == "running" and proc_obj is not None:
+            try:
+                proc_obj.terminate()
+            except Exception:
+                pass
+            rec["status"] = "stopped"
+            rec["stopped_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _process_registry.pop(proc_id)
+        return {"success": True, "stopped": proc_id}
+
     return app
 
 
@@ -8068,5 +8349,17 @@ _testrunner_id_counter: int = 0
 _terminal_sessions: dict[str, Any] = {}
 _terminal_id_counter: int = 0
 _MAX_TERMINAL_OUTPUT = 200_000  # chars per session
+
+# ── Phase 54: File Watcher ─────────────────────────────────────────────────────
+_watcher_watches: dict[str, Any] = {}
+_watcher_events: list[dict[str, Any]] = []
+_watcher_id_counter: int = 0
+_MAX_WATCHER_EVENTS = 1_000   # cap stored events
+_watcher_threads: dict[str, Any] = {}   # watch_id → threading.Thread
+
+# ── Phase 55: Process Manager ─────────────────────────────────────────────────
+_process_registry: dict[str, Any] = {}
+_process_id_counter: int = 0
+_MAX_PROCESS_LOG = 200_000    # chars of captured output per process
 
 # ── End of module-level state ─────────────────────────────────────────────────
