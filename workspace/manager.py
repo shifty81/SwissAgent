@@ -1,4 +1,7 @@
 import os
-from swissagent import *
+import sys
 
-# Add code here to manage the novaforge project
+class Manager:
+    def __init__(self):
+        self.workspace = os.getcwd()
+        print(f'Workspace: {self.workspace}')

@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "id": "1_1774112915",
+    "title": "configuration of cmake should be automatic per project requirements",
+    "description": "",
+    "status": "todo",
+    "priority": "medium",
+    "created_at": "2026-03-21T17:08:35.126230+00:00"
+  }
+]
