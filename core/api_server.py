@@ -872,6 +872,36 @@ class ProcessStartRequest(BaseModel):
     label: str = ""          # optional human-readable label
     env: dict[str, str] = {} # extra environment variables
 
+# ── Phase 56: Knowledge Base / Notes Manager request models ───────────────────
+
+class KBEntryCreateRequest(BaseModel):
+    title: str
+    content: str = ""
+    tags: list[str] = []
+    category: str = ""
+
+class KBEntryUpdateRequest(BaseModel):
+    title: str | None = None
+    content: str | None = None
+    tags: list[str] | None = None
+    category: str | None = None
+
+# ── Phase 57: HTTP Mock Server request models ─────────────────────────────────
+
+class MockRouteCreateRequest(BaseModel):
+    method: str = "GET"                  # HTTP method (GET, POST, PUT, PATCH, DELETE, …)
+    path: str                            # URL path pattern, e.g. "/api/users"
+    status_code: int = 200
+    response_body: Any = None            # JSON-serialisable body
+    headers: dict[str, str] = {}         # extra response headers
+    label: str = ""                      # optional human-readable label
+
+class MockRequestRequest(BaseModel):
+    method: str = "GET"
+    path: str
+    body: Any = None
+    headers: dict[str, str] = {}
+
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
 # needs enough to understand what follows the cursor.
@@ -8145,6 +8175,199 @@ indent_style = tab
         _process_registry.pop(proc_id)
         return {"success": True, "stopped": proc_id}
 
+    # ── Phase 56: Knowledge Base / Notes Manager ──────────────────────────────
+
+    @app.post("/kb/entry")
+    async def kb_entry_create(req: KBEntryCreateRequest) -> dict[str, Any]:
+        """Add a new knowledge-base entry."""
+        global _kb_id_counter
+        if not req.title.strip():
+            raise HTTPException(status_code=400, detail="title must not be empty")
+        if len(_kb_entries) >= _MAX_KB_ENTRIES:
+            raise HTTPException(status_code=429, detail="Knowledge base full. Delete some entries first.")
+        _kb_id_counter += 1
+        entry_id = f"kb-{_kb_id_counter}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        entry: dict[str, Any] = {
+            "id": entry_id,
+            "title": req.title.strip(),
+            "content": req.content,
+            "tags": [t.strip().lower() for t in req.tags if t.strip()],
+            "category": req.category.strip().lower(),
+            "created_at": now,
+            "updated_at": now,
+        }
+        _kb_entries[entry_id] = entry
+        return {"success": True, "id": entry_id, "entry": entry}
+
+    @app.get("/kb/entries")
+    async def kb_entries_list(
+        tag: str = Query("", description="Filter by tag"),
+        category: str = Query("", description="Filter by category"),
+        limit: int = Query(50, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """List knowledge-base entries, optionally filtered."""
+        entries = list(_kb_entries.values())
+        if tag:
+            entries = [e for e in entries if tag.lower() in e["tags"]]
+        if category:
+            entries = [e for e in entries if e["category"] == category.lower()]
+        return {"entries": entries[:limit], "total": len(_kb_entries)}
+
+    @app.get("/kb/search")
+    async def kb_search(
+        q: str = Query(..., description="Search query"),
+        limit: int = Query(20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        """Full-text keyword search across title, content, and tags."""
+        q_lower = q.lower()
+        results = [
+            e for e in _kb_entries.values()
+            if q_lower in e["title"].lower()
+            or q_lower in e["content"].lower()
+            or any(q_lower in t for t in e["tags"])
+        ]
+        return {"results": results[:limit], "total": len(results)}
+
+    @app.get("/kb/entry/{entry_id}")
+    async def kb_entry_get(entry_id: str) -> dict[str, Any]:
+        """Get a single knowledge-base entry by ID."""
+        if entry_id not in _kb_entries:
+            raise HTTPException(status_code=404, detail=f"Entry {entry_id!r} not found")
+        return _kb_entries[entry_id]
+
+    @app.patch("/kb/entry/{entry_id}")
+    async def kb_entry_update(entry_id: str, req: KBEntryUpdateRequest) -> dict[str, Any]:
+        """Update one or more fields of a knowledge-base entry."""
+        if entry_id not in _kb_entries:
+            raise HTTPException(status_code=404, detail=f"Entry {entry_id!r} not found")
+        entry = _kb_entries[entry_id]
+        if req.title is not None:
+            if not req.title.strip():
+                raise HTTPException(status_code=400, detail="title must not be empty")
+            entry["title"] = req.title.strip()
+        if req.content is not None:
+            entry["content"] = req.content
+        if req.tags is not None:
+            entry["tags"] = [t.strip().lower() for t in req.tags if t.strip()]
+        if req.category is not None:
+            entry["category"] = req.category.strip().lower()
+        entry["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "entry": entry}
+
+    @app.delete("/kb/entry/{entry_id}")
+    async def kb_entry_delete(entry_id: str) -> dict[str, Any]:
+        """Delete a knowledge-base entry."""
+        if entry_id not in _kb_entries:
+            raise HTTPException(status_code=404, detail=f"Entry {entry_id!r} not found")
+        _kb_entries.pop(entry_id)
+        return {"success": True, "deleted": entry_id}
+
+    # ── Phase 57: HTTP Mock Server ─────────────────────────────────────────────
+
+    _MOCK_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+    _MOCK_ROUTE_MAX = 200
+
+    @app.post("/mockserver/route")
+    async def mockserver_route_create(req: MockRouteCreateRequest) -> dict[str, Any]:
+        """Define a new mock HTTP route."""
+        global _mockserver_route_id_counter
+        method = req.method.upper().strip()
+        if method not in _MOCK_METHODS:
+            raise HTTPException(status_code=400, detail=f"Invalid method {method!r}. Use one of {sorted(_MOCK_METHODS)}")
+        path = req.path.strip()
+        if not path.startswith("/"):
+            raise HTTPException(status_code=400, detail="path must start with '/'")
+        if len(_mockserver_routes) >= _MOCK_ROUTE_MAX:
+            raise HTTPException(status_code=429, detail="Too many mock routes. Delete some first.")
+        _mockserver_route_id_counter += 1
+        route_id = f"route-{_mockserver_route_id_counter}"
+        route: dict[str, Any] = {
+            "id": route_id,
+            "method": method,
+            "path": path,
+            "status_code": req.status_code,
+            "response_body": req.response_body,
+            "headers": req.headers,
+            "label": req.label or route_id,
+            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "hit_count": 0,
+        }
+        _mockserver_routes[route_id] = route
+        return {"success": True, "route_id": route_id, "route": route}
+
+    @app.get("/mockserver/routes")
+    async def mockserver_routes_list() -> dict[str, Any]:
+        """List all defined mock routes."""
+        return {"routes": list(_mockserver_routes.values()), "total": len(_mockserver_routes)}
+
+    @app.get("/mockserver/route/{route_id}")
+    async def mockserver_route_get(route_id: str) -> dict[str, Any]:
+        """Get a single mock route by ID."""
+        if route_id not in _mockserver_routes:
+            raise HTTPException(status_code=404, detail=f"Route {route_id!r} not found")
+        return _mockserver_routes[route_id]
+
+    @app.delete("/mockserver/route/{route_id}")
+    async def mockserver_route_delete(route_id: str) -> dict[str, Any]:
+        """Delete a mock route."""
+        if route_id not in _mockserver_routes:
+            raise HTTPException(status_code=404, detail=f"Route {route_id!r} not found")
+        _mockserver_routes.pop(route_id)
+        return {"success": True, "deleted": route_id}
+
+    @app.post("/mockserver/request")
+    async def mockserver_simulate_request(req: MockRequestRequest) -> dict[str, Any]:
+        """Simulate an HTTP request against the defined mock routes."""
+        method = req.method.upper().strip()
+        path = req.path.strip()
+        ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # Find the first matching route (method + exact path)
+        matched: dict[str, Any] | None = None
+        for route in _mockserver_routes.values():
+            if route["method"] == method and route["path"] == path:
+                matched = route
+                break
+
+        record: dict[str, Any] = {
+            "method": method,
+            "path": path,
+            "body": req.body,
+            "headers": req.headers,
+            "ts": ts,
+            "matched_route_id": matched["id"] if matched else None,
+            "status_code": matched["status_code"] if matched else 404,
+            "response_body": matched["response_body"] if matched else {"detail": "No mock route matched"},
+            "response_headers": matched["headers"] if matched else {},
+        }
+        if matched:
+            matched["hit_count"] += 1
+
+        _mockserver_requests.append(record)
+        if len(_mockserver_requests) > _MAX_MOCK_REQUESTS:
+            _mockserver_requests[:] = _mockserver_requests[-_MAX_MOCK_REQUESTS:]
+
+        return record
+
+    @app.get("/mockserver/requests")
+    async def mockserver_requests_list(
+        limit: int = Query(50, ge=1, le=500),
+        method: str = Query("", description="Filter by HTTP method"),
+    ) -> dict[str, Any]:
+        """List recorded simulated requests, newest-first."""
+        reqs = list(reversed(_mockserver_requests))
+        if method:
+            reqs = [r for r in reqs if r["method"] == method.upper()]
+        return {"requests": reqs[:limit], "total": len(_mockserver_requests)}
+
+    @app.delete("/mockserver/requests")
+    async def mockserver_requests_clear() -> dict[str, Any]:
+        """Clear all recorded simulated requests."""
+        count = len(_mockserver_requests)
+        _mockserver_requests.clear()
+        return {"success": True, "cleared": count}
+
     return app
 
 
@@ -8361,5 +8584,16 @@ _watcher_threads: dict[str, Any] = {}   # watch_id → threading.Thread
 _process_registry: dict[str, Any] = {}
 _process_id_counter: int = 0
 _MAX_PROCESS_LOG = 200_000    # chars of captured output per process
+
+# ── Phase 56: Knowledge Base / Notes Manager ──────────────────────────────────
+_kb_entries: dict[str, Any] = {}
+_kb_id_counter: int = 0
+_MAX_KB_ENTRIES = 2_000
+
+# ── Phase 57: HTTP Mock Server ────────────────────────────────────────────────
+_mockserver_routes: dict[str, Any] = {}
+_mockserver_route_id_counter: int = 0
+_mockserver_requests: list[dict[str, Any]] = []
+_MAX_MOCK_REQUESTS = 500
 
 # ── End of module-level state ─────────────────────────────────────────────────

@@ -4595,3 +4595,246 @@ def test_process_finished_status(client):
     assert rg.json()["status"] == "stopped"
     assert rg.json()["exit_code"] == 0
     client.delete(f"/process/{pid}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 56: Knowledge Base / Notes Manager
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_kb_create_and_list(client):
+    """POST /kb/entry creates entry; GET /kb/entries lists it."""
+    r = client.post("/kb/entry", json={"title": "Python Tips", "content": "Use list comprehensions", "tags": ["python", "tips"], "category": "coding"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    eid = d["id"]
+    assert eid.startswith("kb-")
+    assert d["entry"]["title"] == "Python Tips"
+    assert "python" in d["entry"]["tags"]
+
+    rl = client.get("/kb/entries")
+    assert rl.status_code == 200
+    ids = [e["id"] for e in rl.json()["entries"]]
+    assert eid in ids
+
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_get_entry(client):
+    """GET /kb/entry/{id} returns the entry."""
+    r = client.post("/kb/entry", json={"title": "Docker Notes"})
+    eid = r.json()["id"]
+    rg = client.get(f"/kb/entry/{eid}")
+    assert rg.status_code == 200
+    assert rg.json()["title"] == "Docker Notes"
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_get_not_found(client):
+    r = client.get("/kb/entry/kb-9999999")
+    assert r.status_code == 404
+
+
+def test_kb_update_entry(client):
+    """PATCH /kb/entry/{id} updates fields."""
+    r = client.post("/kb/entry", json={"title": "Old Title", "content": "old content"})
+    eid = r.json()["id"]
+    ru = client.patch(f"/kb/entry/{eid}", json={"title": "New Title", "tags": ["updated"]})
+    assert ru.status_code == 200
+    assert ru.json()["entry"]["title"] == "New Title"
+    assert "updated" in ru.json()["entry"]["tags"]
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_update_not_found(client):
+    r = client.patch("/kb/entry/kb-9999999", json={"title": "X"})
+    assert r.status_code == 404
+
+
+def test_kb_delete_entry(client):
+    """DELETE /kb/entry/{id} removes the entry."""
+    r = client.post("/kb/entry", json={"title": "To Delete"})
+    eid = r.json()["id"]
+    rd = client.delete(f"/kb/entry/{eid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/kb/entry/{eid}").status_code == 404
+
+
+def test_kb_delete_not_found(client):
+    r = client.delete("/kb/entry/kb-9999999")
+    assert r.status_code == 404
+
+
+def test_kb_empty_title_rejected(client):
+    """Empty title returns 400."""
+    r = client.post("/kb/entry", json={"title": "  "})
+    assert r.status_code == 400
+
+
+def test_kb_filter_by_tag(client):
+    """GET /kb/entries?tag= filters by tag."""
+    r = client.post("/kb/entry", json={"title": "Tagged", "tags": ["special56tag"]})
+    eid = r.json()["id"]
+    rl = client.get("/kb/entries?tag=special56tag")
+    assert rl.status_code == 200
+    ids = [e["id"] for e in rl.json()["entries"]]
+    assert eid in ids
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_filter_by_category(client):
+    """GET /kb/entries?category= filters by category."""
+    r = client.post("/kb/entry", json={"title": "Cat Entry", "category": "cattest56"})
+    eid = r.json()["id"]
+    rl = client.get("/kb/entries?category=cattest56")
+    assert rl.status_code == 200
+    ids = [e["id"] for e in rl.json()["entries"]]
+    assert eid in ids
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_search(client):
+    """GET /kb/search?q= returns matching entries."""
+    r = client.post("/kb/entry", json={"title": "uniqueterm56abc", "content": "some note"})
+    eid = r.json()["id"]
+    rs = client.get("/kb/search?q=uniqueterm56abc")
+    assert rs.status_code == 200
+    ids = [e["id"] for e in rs.json()["results"]]
+    assert eid in ids
+    client.delete(f"/kb/entry/{eid}")
+
+
+def test_kb_search_no_match(client):
+    """Search with no match returns empty results."""
+    rs = client.get("/kb/search?q=zzznomatchterm99xyz")
+    assert rs.status_code == 200
+    assert rs.json()["results"] == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 57: HTTP Mock Server
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_mockserver_create_route(client):
+    """POST /mockserver/route creates a route."""
+    r = client.post("/mockserver/route", json={"method": "GET", "path": "/api/test57", "status_code": 200, "response_body": {"msg": "ok"}})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    rid = d["route_id"]
+    assert rid.startswith("route-")
+    assert d["route"]["path"] == "/api/test57"
+
+    client.delete(f"/mockserver/route/{rid}")
+
+
+def test_mockserver_list_routes(client):
+    """GET /mockserver/routes lists all routes."""
+    r = client.post("/mockserver/route", json={"method": "POST", "path": "/api/list57"})
+    rid = r.json()["route_id"]
+    rl = client.get("/mockserver/routes")
+    assert rl.status_code == 200
+    ids = [rt["id"] for rt in rl.json()["routes"]]
+    assert rid in ids
+    client.delete(f"/mockserver/route/{rid}")
+
+
+def test_mockserver_get_route(client):
+    """GET /mockserver/route/{id} returns route details."""
+    r = client.post("/mockserver/route", json={"method": "GET", "path": "/api/get57"})
+    rid = r.json()["route_id"]
+    rg = client.get(f"/mockserver/route/{rid}")
+    assert rg.status_code == 200
+    assert rg.json()["id"] == rid
+    client.delete(f"/mockserver/route/{rid}")
+
+
+def test_mockserver_get_route_not_found(client):
+    r = client.get("/mockserver/route/route-9999999")
+    assert r.status_code == 404
+
+
+def test_mockserver_delete_route(client):
+    """DELETE /mockserver/route/{id} removes the route."""
+    r = client.post("/mockserver/route", json={"method": "DELETE", "path": "/api/del57"})
+    rid = r.json()["route_id"]
+    rd = client.delete(f"/mockserver/route/{rid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/mockserver/route/{rid}").status_code == 404
+
+
+def test_mockserver_delete_route_not_found(client):
+    r = client.delete("/mockserver/route/route-9999999")
+    assert r.status_code == 404
+
+
+def test_mockserver_invalid_method(client):
+    """Invalid HTTP method returns 400."""
+    r = client.post("/mockserver/route", json={"method": "INVALID", "path": "/x"})
+    assert r.status_code == 400
+
+
+def test_mockserver_path_must_start_with_slash(client):
+    r = client.post("/mockserver/route", json={"method": "GET", "path": "no-slash"})
+    assert r.status_code == 400
+
+
+def test_mockserver_simulate_request_match(client):
+    """POST /mockserver/request returns matched route response."""
+    r = client.post("/mockserver/route", json={"method": "GET", "path": "/mocked57", "status_code": 201, "response_body": {"data": "mocked"}})
+    rid = r.json()["route_id"]
+    rs = client.post("/mockserver/request", json={"method": "GET", "path": "/mocked57"})
+    assert rs.status_code == 200
+    d = rs.json()
+    assert d["status_code"] == 201
+    assert d["response_body"] == {"data": "mocked"}
+    assert d["matched_route_id"] == rid
+    client.delete(f"/mockserver/route/{rid}")
+
+
+def test_mockserver_simulate_request_no_match(client):
+    """POST /mockserver/request with no matching route returns 404 stub."""
+    rs = client.post("/mockserver/request", json={"method": "GET", "path": "/no-match-57xyz"})
+    assert rs.status_code == 200
+    d = rs.json()
+    assert d["status_code"] == 404
+    assert d["matched_route_id"] is None
+
+
+def test_mockserver_hit_count_increments(client):
+    """Matched route hit_count increments on each simulated request."""
+    r = client.post("/mockserver/route", json={"method": "GET", "path": "/hitcount57"})
+    rid = r.json()["route_id"]
+    client.post("/mockserver/request", json={"method": "GET", "path": "/hitcount57"})
+    client.post("/mockserver/request", json={"method": "GET", "path": "/hitcount57"})
+    rg = client.get(f"/mockserver/route/{rid}")
+    assert rg.json()["hit_count"] == 2
+    client.delete(f"/mockserver/route/{rid}")
+
+
+def test_mockserver_list_requests(client):
+    """GET /mockserver/requests returns recorded requests."""
+    client.post("/mockserver/request", json={"method": "GET", "path": "/listreqs57"})
+    rl = client.get("/mockserver/requests")
+    assert rl.status_code == 200
+    assert isinstance(rl.json()["requests"], list)
+
+
+def test_mockserver_list_requests_filter_method(client):
+    """GET /mockserver/requests?method= filters by method."""
+    client.post("/mockserver/request", json={"method": "POST", "path": "/filtermeth57"})
+    rl = client.get("/mockserver/requests?method=POST")
+    assert rl.status_code == 200
+    assert all(r["method"] == "POST" for r in rl.json()["requests"])
+
+
+def test_mockserver_clear_requests(client):
+    """DELETE /mockserver/requests clears all recorded requests."""
+    client.post("/mockserver/request", json={"method": "GET", "path": "/clear57"})
+    rc = client.delete("/mockserver/requests")
+    assert rc.status_code == 200
+    assert rc.json()["success"] is True
+    rl = client.get("/mockserver/requests")
+    assert rl.json()["requests"] == []

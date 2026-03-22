@@ -362,7 +362,7 @@
     {
       "id": "m12",
       "title": "File Watcher, Process Manager & Automation",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t12-1",
@@ -377,6 +377,27 @@
           "status": "done",
           "priority": "high",
           "description": "Start/stop background processes, stream logs, list by status"
+        }
+      ]
+    },
+    {
+      "id": "m13",
+      "title": "Knowledge Base, Mock Server & Developer Tools",
+      "status": "in_progress",
+      "tasks": [
+        {
+          "id": "t13-1",
+          "title": "Knowledge Base / Notes Manager",
+          "status": "done",
+          "priority": "high",
+          "description": "CRUD + full-text search for notes/knowledge entries with tags and categories"
+        },
+        {
+          "id": "t13-2",
+          "title": "HTTP Mock Server",
+          "status": "done",
+          "priority": "high",
+          "description": "Define stub routes, simulate HTTP requests, record request history"
         }
       ]
     }

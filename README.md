@@ -415,6 +415,8 @@ SwissAgent is developed against a living roadmap stored in `workspace/roadmap.js
 | **53** | **Terminal Manager** | ✅ **Done** |
 | **54** | **File Watcher** | ✅ **Done** |
 | **55** | **Process Manager** | ✅ **Done** |
+| **56** | **Knowledge Base / Notes Manager** | ✅ **Done** |
+| **57** | **HTTP Mock Server** | ✅ **Done** |
 
 ---
 
