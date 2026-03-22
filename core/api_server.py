@@ -25,7 +25,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from core.config_loader import ConfigLoader
 from core.logger import get_logger, setup_logging
 from core.module_loader import ModuleLoader
@@ -901,6 +901,40 @@ class MockRequestRequest(BaseModel):
     path: str
     body: Any = None
     headers: dict[str, str] = {}
+
+# ── Phase 58: Bookmark Manager request models ─────────────────────────────────
+
+class BookmarkCreateRequest(BaseModel):
+    url: str                  # URL or file/code path being bookmarked
+    title: str = ""           # human-readable title (defaults to url)
+    description: str = ""
+    tags: list[str] = []
+    category: str = ""
+
+class BookmarkUpdateRequest(BaseModel):
+    url: str | None = None
+    title: str | None = None
+    description: str | None = None
+    tags: list[str] | None = None
+    category: str | None = None
+
+# ── Phase 59: Schema Registry request models ──────────────────────────────────
+
+class SchemaRegisterRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+    name: str                                                           # unique schema name / slug
+    schema_body: dict[str, Any] = Field(alias="schema")                # JSON Schema object
+    description: str = ""
+    tags: list[str] = []
+
+class SchemaUpsertRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+    schema_body: dict[str, Any] = Field(alias="schema")
+    description: str = ""
+    tags: list[str] = []
+
+class SchemaValidateRequest(BaseModel):
+    data: Any                 # arbitrary JSON to validate against the schema
 
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
@@ -8368,6 +8402,239 @@ indent_style = tab
         _mockserver_requests.clear()
         return {"success": True, "cleared": count}
 
+    # ── Phase 58: Bookmark Manager ────────────────────────────────────────────
+
+    @app.post("/bookmark")
+    async def bookmark_create(req: BookmarkCreateRequest) -> dict[str, Any]:
+        """Add a new bookmark."""
+        global _bookmark_id_counter
+        url = req.url.strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="url must not be empty")
+        if len(_bookmarks) >= _MAX_BOOKMARKS:
+            raise HTTPException(status_code=429, detail="Bookmark store full. Delete some bookmarks first.")
+        _bookmark_id_counter += 1
+        bm_id = f"bm-{_bookmark_id_counter}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        bm: dict[str, Any] = {
+            "id": bm_id,
+            "url": url,
+            "title": req.title.strip() or url,
+            "description": req.description,
+            "tags": [t.strip().lower() for t in req.tags if t.strip()],
+            "category": req.category.strip().lower(),
+            "created_at": now,
+            "updated_at": now,
+        }
+        _bookmarks[bm_id] = bm
+        return {"success": True, "id": bm_id, "bookmark": bm}
+
+    @app.get("/bookmarks")
+    async def bookmarks_list(
+        tag: str = Query("", description="Filter by tag"),
+        category: str = Query("", description="Filter by category"),
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List bookmarks, optionally filtered by tag or category."""
+        bms = list(_bookmarks.values())
+        if tag:
+            bms = [b for b in bms if tag.lower() in b["tags"]]
+        if category:
+            bms = [b for b in bms if b["category"] == category.lower()]
+        return {"bookmarks": bms[:limit], "total": len(_bookmarks)}
+
+    @app.get("/bookmarks/search")
+    async def bookmarks_search(
+        q: str = Query(..., description="Search query"),
+        limit: int = Query(20, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """Search bookmarks by keyword across url, title, description, and tags."""
+        q_lower = q.lower()
+        results = [
+            b for b in _bookmarks.values()
+            if q_lower in b["url"].lower()
+            or q_lower in b["title"].lower()
+            or q_lower in b["description"].lower()
+            or any(q_lower in t for t in b["tags"])
+        ]
+        return {"results": results[:limit], "total": len(results)}
+
+    @app.get("/bookmark/{bm_id}")
+    async def bookmark_get(bm_id: str) -> dict[str, Any]:
+        """Get a single bookmark by ID."""
+        if bm_id not in _bookmarks:
+            raise HTTPException(status_code=404, detail=f"Bookmark {bm_id!r} not found")
+        return _bookmarks[bm_id]
+
+    @app.patch("/bookmark/{bm_id}")
+    async def bookmark_update(bm_id: str, req: BookmarkUpdateRequest) -> dict[str, Any]:
+        """Partially update a bookmark."""
+        if bm_id not in _bookmarks:
+            raise HTTPException(status_code=404, detail=f"Bookmark {bm_id!r} not found")
+        bm = _bookmarks[bm_id]
+        if req.url is not None:
+            url = req.url.strip()
+            if not url:
+                raise HTTPException(status_code=400, detail="url must not be empty")
+            bm["url"] = url
+        if req.title is not None:
+            bm["title"] = req.title.strip() or bm["url"]
+        if req.description is not None:
+            bm["description"] = req.description
+        if req.tags is not None:
+            bm["tags"] = [t.strip().lower() for t in req.tags if t.strip()]
+        if req.category is not None:
+            bm["category"] = req.category.strip().lower()
+        bm["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        return {"success": True, "bookmark": bm}
+
+    @app.delete("/bookmark/{bm_id}")
+    async def bookmark_delete(bm_id: str) -> dict[str, Any]:
+        """Delete a bookmark."""
+        if bm_id not in _bookmarks:
+            raise HTTPException(status_code=404, detail=f"Bookmark {bm_id!r} not found")
+        _bookmarks.pop(bm_id)
+        return {"success": True, "deleted": bm_id}
+
+    # ── Phase 59: Schema Registry ─────────────────────────────────────────────
+
+    def _jsonschema_validate(schema: dict[str, Any], data: Any) -> list[str]:
+        """Validate *data* against *schema* using only stdlib.
+
+        Returns a list of error message strings (empty → valid).
+        Supports: type, required, properties, minLength, maxLength,
+                  minimum, maximum, enum, items, minItems, maxItems.
+        """
+        errors: list[str] = []
+
+        def _check(s: Any, d: Any, path: str) -> None:
+            if not isinstance(s, dict):
+                return
+            typ = s.get("type")
+            if typ is not None:
+                type_map: dict[str, type | tuple[type, ...]] = {
+                    "string": str,
+                    "number": (int, float),
+                    "integer": int,
+                    "boolean": bool,
+                    "array": list,
+                    "object": dict,
+                    "null": type(None),
+                }
+                expected = type_map.get(typ)
+                if expected and not isinstance(d, expected):
+                    errors.append(f"{path}: expected type {typ!r}, got {type(d).__name__!r}")
+                    return  # no point checking constraints if type mismatch
+            # string constraints
+            if isinstance(d, str):
+                if "minLength" in s and len(d) < s["minLength"]:
+                    errors.append(f"{path}: string length {len(d)} < minLength {s['minLength']}")
+                if "maxLength" in s and len(d) > s["maxLength"]:
+                    errors.append(f"{path}: string length {len(d)} > maxLength {s['maxLength']}")
+            # numeric constraints
+            if isinstance(d, (int, float)) and not isinstance(d, bool):
+                if "minimum" in s and d < s["minimum"]:
+                    errors.append(f"{path}: {d} < minimum {s['minimum']}")
+                if "maximum" in s and d > s["maximum"]:
+                    errors.append(f"{path}: {d} > maximum {s['maximum']}")
+            # enum
+            if "enum" in s and d not in s["enum"]:
+                errors.append(f"{path}: {d!r} not in enum {s['enum']}")
+            # object constraints
+            if isinstance(d, dict):
+                for req_key in s.get("required", []):
+                    if req_key not in d:
+                        errors.append(f"{path}: missing required property {req_key!r}")
+                for prop_name, prop_schema in s.get("properties", {}).items():
+                    if prop_name in d:
+                        _check(prop_schema, d[prop_name], f"{path}.{prop_name}")
+            # array constraints
+            if isinstance(d, list):
+                if "minItems" in s and len(d) < s["minItems"]:
+                    errors.append(f"{path}: array length {len(d)} < minItems {s['minItems']}")
+                if "maxItems" in s and len(d) > s["maxItems"]:
+                    errors.append(f"{path}: array length {len(d)} > maxItems {s['maxItems']}")
+                item_schema = s.get("items")
+                if item_schema:
+                    for i, item in enumerate(d):
+                        _check(item_schema, item, f"{path}[{i}]")
+
+        _check(schema, data, "$")
+        return errors
+
+    @app.post("/schema")
+    async def schema_register(req: SchemaRegisterRequest) -> dict[str, Any]:
+        """Register a new named JSON schema."""
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name must not be empty")
+        if name in _schema_registry:
+            raise HTTPException(status_code=409, detail=f"Schema {name!r} already exists. Use PUT to update.")
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        record: dict[str, Any] = {
+            "name": name,
+            "schema": req.schema_body,
+            "description": req.description,
+            "tags": [t.strip().lower() for t in req.tags if t.strip()],
+            "created_at": now,
+            "updated_at": now,
+        }
+        _schema_registry[name] = record
+        return {"success": True, "name": name, "schema_record": record}
+
+    @app.get("/schemas")
+    async def schemas_list(
+        tag: str = Query("", description="Filter by tag"),
+    ) -> dict[str, Any]:
+        """List all registered schemas."""
+        records = list(_schema_registry.values())
+        if tag:
+            records = [r for r in records if tag.lower() in r["tags"]]
+        return {"schemas": records, "total": len(_schema_registry)}
+
+    @app.get("/schema/{schema_name}")
+    async def schema_get(schema_name: str) -> dict[str, Any]:
+        """Get a registered schema by name."""
+        if schema_name not in _schema_registry:
+            raise HTTPException(status_code=404, detail=f"Schema {schema_name!r} not found")
+        return _schema_registry[schema_name]
+
+    @app.put("/schema/{schema_name}")
+    async def schema_upsert(schema_name: str, req: SchemaUpsertRequest) -> dict[str, Any]:
+        """Create or replace a named schema."""
+        name = schema_name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="schema name must not be empty")
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        existing = _schema_registry.get(name)
+        record: dict[str, Any] = {
+            "name": name,
+            "schema": req.schema_body,
+            "description": req.description,
+            "tags": [t.strip().lower() for t in req.tags if t.strip()],
+            "created_at": existing["created_at"] if existing else now,
+            "updated_at": now,
+        }
+        _schema_registry[name] = record
+        return {"success": True, "created": existing is None, "name": name, "schema_record": record}
+
+    @app.delete("/schema/{schema_name}")
+    async def schema_delete(schema_name: str) -> dict[str, Any]:
+        """Delete a registered schema."""
+        if schema_name not in _schema_registry:
+            raise HTTPException(status_code=404, detail=f"Schema {schema_name!r} not found")
+        _schema_registry.pop(schema_name)
+        return {"success": True, "deleted": schema_name}
+
+    @app.post("/schema/{schema_name}/validate")
+    async def schema_validate(schema_name: str, req: SchemaValidateRequest) -> dict[str, Any]:
+        """Validate arbitrary JSON data against a registered schema."""
+        if schema_name not in _schema_registry:
+            raise HTTPException(status_code=404, detail=f"Schema {schema_name!r} not found")
+        schema_obj = _schema_registry[schema_name]["schema"]
+        errors = _jsonschema_validate(schema_obj, req.data)
+        return {"valid": len(errors) == 0, "errors": errors, "schema_name": schema_name}
+
     return app
 
 
@@ -8595,5 +8862,13 @@ _mockserver_routes: dict[str, Any] = {}
 _mockserver_route_id_counter: int = 0
 _mockserver_requests: list[dict[str, Any]] = []
 _MAX_MOCK_REQUESTS = 500
+
+# ── Phase 58: Bookmark Manager ────────────────────────────────────────────────
+_bookmarks: dict[str, Any] = {}
+_bookmark_id_counter: int = 0
+_MAX_BOOKMARKS = 2_000
+
+# ── Phase 59: Schema Registry ─────────────────────────────────────────────────
+_schema_registry: dict[str, Any] = {}   # name → schema record
 
 # ── End of module-level state ─────────────────────────────────────────────────

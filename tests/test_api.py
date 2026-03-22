@@ -4838,3 +4838,236 @@ def test_mockserver_clear_requests(client):
     assert rc.json()["success"] is True
     rl = client.get("/mockserver/requests")
     assert rl.json()["requests"] == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 58: Bookmark Manager
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_bookmark_create_and_list(client):
+    """POST /bookmark creates; GET /bookmarks lists it."""
+    r = client.post("/bookmark", json={"url": "https://example58.com", "title": "Example 58", "tags": ["web", "test58"], "category": "dev"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    bid = d["id"]
+    assert bid.startswith("bm-")
+    assert d["bookmark"]["url"] == "https://example58.com"
+
+    rl = client.get("/bookmarks")
+    assert rl.status_code == 200
+    ids = [b["id"] for b in rl.json()["bookmarks"]]
+    assert bid in ids
+
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_title_defaults_to_url(client):
+    r = client.post("/bookmark", json={"url": "https://notitle58.com"})
+    d = r.json()
+    assert d["bookmark"]["title"] == "https://notitle58.com"
+    client.delete(f"/bookmark/{d['id']}")
+
+
+def test_bookmark_get(client):
+    r = client.post("/bookmark", json={"url": "https://get58.com", "title": "Get58"})
+    bid = r.json()["id"]
+    rg = client.get(f"/bookmark/{bid}")
+    assert rg.status_code == 200
+    assert rg.json()["title"] == "Get58"
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_get_not_found(client):
+    r = client.get("/bookmark/bm-9999999")
+    assert r.status_code == 404
+
+
+def test_bookmark_update(client):
+    r = client.post("/bookmark", json={"url": "https://update58.com", "title": "Old"})
+    bid = r.json()["id"]
+    ru = client.patch(f"/bookmark/{bid}", json={"title": "New", "tags": ["updated58"]})
+    assert ru.status_code == 200
+    bm = ru.json()["bookmark"]
+    assert bm["title"] == "New"
+    assert "updated58" in bm["tags"]
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_update_not_found(client):
+    r = client.patch("/bookmark/bm-9999999", json={"title": "X"})
+    assert r.status_code == 404
+
+
+def test_bookmark_delete(client):
+    r = client.post("/bookmark", json={"url": "https://del58.com"})
+    bid = r.json()["id"]
+    rd = client.delete(f"/bookmark/{bid}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get(f"/bookmark/{bid}").status_code == 404
+
+
+def test_bookmark_delete_not_found(client):
+    r = client.delete("/bookmark/bm-9999999")
+    assert r.status_code == 404
+
+
+def test_bookmark_empty_url_rejected(client):
+    r = client.post("/bookmark", json={"url": "  "})
+    assert r.status_code == 400
+
+
+def test_bookmark_filter_by_tag(client):
+    r = client.post("/bookmark", json={"url": "https://tag58.com", "tags": ["special58tag"]})
+    bid = r.json()["id"]
+    rl = client.get("/bookmarks?tag=special58tag")
+    assert bid in [b["id"] for b in rl.json()["bookmarks"]]
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_filter_by_category(client):
+    r = client.post("/bookmark", json={"url": "https://cat58.com", "category": "cattest58"})
+    bid = r.json()["id"]
+    rl = client.get("/bookmarks?category=cattest58")
+    assert bid in [b["id"] for b in rl.json()["bookmarks"]]
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_search(client):
+    r = client.post("/bookmark", json={"url": "https://search58unique.com", "title": "search58unique"})
+    bid = r.json()["id"]
+    rs = client.get("/bookmarks/search?q=search58unique")
+    assert rs.status_code == 200
+    assert bid in [b["id"] for b in rs.json()["results"]]
+    client.delete(f"/bookmark/{bid}")
+
+
+def test_bookmark_search_no_match(client):
+    rs = client.get("/bookmarks/search?q=zzznomatch58xyz")
+    assert rs.status_code == 200
+    assert rs.json()["results"] == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 59: Schema Registry
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SIMPLE_SCHEMA_59 = {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "age": {"type": "integer"}}}
+
+
+def test_schema_register_and_list(client):
+    """POST /schema registers; GET /schemas lists it."""
+    r = client.post("/schema", json={"name": "person59", "schema": _SIMPLE_SCHEMA_59, "description": "Person schema"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["name"] == "person59"
+
+    rl = client.get("/schemas")
+    assert rl.status_code == 200
+    names = [s["name"] for s in rl.json()["schemas"]]
+    assert "person59" in names
+
+    client.delete("/schema/person59")
+
+
+def test_schema_get(client):
+    client.post("/schema", json={"name": "getschema59", "schema": {"type": "string"}})
+    rg = client.get("/schema/getschema59")
+    assert rg.status_code == 200
+    assert rg.json()["name"] == "getschema59"
+    client.delete("/schema/getschema59")
+
+
+def test_schema_get_not_found(client):
+    r = client.get("/schema/doesnotexist59xyz")
+    assert r.status_code == 404
+
+
+def test_schema_duplicate_returns_409(client):
+    client.post("/schema", json={"name": "dup59", "schema": {"type": "string"}})
+    r = client.post("/schema", json={"name": "dup59", "schema": {"type": "number"}})
+    assert r.status_code == 409
+    client.delete("/schema/dup59")
+
+
+def test_schema_upsert_creates_new(client):
+    r = client.put("/schema/upsert59new", json={"schema": {"type": "boolean"}})
+    assert r.status_code == 200
+    assert r.json()["created"] is True
+    client.delete("/schema/upsert59new")
+
+
+def test_schema_upsert_updates_existing(client):
+    client.post("/schema", json={"name": "upsert59existing", "schema": {"type": "string"}})
+    r = client.put("/schema/upsert59existing", json={"schema": {"type": "number"}})
+    assert r.status_code == 200
+    assert r.json()["created"] is False
+    client.delete("/schema/upsert59existing")
+
+
+def test_schema_delete(client):
+    client.post("/schema", json={"name": "del59", "schema": {"type": "null"}})
+    rd = client.delete("/schema/del59")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+    assert client.get("/schema/del59").status_code == 404
+
+
+def test_schema_delete_not_found(client):
+    r = client.delete("/schema/doesnotexist59xyz")
+    assert r.status_code == 404
+
+
+def test_schema_validate_valid(client):
+    client.post("/schema", json={"name": "valok59", "schema": _SIMPLE_SCHEMA_59})
+    r = client.post("/schema/valok59/validate", json={"data": {"name": "Alice", "age": 30}})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valid"] is True
+    assert d["errors"] == []
+    client.delete("/schema/valok59")
+
+
+def test_schema_validate_missing_required(client):
+    client.post("/schema", json={"name": "valmissing59", "schema": _SIMPLE_SCHEMA_59})
+    r = client.post("/schema/valmissing59/validate", json={"data": {"age": 25}})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valid"] is False
+    assert any("name" in e for e in d["errors"])
+    client.delete("/schema/valmissing59")
+
+
+def test_schema_validate_wrong_type(client):
+    client.post("/schema", json={"name": "valtype59", "schema": {"type": "string"}})
+    r = client.post("/schema/valtype59/validate", json={"data": 123})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valid"] is False
+    client.delete("/schema/valtype59")
+
+
+def test_schema_validate_enum(client):
+    schema = {"type": "string", "enum": ["red", "green", "blue"]}
+    client.post("/schema", json={"name": "valenum59", "schema": schema})
+    r_ok = client.post("/schema/valenum59/validate", json={"data": "red"})
+    assert r_ok.json()["valid"] is True
+    r_bad = client.post("/schema/valenum59/validate", json={"data": "yellow"})
+    assert r_bad.json()["valid"] is False
+    client.delete("/schema/valenum59")
+
+
+def test_schema_validate_not_found(client):
+    r = client.post("/schema/doesnotexist59xyz/validate", json={"data": {}})
+    assert r.status_code == 404
+
+
+def test_schema_filter_by_tag(client):
+    client.post("/schema", json={"name": "tagged59", "schema": {"type": "null"}, "tags": ["special59tag"]})
+    rl = client.get("/schemas?tag=special59tag")
+    assert rl.status_code == 200
+    names = [s["name"] for s in rl.json()["schemas"]]
+    assert "tagged59" in names
+    client.delete("/schema/tagged59")

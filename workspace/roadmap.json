@@ -383,7 +383,7 @@
     {
       "id": "m13",
       "title": "Knowledge Base, Mock Server & Developer Tools",
-      "status": "in_progress",
+      "status": "done",
       "tasks": [
         {
           "id": "t13-1",
@@ -398,8 +398,28 @@
           "status": "done",
           "priority": "high",
           "description": "Define stub routes, simulate HTTP requests, record request history"
+        },
+        {
+          "id": "t13-3",
+          "title": "Bookmark Manager",
+          "status": "done",
+          "priority": "medium",
+          "description": "CRUD + keyword search for URL/file/code bookmarks with tags and categories"
+        },
+        {
+          "id": "t13-4",
+          "title": "Schema Registry",
+          "status": "done",
+          "priority": "high",
+          "description": "Register, retrieve, and validate JSON schemas; built-in validator with type/required/enum/constraint support"
         }
       ]
+    },
+    {
+      "id": "m14",
+      "title": "Advanced Tooling & Integrations",
+      "status": "planned",
+      "tasks": []
     }
   ]
 }
