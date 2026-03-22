@@ -5696,3 +5696,206 @@ def test_textstats_history_delete_not_found(client):
 
 def test_textstats_history_empty_text_rejected(client):
     assert client.post("/textstats/history", json={"text": ""}).status_code == 400
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 66: JSON/YAML Converter & Formatter
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SAMPLE_JSON = '{"b": 1, "a": [1, 2, 3]}'
+_SAMPLE_JSON_PRETTY = '{\n  "b": 1,\n  "a": [\n    1,\n    2,\n    3\n  ]\n}'
+
+
+def test_jsonformat_format_pretty(client):
+    r = client.post("/jsonformat/format", json={"content": _SAMPLE_JSON, "indent": 2})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["minified"] is False
+    import json
+    assert json.loads(d["output"]) == json.loads(_SAMPLE_JSON)
+
+
+def test_jsonformat_format_minify(client):
+    r = client.post("/jsonformat/format", json={"content": _SAMPLE_JSON_PRETTY, "minify": True})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["minified"] is True
+    assert "\n" not in d["output"]
+
+
+def test_jsonformat_format_sort_keys(client):
+    r = client.post("/jsonformat/format", json={"content": _SAMPLE_JSON, "sort_keys": True})
+    assert r.status_code == 200
+    output = r.json()["output"]
+    # "a" should come before "b"
+    assert output.index('"a"') < output.index('"b"')
+
+
+def test_jsonformat_format_invalid_json(client):
+    r = client.post("/jsonformat/format", json={"content": "{bad json}"})
+    assert r.status_code == 400
+
+
+def test_jsonformat_validate_valid_json(client):
+    r = client.post("/jsonformat/validate", json={"content": _SAMPLE_JSON, "mode": "json"})
+    assert r.status_code == 200
+    assert r.json()["valid"] is True
+
+
+def test_jsonformat_validate_invalid_json(client):
+    r = client.post("/jsonformat/validate", json={"content": "{bad}", "mode": "json"})
+    assert r.status_code == 200
+    assert r.json()["valid"] is False
+
+
+def test_jsonformat_validate_valid_yaml(client):
+    r = client.post("/jsonformat/validate", json={"content": "key: value\nlist:\n  - 1\n  - 2", "mode": "yaml"})
+    assert r.status_code == 200
+    assert r.json()["valid"] is True
+
+
+def test_jsonformat_convert_json_to_yaml(client):
+    r = client.post("/jsonformat/convert", json={"content": '{"hello": "world"}', "direction": "json_to_yaml"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["direction"] == "json_to_yaml"
+    assert "hello" in d["output"]
+
+
+def test_jsonformat_convert_yaml_to_json(client):
+    r = client.post("/jsonformat/convert", json={"content": "hello: world\n", "direction": "yaml_to_json"})
+    assert r.status_code == 200
+    import json
+    parsed = json.loads(r.json()["output"])
+    assert parsed["hello"] == "world"
+
+
+def test_jsonformat_convert_invalid_direction(client):
+    r = client.post("/jsonformat/convert", json={"content": "{}", "direction": "xml_to_json"})
+    assert r.status_code == 400
+
+
+def test_jsonformat_history_save_and_list(client):
+    r = client.post("/jsonformat/history", json={
+        "operation": "format",
+        "label": "my format",
+        "input": _SAMPLE_JSON,
+        "output": _SAMPLE_JSON_PRETTY,
+    })
+    assert r.status_code == 200
+    entry_id = r.json()["entry"]["id"]
+    assert entry_id.startswith("jf-")
+    rl = client.get("/jsonformat/history")
+    assert rl.status_code == 200
+    assert entry_id in [e["id"] for e in rl.json()["history"]]
+    client.delete(f"/jsonformat/history/{entry_id}")
+
+
+def test_jsonformat_history_delete(client):
+    r = client.post("/jsonformat/history", json={"operation": "validate", "input": "{}", "output": "valid"})
+    entry_id = r.json()["entry"]["id"]
+    rd = client.delete(f"/jsonformat/history/{entry_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+
+
+def test_jsonformat_history_delete_not_found(client):
+    assert client.delete("/jsonformat/history/jf-9999999").status_code == 404
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 67: Hash & Checksum Tool
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_hash_generate_sha256(client):
+    r = client.post("/hash/generate", json={"text": "hello", "algorithm": "sha256"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["algorithm"] == "sha256"
+    assert len(d["hash"]) == 64  # sha256 hex digest length
+    assert d["length"] == 64
+
+
+def test_hash_generate_md5(client):
+    r = client.post("/hash/generate", json={"text": "hello", "algorithm": "md5"})
+    assert r.status_code == 200
+    assert len(r.json()["hash"]) == 32
+
+
+def test_hash_generate_sha512(client):
+    r = client.post("/hash/generate", json={"text": "hello", "algorithm": "sha512"})
+    assert r.status_code == 200
+    assert len(r.json()["hash"]) == 128
+
+
+def test_hash_generate_invalid_algorithm(client):
+    r = client.post("/hash/generate", json={"text": "hello", "algorithm": "crc32"})
+    assert r.status_code == 400
+
+
+def test_hash_generate_deterministic(client):
+    r1 = client.post("/hash/generate", json={"text": "abc", "algorithm": "sha256"})
+    r2 = client.post("/hash/generate", json={"text": "abc", "algorithm": "sha256"})
+    assert r1.json()["hash"] == r2.json()["hash"]
+
+
+def test_hash_compare_match(client):
+    import hashlib
+    expected = hashlib.sha256(b"hello").hexdigest()
+    r = client.post("/hash/compare", json={"text": "hello", "hash": expected, "algorithm": "sha256"})
+    assert r.status_code == 200
+    assert r.json()["match"] is True
+
+
+def test_hash_compare_no_match(client):
+    r = client.post("/hash/compare", json={"text": "hello", "hash": "deadbeef" * 8, "algorithm": "sha256"})
+    assert r.status_code == 200
+    assert r.json()["match"] is False
+
+
+def test_hash_detect_sha256(client):
+    import hashlib
+    h = hashlib.sha256(b"test").hexdigest()
+    r = client.post("/hash/detect", json={"hash": h})
+    assert r.status_code == 200
+    d = r.json()
+    assert "sha256" in d["likely_algorithms"]
+
+
+def test_hash_detect_md5(client):
+    import hashlib
+    h = hashlib.md5(b"test").hexdigest()
+    r = client.post("/hash/detect", json={"hash": h})
+    assert r.status_code == 200
+    assert "md5" in r.json()["likely_algorithms"]
+
+
+def test_hash_detect_unknown(client):
+    r = client.post("/hash/detect", json={"hash": "abc123"})
+    assert r.status_code == 200
+    assert r.json()["likely_algorithms"] == []
+
+
+def test_hash_history_save_and_list(client):
+    import hashlib
+    h = hashlib.sha256(b"hello").hexdigest()
+    r = client.post("/hash/history", json={"algorithm": "sha256", "text_preview": "hello", "hash": h, "label": "test"})
+    assert r.status_code == 200
+    entry_id = r.json()["entry"]["id"]
+    assert entry_id.startswith("hsh-")
+    rl = client.get("/hash/history")
+    assert rl.status_code == 200
+    assert entry_id in [e["id"] for e in rl.json()["history"]]
+    client.delete(f"/hash/history/{entry_id}")
+
+
+def test_hash_history_delete(client):
+    r = client.post("/hash/history", json={"algorithm": "md5", "text_preview": "x", "hash": "a" * 32})
+    entry_id = r.json()["entry"]["id"]
+    rd = client.delete(f"/hash/history/{entry_id}")
+    assert rd.status_code == 200
+    assert rd.json()["success"] is True
+
+
+def test_hash_history_delete_not_found(client):
+    assert client.delete("/hash/history/hsh-9999999").status_code == 404

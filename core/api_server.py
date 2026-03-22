@@ -1034,6 +1034,50 @@ class TextStatsSaveRequest(BaseModel):
     label: str = ""
     top_n: int = 10
 
+# ── Phase 66: JSON/YAML Converter & Formatter request models ──────────────────
+
+class JsonFormatRequest(BaseModel):
+    content: str            # raw JSON string
+    indent: int = 2         # indentation spaces (2 or 4)
+    sort_keys: bool = False
+    minify: bool = False    # when True, output compact single-line JSON
+
+class JsonValidateRequest(BaseModel):
+    content: str            # JSON or YAML string
+    mode: str = "json"      # "json" | "yaml"
+
+class JsonConvertRequest(BaseModel):
+    content: str            # source text
+    direction: str = "json_to_yaml"  # "json_to_yaml" | "yaml_to_json"
+
+class JsonFormatSaveRequest(BaseModel):
+    label: str = ""
+    operation: str          # "format" | "convert" | "validate"
+    input: str
+    output: str
+
+# ── Phase 67: Hash & Checksum Tool request models ─────────────────────────────
+
+class HashGenerateRequest(BaseModel):
+    text: str
+    algorithm: str = "sha256"   # md5 | sha1 | sha256 | sha512 | sha3_256
+    encoding: str = "utf-8"
+
+class HashCompareRequest(BaseModel):
+    text: str
+    hash: str               # expected hash to compare against
+    algorithm: str = "sha256"
+    encoding: str = "utf-8"
+
+class HashDetectRequest(BaseModel):
+    hash: str               # hash string whose algorithm to guess
+
+class HashSaveRequest(BaseModel):
+    label: str = ""
+    algorithm: str
+    text_preview: str       # first 80 chars of original text (for display)
+    hash: str
+
 # Context window sizes sent to the LLM.  Prefix is longer because the model
 # needs more "before" context to produce a relevant completion; suffix only
 # needs enough to understand what follows the cursor.
@@ -9404,6 +9448,192 @@ indent_style = tab
                 return {"success": True, "deleted": ts_id}
         raise HTTPException(status_code=404, detail=f"Text stats history entry {ts_id!r} not found")
 
+    # ── Phase 66: JSON/YAML Converter & Formatter ────────────────────────────
+
+    @app.post("/jsonformat/format")
+    async def jsonformat_format(req: JsonFormatRequest) -> dict[str, Any]:
+        """Format or minify a JSON string."""
+        import json as _json
+        try:
+            parsed = _json.loads(req.content)
+        except _json.JSONDecodeError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+        if req.minify:
+            result = _json.dumps(parsed, separators=(",", ":"), ensure_ascii=False)
+        else:
+            indent = max(1, min(req.indent, 8))
+            result = _json.dumps(parsed, indent=indent, sort_keys=req.sort_keys, ensure_ascii=False)
+        return {"output": result, "minified": req.minify, "sorted": req.sort_keys}
+
+    @app.post("/jsonformat/validate")
+    async def jsonformat_validate(req: JsonValidateRequest) -> dict[str, Any]:
+        """Validate a JSON or YAML string; return parse errors on failure."""
+        import json as _json
+        if req.mode == "yaml":
+            try:
+                import yaml as _yaml
+                _yaml.safe_load(req.content)
+                return {"valid": True, "mode": "yaml"}
+            except Exception as e:
+                return {"valid": False, "mode": "yaml", "error": str(e)}
+        else:
+            try:
+                _json.loads(req.content)
+                return {"valid": True, "mode": "json"}
+            except _json.JSONDecodeError as e:
+                return {"valid": False, "mode": "json", "error": str(e), "line": e.lineno, "col": e.colno}
+
+    @app.post("/jsonformat/convert")
+    async def jsonformat_convert(req: JsonConvertRequest) -> dict[str, Any]:
+        """Convert JSON→YAML or YAML→JSON."""
+        import json as _json
+        try:
+            import yaml as _yaml
+        except ImportError:
+            raise HTTPException(status_code=500, detail="PyYAML is not installed")
+        if req.direction == "json_to_yaml":
+            try:
+                parsed = _json.loads(req.content)
+            except _json.JSONDecodeError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+            output = _yaml.dump(parsed, allow_unicode=True, default_flow_style=False).rstrip()
+            return {"direction": "json_to_yaml", "output": output}
+        elif req.direction == "yaml_to_json":
+            try:
+                parsed = _yaml.safe_load(req.content)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
+            output = _json.dumps(parsed, indent=2, ensure_ascii=False)
+            return {"direction": "yaml_to_json", "output": output}
+        else:
+            raise HTTPException(status_code=400, detail="direction must be 'json_to_yaml' or 'yaml_to_json'")
+
+    @app.post("/jsonformat/history")
+    async def jsonformat_history_save(req: JsonFormatSaveRequest) -> dict[str, Any]:
+        """Save a format/convert/validate operation to history."""
+        global _jsonformat_history_id_counter
+        if len(_jsonformat_history) >= _MAX_JSONFORMAT_HISTORY:
+            _jsonformat_history.pop(0)
+        _jsonformat_history_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": f"jf-{_jsonformat_history_id_counter}",
+            "label": req.label,
+            "operation": req.operation,
+            "input_preview": req.input[:120].replace("\n", " "),
+            "output_preview": req.output[:120].replace("\n", " "),
+            "saved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _jsonformat_history.append(entry)
+        return {"success": True, "entry": entry}
+
+    @app.get("/jsonformat/history")
+    async def jsonformat_history_list(
+        limit: int = Query(50, ge=1, le=300),
+    ) -> dict[str, Any]:
+        """List format/convert history (newest first)."""
+        return {"history": list(reversed(_jsonformat_history))[:limit], "total": len(_jsonformat_history)}
+
+    @app.delete("/jsonformat/history/{jf_id}")
+    async def jsonformat_history_delete(jf_id: str) -> dict[str, Any]:
+        """Delete a format history entry."""
+        for i, entry in enumerate(_jsonformat_history):
+            if entry["id"] == jf_id:
+                _jsonformat_history.pop(i)
+                return {"success": True, "deleted": jf_id}
+        raise HTTPException(status_code=404, detail=f"JSON format history entry {jf_id!r} not found")
+
+    # ── Phase 67: Hash & Checksum Tool ───────────────────────────────────────
+
+    _HASH_ALGOS = {"md5", "sha1", "sha256", "sha512", "sha3_256"}
+
+    @app.post("/hash/generate")
+    async def hash_generate(req: HashGenerateRequest) -> dict[str, Any]:
+        """Hash a string using the specified algorithm."""
+        import hashlib as _hl
+        if req.algorithm not in _HASH_ALGOS:
+            raise HTTPException(status_code=400, detail=f"algorithm must be one of {sorted(_HASH_ALGOS)}")
+        try:
+            raw = req.text.encode(req.encoding)
+        except LookupError:
+            raise HTTPException(status_code=400, detail=f"Unknown encoding: {req.encoding!r}")
+        h = _hl.new(req.algorithm, raw).hexdigest()
+        return {"algorithm": req.algorithm, "hash": h, "length": len(h)}
+
+    @app.post("/hash/compare")
+    async def hash_compare(req: HashCompareRequest) -> dict[str, Any]:
+        """Compare a string's hash against a known hash value."""
+        import hashlib as _hl
+        import hmac as _hmac
+        if req.algorithm not in _HASH_ALGOS:
+            raise HTTPException(status_code=400, detail=f"algorithm must be one of {sorted(_HASH_ALGOS)}")
+        try:
+            raw = req.text.encode(req.encoding)
+        except LookupError:
+            raise HTTPException(status_code=400, detail=f"Unknown encoding: {req.encoding!r}")
+        computed = _hl.new(req.algorithm, raw).hexdigest()
+        match = _hmac.compare_digest(computed.lower(), req.hash.lower())
+        return {"match": match, "computed": computed, "expected": req.hash, "algorithm": req.algorithm}
+
+    @app.post("/hash/detect")
+    async def hash_detect(req: HashDetectRequest) -> dict[str, Any]:
+        """Guess the hash algorithm from the length and character set of the hash."""
+        import re as _re
+        h = req.hash.strip()
+        hex_only = bool(_re.fullmatch(r"[0-9a-fA-F]+", h))
+        length = len(h)
+        candidates: list[str] = []
+        if hex_only:
+            if length == 32:
+                candidates = ["md5"]
+            elif length == 40:
+                candidates = ["sha1"]
+            elif length == 64:
+                candidates = ["sha256", "sha3_256"]
+            elif length == 128:
+                candidates = ["sha512"]
+            else:
+                candidates = []
+        return {
+            "hash": h,
+            "length": length,
+            "hex_chars_only": hex_only,
+            "likely_algorithms": candidates,
+        }
+
+    @app.post("/hash/history")
+    async def hash_history_save(req: HashSaveRequest) -> dict[str, Any]:
+        """Save a hash result to history."""
+        global _hash_history_id_counter
+        if len(_hash_history) >= _MAX_HASH_HISTORY:
+            _hash_history.pop(0)
+        _hash_history_id_counter += 1
+        entry: dict[str, Any] = {
+            "id": f"hsh-{_hash_history_id_counter}",
+            "label": req.label,
+            "algorithm": req.algorithm,
+            "text_preview": req.text_preview[:80],
+            "hash": req.hash,
+            "saved_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        _hash_history.append(entry)
+        return {"success": True, "entry": entry}
+
+    @app.get("/hash/history")
+    async def hash_history_list(
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """List hash history (newest first)."""
+        return {"history": list(reversed(_hash_history))[:limit], "total": len(_hash_history)}
+
+    @app.delete("/hash/history/{hsh_id}")
+    async def hash_history_delete(hsh_id: str) -> dict[str, Any]:
+        """Delete a hash history entry."""
+        for i, entry in enumerate(_hash_history):
+            if entry["id"] == hsh_id:
+                _hash_history.pop(i)
+                return {"success": True, "deleted": hsh_id}
+        raise HTTPException(status_code=404, detail=f"Hash history entry {hsh_id!r} not found")
+
     return app
 
 
@@ -9669,5 +9899,15 @@ _MAX_UUID_HISTORY = 500
 _textstats_history: list[dict[str, Any]] = []
 _textstats_history_id_counter: int = 0
 _MAX_TEXTSTATS_HISTORY = 200
+
+# ── Phase 66: JSON/YAML Converter & Formatter ─────────────────────────────────
+_jsonformat_history: list[dict[str, Any]] = []
+_jsonformat_history_id_counter: int = 0
+_MAX_JSONFORMAT_HISTORY = 300
+
+# ── Phase 67: Hash & Checksum Tool ────────────────────────────────────────────
+_hash_history: list[dict[str, Any]] = []
+_hash_history_id_counter: int = 0
+_MAX_HASH_HISTORY = 500
 
 # ── End of module-level state ─────────────────────────────────────────────────

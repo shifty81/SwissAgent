@@ -463,6 +463,27 @@
           "description": "Word/char/sentence counts, Flesch reading ease, top words, history"
         }
       ]
+    },
+    {
+      "id": "m15",
+      "title": "Data Utilities & Developer Helpers",
+      "status": "done",
+      "tasks": [
+        {
+          "id": "t15-1",
+          "title": "JSON/YAML Converter & Formatter",
+          "status": "done",
+          "priority": "medium",
+          "description": "Format/minify JSON, validate JSON/YAML, convert JSON<->YAML with history"
+        },
+        {
+          "id": "t15-2",
+          "title": "Hash & Checksum Tool",
+          "status": "done",
+          "priority": "medium",
+          "description": "Generate MD5/SHA1/SHA256/SHA512 hashes, compare, detect algorithm, history"
+        }
+      ]
     }
   ]
 }

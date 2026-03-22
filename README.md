@@ -425,6 +425,8 @@ SwissAgent is developed against a living roadmap stored in `workspace/roadmap.js
 | **63** | **Color Palette Manager** | ✅ **Done** |
 | **64** | **UUID / Token Generator** | ✅ **Done** |
 | **65** | **Text Statistics / Readability Analyzer** | ✅ **Done** |
+| **66** | **JSON/YAML Converter & Formatter** | ✅ **Done** |
+| **67** | **Hash & Checksum Tool** | ✅ **Done** |
 
 ---
 
