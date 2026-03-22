@@ -1,0 +1,4 @@
+These are some findings from the previous project:
+
+- This is finding number one.
+- This is finding number two.
